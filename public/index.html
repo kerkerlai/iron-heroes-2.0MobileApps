@@ -29,7 +29,7 @@
   </script>
   <!-- 📱 App 內嵌模式 (?app=1)：由鋼鐵英雄同步器 App 的「戰績」分頁開啟，隱藏網頁頂部導覽，改用 App 原生分頁 -->
   <script>(function(){try{if(new URLSearchParams(location.search).get("app")==="1"){document.documentElement.classList.add("in-app");}}catch(e){}})();</script>
-  <style>html.in-app body > header, html.in-app body > footer{display:none !important;} html.in-app body{padding-top:0 !important;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;}</style>
+  <style>html.in-app body > header, html.in-app body > footer{display:none !important;} html.in-app body{padding-top:0 !important;-webkit-tap-highlight-color:transparent;} /* App 內嵌：只讓最外層 html 負責上下捲動 (Android WebView 遇到 html 與 body 同時 overflow-x:hidden 時可能無法滑動) */ html.in-app{overflow-x:hidden !important;overflow-y:auto !important;height:auto !important;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;} html.in-app body{overflow:visible !important;height:auto !important;min-height:100vh;touch-action:pan-x pan-y;}</style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-orange-500 selection:text-white lightning-bg relative">
 
