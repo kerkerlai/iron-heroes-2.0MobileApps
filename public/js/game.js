@@ -583,6 +583,7 @@ function switchMainTab(tab) {
     if (tab === 'bingo') renderBingoView();
     if (window.isMobileMode && window.isMobileMode(tab)) window.renderMobileModeView(tab);
   }
+  ensureSeasonInfoBars();
 
   if (window.lucide) lucide.createIcons();
 }
@@ -632,6 +633,7 @@ function renderAllGameViews() {
   if (window.isMobileMode && window.isMobileMode(activeMode)) window.renderMobileModeView(activeMode);
   populateViewerDropdowns();
   populateChroniclesDropdown();
+  ensureSeasonInfoBars();
 
   if (window.lucide) lucide.createIcons();
 }
@@ -2722,7 +2724,7 @@ function renderSurvivalHtml(view) {
     <div class="mb-6 bg-slate-900 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-lg">
       <h2 class="text-xl font-black text-amber-500 mb-1">【資料片五】飢餓法則 (Survival Rules)</h2>
       <p class="text-slate-300 text-sm leading-relaxed">
-        身處嚴酷的荒野沙漠，每個人開局擁有 ${maxHp.toLocaleString()} 點生存值。${sv.seasonOver ? '本賽季已結束，毒圈停止擴張' : `每天毒圈都會自動剝奪大家 ${decayPerDay.toLocaleString()} 點生命線`}（第 ${sv.days} 天，目前全服已流失 ${currentPenalty.toLocaleString()} HP）！${scheduleNote}<br>
+        身處嚴酷的荒野沙漠，每個人開局擁有 ${maxHp.toLocaleString()} 點生存值。${sv.seasonOver ? '本賽季已結束，毒圈停止擴張' : `每天毒圈都會自動剝奪大家 ${decayPerDay.toLocaleString()} 點生命線`}（毒圈已結算 ${sv.days} 天，目前每人已流失 ${currentPenalty.toLocaleString()} HP）！${scheduleNote}<br>
         🍖 <strong>外出狩獵與搜刮：</strong> <span class="text-emerald-400 font-mono font-bold tracking-wider">[ 狩獵補血 = Calories × 1 ]</span> / <span class="text-amber-300 font-mono font-bold tracking-wider">[ 搜刮物資 = TRIMP × 1.5 ]</span><br>
         ☠️ <strong>淘汰與結算：</strong> <span class="text-rose-400 font-mono font-bold tracking-wider">[ 最終生存HP = 最大血量 - (天數 × 每日衰減) + 狩獵補血 + 搜刮物資 ]</span>
       <br>🔁 <strong>浴火重生：</strong>生存值歸零的英雄不會永久淘汰，只要再去完成有效運動、補回 HP，就能立刻重返荒野！</p>
@@ -3189,3 +3191,49 @@ window.IronApp = {
     } catch (e) { console.error('[IronApp]', e); return false; }
   }
 };
+
+// =====================================================================
+// 📅 賽季資訊列：所有資料片頁面最上方統一顯示「賽季期間 / 第幾天 / 剩幾天」
+// (各資料片重新渲染時會覆蓋內容，所以在 renderAllGameViews / switchMainTab 之後補上)
+// =====================================================================
+const SEASON_BAR_TABS = ['classic', 'rpg', 'boss', 'faction', 'survival', 'base', 'bingo', 'expedition', 'dream', 'flame', 'monastery'];
+function buildSeasonInfoBarHtml() {
+  const st = window.gameState || gameState || {};
+  const s = typeof normalizeDateYMD === 'function' ? normalizeDateYMD(st.seasonStart || '') : (st.seasonStart || '');
+  const e = typeof normalizeDateYMD === 'function' ? normalizeDateYMD(st.seasonEnd || '') : (st.seasonEnd || '');
+  if (!s || !e) return '';
+  const esc = (v) => (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v));
+  const today = typeof getTodayYMD === 'function' ? getTodayYMD() : '';
+  const total = typeof diffDaysYMD === 'function' ? diffDaysYMD(s, e) + 1 : null;
+  let status = '', detail = '', tone = 'emerald';
+  if (today && typeof diffDaysYMD === 'function') {
+    if (today < s) { const n = diffDaysYMD(today, s); status = '⏳ 即將開始'; detail = `還有 ${n} 天開賽`; tone = 'sky'; }
+    else if (today > e) { status = '🏁 賽季已結束'; detail = `共 ${total} 天`; tone = 'slate'; }
+    else { const day = diffDaysYMD(s, today) + 1; const left = diffDaysYMD(today, e); status = '🔥 進行中'; detail = `第 ${day} 天 / 共 ${total} 天 • ${left === 0 ? '今天是最後一天！' : `剩 ${left} 天`}`; tone = left <= 3 ? 'rose' : 'emerald'; }
+  }
+  const toneCls = { emerald: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40', sky: 'bg-sky-500/15 text-sky-300 border-sky-500/40', rose: 'bg-rose-500/15 text-rose-300 border-rose-500/40', slate: 'bg-slate-700/40 text-slate-300 border-slate-600' }[tone];
+  return `<div class="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+      <span class="font-black text-amber-300">📅 賽季期間</span>
+      <span class="font-mono font-bold text-white">${esc(s)} ~ ${esc(e)}</span>
+      ${status ? `<span class="px-2 py-0.5 rounded-full border font-black text-[11px] ${toneCls}">${status}</span>` : ''}
+      ${detail ? `<span class="text-slate-300 font-bold">${esc(detail)}</span>` : ''}
+    </div>`;
+}
+function ensureSeasonInfoBars() {
+  try {
+    const html = buildSeasonInfoBarHtml();
+    SEASON_BAR_TABS.forEach(t => {
+      const c = document.getElementById('tab-content-' + t);
+      if (!c) return;
+      let bar = Array.from(c.children).find(el => el.classList && el.classList.contains('season-info-bar'));
+      if (!html) { if (bar) bar.remove(); return; }
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'season-info-bar mb-4 bg-slate-900/80 border border-amber-500/30 rounded-2xl px-4 py-3 shadow-lg';
+        c.prepend(bar);
+      }
+      bar.innerHTML = html;
+    });
+  } catch (e) { console.warn('[SeasonBar]', e); }
+}
+window.ensureSeasonInfoBars = ensureSeasonInfoBars;
