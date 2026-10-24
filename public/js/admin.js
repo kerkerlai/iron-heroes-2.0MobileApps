@@ -893,12 +893,15 @@ function renderHeroTable() {
       ? window.renderHeroCustomTitleHtml(h.name)
       : '';
     const unlockedCount = Object.keys(gameState?.heroBadges?.[h.name] || {}).length;
+    const boundDevice = (gameState?.devices || []).find(d => d.hero === h.name && !d.revoked);
+    const boundHtml = boundDevice ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-700 text-[10px] whitespace-nowrap" title="${escapeHtmlLite((boundDevice.platform || '') + ' ' + (boundDevice.device_model || ''))}">📱 已綁定</span>` : '';
 
     tr.innerHTML = `
       <td class="p-3 font-bold text-white flex items-center space-x-2">
         ${heroAvatarHtml}
-        <span>${h.name}</span>
+        <span>${escapeHtmlLite(h.name)}</span>
         ${heroCustomTitle}
+        ${boundHtml}
         <span class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40 text-[9px] font-mono">🎖️${unlockedCount}</span>
       </td>
       <td class="p-3 font-mono">${h.age} 歲</td>
@@ -1025,6 +1028,15 @@ async function saveHeroFromModal() {
   };
 
   try {
+    // ✏️ 改名：先把舊名字底下的所有資料搬到新名字，再存其他欄位 (避免變成兩位英雄、資料留在舊名字)
+    if (origName && name !== origName) {
+      if (gameState?.heroes?.some(h => h.name === name)) {
+        alert(`⚠️ 已經有名為【${name}】的冒險者，無法改成這個名字。`);
+        return;
+      }
+      if (!confirm(`確定要把【${origName}】改名為【${name}】嗎？\n\n會一併搬移：運動紀錄、手機健康數據、手機綁定、GM 稱號與手動徽章。\n已封存的歷史快照維持當時的名字。`)) return;
+      await renameHeroEverywhere(origName, name);
+    }
     await window.supabase.insert("heroes", heroObj);
     closeHeroModal();
     if (window.syncFromDatabase) await window.syncFromDatabase();
@@ -2960,4 +2972,34 @@ function selectBossGallery(i) {
     if (nameEl) nameEl.value = b.name;
   }
   renderBossGallery();
+}
+
+// =====================================================================
+// ✏️ 英雄改名：所有以英雄名字為 key 的資料一起搬家
+//   1. 優先呼叫後端 admin-mobile 的 rename_hero (可以改手機綁定 / 每日健康等網站無權限修改的資料表)
+//   2. 後端尚未部署時 (例如還沒導入手機 App)，改用網站可寫的部分：英雄、運動紀錄、GM 稱號/手動徽章
+// =====================================================================
+async function renameHeroEverywhere(oldName, newName) {
+  try {
+    const r = await callAdminMobile('rename_hero', { old_name: oldName, new_name: newName });
+    showAdminToast(`✏️ 改名完成：${oldName} → ${newName}（運動 ${r.counts?.activities ?? 0} 筆、健康 ${r.counts?.daily_health ?? 0} 天、手機 ${r.counts?.devices ?? 0} 支）`);
+    return r;
+  } catch (e) {
+    const notDeployed = /404|not found|Failed to fetch|NOT_FOUND|unknown_action/i.test(String(e.message || e));
+    if (!notDeployed) throw new Error('改名失敗：' + e.message);
+    if ((gameState?.devices || []).some(d => d.hero === oldName) || (gameState?.dailyHealth || []).some(d => d.hero === oldName)) {
+      throw new Error('這位英雄有手機 App 資料，需要先部署 App 後端 (GitHub Actions → Deploy mobile Edge Functions) 才能完整改名。');
+    }
+    // 網站端備援：英雄列改名 + 運動紀錄 + GM 設定 key
+    await window.supabase.update('heroes', `name=eq.${encodeURIComponent(oldName)}`, { name: newName });
+    await window.supabase.update('activities', `hero=eq.${encodeURIComponent(oldName)}`, { hero: newName });
+    const ops = ensureGMOpsState();
+    let changed = false;
+    ['heroFx', 'manualBadges'].forEach(k => {
+      if (ops[k] && Object.prototype.hasOwnProperty.call(ops[k], oldName)) { ops[k][newName] = ops[k][oldName]; delete ops[k][oldName]; changed = true; }
+    });
+    if (changed) await window.supabase.insert('game_config', { key: 'gm_ops_config', value: ops });
+    showAdminToast(`✏️ 改名完成：${oldName} → ${newName}`);
+    return { ok: true, fallback: true };
+  }
 }

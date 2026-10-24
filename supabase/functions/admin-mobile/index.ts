@@ -1,5 +1,5 @@
 // POST /admin-mobile：GM 後台專用 (需 x-gm-password，與 Edge Function 環境變數 GM_PASSWORD 比對)
-// actions: create_invite / list_invites / delete_invite / list_devices / revoke_device / restore_device
+// actions: create_invite / list_invites / delete_invite / list_devices / revoke_device / restore_device / rename_hero
 import { corsHeaders, json, serviceClient } from "../_shared/util.ts";
 
 function genCode(season: string): string {
@@ -58,6 +58,52 @@ Deno.serve(async (req) => {
     const { error } = await db.from("devices").update({ revoked: action === "revoke_device" }).eq("id", String(body.device_id || ""));
     if (error) return json({ error: "db_error", message: error.message }, 500);
     return json({ ok: true });
+  }
+  if (action === "rename_hero") {
+    // 英雄改名：所有掛在舊名字底下的資料一起搬到新名字 (英雄 / 運動紀錄 / 每日健康 / 手機綁定 / GM 稱號與手動徽章)
+    const oldName = String(body.old_name || "").trim();
+    const newName = String(body.new_name || "").trim();
+    if (!oldName || !newName) return json({ error: "invalid_body", message: "old_name、new_name 為必填" }, 400);
+    if (oldName === newName) return json({ ok: true, unchanged: true });
+    if (newName.length > 30 || /[<>"'`\\]/.test(newName)) return json({ error: "invalid_body", message: "新名稱過長或包含不允許的符號" }, 400);
+    const { data: src } = await db.from("heroes").select("name").eq("name", oldName).maybeSingle();
+    if (!src) return json({ error: "hero_not_found", message: `找不到英雄「${oldName}」` }, 404);
+    const { data: clash } = await db.from("heroes").select("name").eq("name", newName).maybeSingle();
+    if (clash) return json({ error: "hero_exists", message: `已經有名為「${newName}」的英雄` }, 409);
+
+    const counts: Record<string, number> = {};
+    const upd = async (table: string, col: string) => {
+      const { data, error } = await db.from(table).update({ [col]: newName }).eq(col, oldName).select(col);
+      if (error) throw new Error(`${table}: ${error.message}`);
+      counts[table] = data?.length ?? 0;
+    };
+    try {
+      await upd("heroes", "name");
+      await upd("activities", "hero");
+      await upd("daily_health", "hero");
+      await upd("devices", "hero");
+      // GM 設定中以英雄名字為 key 的資料 (頭像特效/稱號、手動頒發徽章)
+      const { data: cfgRow } = await db.from("game_config").select("value").eq("key", "gm_ops_config").maybeSingle();
+      const v = (cfgRow?.value || null) as Record<string, any> | null;
+      if (v) {
+        let changed = false;
+        for (const k of ["heroFx", "manualBadges"]) {
+          if (v[k] && typeof v[k] === "object" && oldName in v[k]) {
+            v[k][newName] = v[k][oldName];
+            delete v[k][oldName];
+            changed = true;
+          }
+        }
+        if (changed) {
+          const { error } = await db.from("game_config").update({ value: v }).eq("key", "gm_ops_config");
+          if (error) throw new Error(`game_config: ${error.message}`);
+          counts.gm_ops_config = 1;
+        }
+      }
+    } catch (e) {
+      return json({ error: "db_error", message: `改名途中失敗：${(e as Error).message}（已完成的部分：${JSON.stringify(counts)}）` }, 500);
+    }
+    return json({ ok: true, old_name: oldName, new_name: newName, counts });
   }
   return json({ error: "unknown_action" }, 400);
 });

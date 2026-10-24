@@ -110,6 +110,7 @@ Deno.serve(async (req) => {
   const { data: heroRow } = await db.from("heroes").select("max_hr").eq("name", hero).maybeSingle();
   return json({
     max_hr: heroRow?.max_hr ?? 185,
+    hero_name: hero,
     inserted_workouts: inserted,
     skipped_workouts: workouts.length - inserted,
     upserted_daily: dailyRows.length,
