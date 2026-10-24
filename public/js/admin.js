@@ -951,6 +951,7 @@ function openAddHeroModal() {
   document.getElementById('hero-edit-original-name').value = '';
   document.getElementById('hero-modal-name').value = '';
   document.getElementById('hero-modal-name').disabled = false;
+  const renameHint = document.getElementById('hero-modal-name-hint'); if (renameHint) renameHint.classList.add('hidden');
   document.getElementById('hero-modal-age').value = '35';
   document.getElementById('hero-modal-guild').value = '';
   document.getElementById('hero-modal-class').value = '狂戰士';
@@ -968,7 +969,9 @@ function openEditHeroModal(heroName) {
   document.getElementById('modal-hero-title').innerText = `編輯冒險者 - ${hero.name}`;
   document.getElementById('hero-edit-original-name').value = hero.name;
   document.getElementById('hero-modal-name').value = hero.name;
-  document.getElementById('hero-modal-name').disabled = true;
+  // 允許改名：儲存時會把運動紀錄、手機健康數據、手機綁定、GM 稱號/徽章一起搬到新名字 (renameHeroEverywhere)
+  document.getElementById('hero-modal-name').disabled = false;
+  const renameHint = document.getElementById('hero-modal-name-hint'); if (renameHint) renameHint.classList.remove('hidden');
   document.getElementById('hero-modal-age').value = hero.age;
   document.getElementById('hero-modal-guild').value = hero.guild;
   document.getElementById('hero-modal-class').value = hero.rpgClass || '狂戰士';
