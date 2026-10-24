@@ -3002,7 +3002,22 @@ async function renameHeroEverywhere(oldName, newName) {
       if (ops[k] && Object.prototype.hasOwnProperty.call(ops[k], oldName)) { ops[k][newName] = ops[k][oldName]; delete ops[k][oldName]; changed = true; }
     });
     if (changed) await window.supabase.insert('game_config', { key: 'gm_ops_config', value: ops });
+    await recordHeroAlias(oldName, newName);
     showAdminToast(`✏️ 改名完成：${oldName} → ${newName}`);
     return { ok: true, fallback: true };
   }
+}
+
+// 改名對照表 (game_config.hero_aliases)：鏡像同步會把舊遊戲資料庫的舊名換成新名，避免出現重複英雄
+async function recordHeroAlias(oldName, newName) {
+  let aliases = {};
+  try {
+    const rows = await window.supabase.fetch('game_config', 'key=eq.hero_aliases&select=key,value');
+    const row = (rows || []).find(r => r && r.key === 'hero_aliases');
+    if (row && row.value && typeof row.value === 'object' && !Array.isArray(row.value)) aliases = { ...row.value };
+  } catch (e) { /* 沒有就建立新的 */ }
+  Object.keys(aliases).forEach(k => { if (aliases[k] === oldName) aliases[k] = newName; });
+  aliases[oldName] = newName;
+  delete aliases[newName];
+  await window.supabase.insert('game_config', { key: 'hero_aliases', value: aliases });
 }
