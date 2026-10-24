@@ -1,0 +1,40 @@
+name: Mirror old DB -> 2.0 DB (parallel phase)
+
+# 平行測試期間：每 30 分鐘把「舊資料庫」新出現的英雄 / 運動紀錄複製到 2.0 新資料庫。
+#   * 舊庫只讀，絕不寫入；ID 重複就跳過，不會產生重複資料，也不會覆蓋你在 2.0 的修改。
+#   * 手動執行時可選 full：以舊庫為準覆蓋英雄 / 紀錄 / 遊戲設定 + 複製頭像 (第一次搬家用)。
+# 正式切換後 (GM 後台資料來源切到「自己抓 Strava」)：本排程會自動只報到、不複製；想更乾淨可再 Disable workflow。
+on:
+  schedule:
+    - cron: "5,35 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "mirror = 只新增；full = 以舊庫為準整個覆蓋 (含遊戲設定/頭像)"
+        required: true
+        default: mirror
+        type: choice
+        options: [mirror, full]
+      dry_run:
+        description: "只預覽，不寫入"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install requests
+      - name: Sync old -> new
+        env:
+          OLD_SUPABASE_URL: ${{ secrets.OLD_SUPABASE_URL }}
+          OLD_SUPABASE_ANON_KEY: ${{ secrets.OLD_SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python scripts/sync_old_to_new.py "${{ github.event.inputs.mode || 'mirror' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
