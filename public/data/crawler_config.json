@@ -1,0 +1,20 @@
+{
+  "athleteProfiles": {
+    "468395126": "Kerker",
+    "972959242": "Calla",
+    "449473529": "Naomi",
+    "2029007949": "Weber",
+    "822925839": "Mooooo",
+    "387396829": "Moupower",
+    "548067864": "Richardyoho"
+  },
+  "excludeKeywords": [
+    "羽球",
+    "不想抓的關鍵字"
+  ],
+  "sheetUrl": "https://docs.google.com/spreadsheets/d/1gNr8ptE_zjIeZsliaEqddqp5xz3Ir0LT7AkLmnSh3pY/edit?gid=434984273#gid=434984273",
+  "worksheetName": "Rawdata",
+  "pollIntervalMinutes": 30,
+  "lastRunTime": null,
+  "lastRunStatus": "idle"
+}

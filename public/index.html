@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>舒服雷 Strava Project | 鋼鐵英雄紀元 (Iron Heroes Era)</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/css/rpg-theme.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            rpg: {
+              gold: '#fbbf24',
+              red: '#ef4444',
+              cyan: '#06b6d4',
+              purple: '#a855f7',
+              dark: '#0f172a',
+              card: '#131b2e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-orange-500 selection:text-white lightning-bg relative">
+
+  <!-- Top Navigation Bar (Responsive Desktop & Mobile Header) -->
+  <header class="sticky top-0 z-40 px-3 sm:px-4 py-2.5 sm:py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+      
+      <!-- 1. Title & Branding (Left) -->
+      <div class="order-1 flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+        <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-[#FC4C02] to-amber-500 flex items-center justify-center text-lg sm:text-2xl shadow-md shadow-orange-500/25 ring-1 ring-orange-400/40 flex-shrink-0 cursor-pointer text-white" onclick="goToActiveExpansion()">
+          ☀️
+        </div>
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1 sm:gap-1.5">
+            <h1 class="text-base sm:text-xl font-black tracking-tight text-white font-title cursor-pointer whitespace-nowrap" onclick="goToActiveExpansion()">鋼鐵英雄紀元</h1>
+            <span id="active-expansion-badge" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-orange-500/15 text-amber-400 border border-amber-500/40 truncate max-w-[180px] sm:max-w-none">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FC4C02] mr-1 animate-pulse flex-shrink-0"></span>資料片一：經典競技模式
+            </span>
+            <span class="hidden md:inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>Strava 連動中
+            </span>
+          </div>
+          <p class="text-[11px] sm:text-xs font-medium text-slate-400 truncate">舒服雷 Strava Project • 陽光運動競技戰情系統</p>
+        </div>
+      </div>
+
+      <!-- 2. Right Action Buttons: Sync & GM Panel (Top-right on mobile, far-right on desktop) -->
+      <div class="order-2 lg:order-3 flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
+        <button id="btn-sheet-sync" onclick="syncFromGoogleSheet()" title="同步最新 Strava 數據" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1 transition shadow-sm whitespace-nowrap">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span class="hidden sm:inline">同步數據</span>
+        </button>
+
+        <a href="/admin.html" target="_blank" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1 transition shadow-sm whitespace-nowrap">
+          <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+          <span class="hidden xs:inline sm:inline">GM 控制台</span>
+          <span class="xs:hidden sm:hidden">GM</span>
+        </a>
+      </div>
+
+      <!-- 3. Navigation Tabs Switcher (Full-width 3-col grid on mobile, inline pill bar on desktop) -->
+      <div id="nav-tabs-container" class="order-3 lg:order-2 w-full lg:w-auto grid grid-cols-3 sm:flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 gap-1">
+        <!-- Injected dynamically by game.js according to GM expansion selection -->
+      </div>
+    </div>
+  </header>
+
+  <!-- GM 限時積分加倍活動 & 壽星/天氣榮譽全服廣播看板 (支援即將開始預告 & 進行中特效) -->
+  <div id="gm-live-broadcast-banner" class="max-w-7xl w-full mx-auto px-4 pt-4 empty:hidden space-y-2.5"></div>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 1: 經典競技模式 (Classic Guild Arena)                 -->
+  <!-- ============================================================== -->
+  <main id="tab-content-classic" class="max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+
+    <!-- Classic Mode Hero Banner -->
+    <div class="bg-gradient-to-r from-amber-950/30 via-slate-900 to-purple-950/30 rounded-3xl p-6 border border-amber-500/40 shadow-2xl relative overflow-hidden">
+      <div class="absolute -right-8 -bottom-8 opacity-15 pointer-events-none text-9xl">
+        🏆
+      </div>
+      <div class="flex flex-col lg:flex-row items-center justify-between gap-6 relative z-10">
+        <div class="space-y-2 flex-1">
+          <div class="flex items-center space-x-2">
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              🏆 資料片一：經典競技模式
+            </span>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse"></span>公會積分爭霸戰
+            </span>
+          </div>
+          <h2 id="classic-title-text" class="text-2xl sm:text-3xl font-black text-white font-title tracking-wide">
+            公會積分爭霸賽 (Classic Guild Arena)
+          </h2>
+          <p id="classic-period-text" class="text-xs font-mono font-bold text-amber-300">
+            競賽區間：2026/07/27 ~ 2026/09/30
+          </p>
+          <p class="text-xs text-slate-400 max-w-2xl leading-relaxed">
+            依據各小隊與個人在有氧（衝力、熱量、Zone 2）與無氧（落差、密度、最大心率、出勤）的綜合加權高標法（滿分 100 分制），爭奪季度總冠軍！
+          </p>
+        </div>
+
+        <div class="w-full lg:w-80 bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
+          <div class="flex justify-between font-bold">
+            <span class="text-slate-400">計分核心規則</span>
+            <span class="text-amber-400">100分相對高標法</span>
+          </div>
+          <div class="text-[11px] text-slate-400 space-y-1">
+            <p>• 團隊計分：小隊總數值 ÷ 名單總人數 (含未打卡者)</p>
+            <p>• 有效門檻：單次運動須滿 <span id="classic-min-dur-text" class="text-amber-400 font-bold">30</span> 分鐘</p>
+            <p>• 有氧指標：衝力 40% + 熱量 30% + Zone2 30%</p>
+            <p>• 無氧指標：落差 50% + 密度 30% + 出勤 20%</p>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-2 border-t border-slate-700/50 pt-2 space-y-1">
+             <p><b class="text-slate-400">🔥 TRIMP (衝擊力):</b> 時間 × (均心率÷個人MaxHR) × <i>e</i><sup class="text-[8px]">1.92×(均心率÷個人MaxHR)</sup></p>
+             <p><b class="text-slate-400">🦍 MaxGap (無氧落差):</b> 該次運動最高心率 - 該次運動平均心率</p>
+             <p><b class="text-slate-400">🟢 Zone2 (有氧次數):</b> 當次平均心率嚴格落在個人MaxHR的 60% ~ 75% 區間</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Champion Podiums Container -->
+    <div id="classic-champions-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    </div>
+
+    <!-- 8 Core Metric Cards Container -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="medal" class="w-4 h-4 text-amber-400"></i>
+          <span>🏆 團隊八大核心生理指標榜 (人均數據)</span>
+        </h3>
+        <span class="text-xs text-slate-400">人均數值排行</span>
+      </div>
+      <div id="classic-metrics-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      </div>
+    </div>
+
+    <!-- Detailed Guild Leaderboard Table -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="shield" class="w-4 h-4 text-cyan-400"></i>
+          <span>🛡️ 公會成員出勤與戰力統計矩陣</span>
+        </h3>
+        <span class="text-xs text-slate-400">點擊英雄查看個人戰力卡</span>
+      </div>
+      <div id="classic-guild-table-container" class="overflow-x-auto">
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 2: RPG 職業天賦模式 (RPG Class & Talent System)       -->
+  <!-- ============================================================== -->
+  <main id="tab-content-rpg" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+
+    <!-- RPG Class Mode Hero Banner -->
+    <div class="bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 rounded-3xl p-6 border border-purple-500/50 shadow-2xl relative overflow-hidden glow-border-purple">
+      <div class="absolute -right-8 -bottom-8 opacity-15 pointer-events-none text-9xl">
+        🧙
+      </div>
+      <div class="flex flex-col lg:flex-row items-center justify-between gap-6 relative z-10">
+        <div class="space-y-2 flex-1">
+          <div class="flex items-center space-x-2">
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/40">
+              ⚔️ 資料片二：RPG 職業天賦模式
+            </span>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
+              <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mr-1 animate-pulse"></span>五大職業天賦專精
+            </span>
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-black text-white font-title tracking-wide">
+            職業天賦與公會羈絆爭霸 (Class & Talent System)
+          </h2>
+          <p id="rpg-period-text" class="text-xs font-mono font-bold text-purple-300">
+            賽季區間：2026/07/27 ~ 2026/09/30
+          </p>
+          <p class="text-xs text-slate-400 max-w-2xl leading-relaxed">
+            每位英雄依據專屬職業（狂戰士、聖騎士、遊俠、大法師、暗影刺客）獲得專屬天賦加成與數值轉換，透過公會內跨職業陣容激發「團隊羈絆加成」，角逐全服最強冒險公會！
+          </p>
+        </div>
+
+        <div class="w-full lg:w-80 bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
+          <div class="flex justify-between font-bold">
+            <span class="text-slate-400">五大職業專精</span>
+            <span class="text-purple-400">天賦被動加成</span>
+          </div>
+          <div class="text-[11px] text-slate-400 space-y-1">
+            <p>• ⚔️ 狂戰士：無氧落差 (Gap) +30% 戰力加成</p>
+            <p>• 🛡️ 聖騎士：出勤次數 + 痛苦指數 (Suffer) 轉換加成</p>
+            <p>• 🏹 遊俠：Zone 2 燃脂次數 + 熱量消耗 +35% 加成</p>
+            <p>• 🧙 大法師：訓練衝力 (TRIMP) × 1.5 倍奧術增幅</p>
+            <p>• 🗡️ 暗影刺客：訓練密度 (Density) 獲得 2.0 倍暗影加成</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 Class Master Podiums Container -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="crown" class="w-4 h-4 text-amber-400"></i>
+          <span>👑 五大職業首席大師王座 (Class Champions)</span>
+        </h3>
+        <span class="text-xs text-slate-400">各職業榜首榮譽</span>
+      </div>
+      <div id="rpg-class-masters-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      </div>
+    </div>
+
+    <!-- Guild Talent Synergy & Power Leaderboard -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="shield-check" class="w-4 h-4 text-cyan-400"></i>
+          <span>🛡️ 公會天賦羈絆戰力排行榜 (Guild Synergy Power)</span>
+        </h3>
+        <span class="text-xs text-slate-400">陣容多樣性激發全隊羈絆</span>
+      </div>
+      <div id="rpg-guild-synergy-container" class="space-y-3">
+      </div>
+    </div>
+
+    <!-- Full Hero Class Roster & Combat Power Table -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="users" class="w-4 h-4 text-purple-400"></i>
+          <span>👥 全服英雄職業專精與 RPG 戰力總表</span>
+        </h3>
+        <span class="text-xs text-slate-400">點擊英雄查看個人戰力卡</span>
+      </div>
+      <div id="rpg-hero-roster-container" class="overflow-x-auto">
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 3: 世界 Boss 討伐戰 (PvE Raid)                         -->
+  <!-- ============================================================== -->
+  <main id="tab-content-boss" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+
+    <!-- Hero World Boss Banner -->
+    <div id="boss-banner-box" class="bg-slate-900/80 rounded-3xl p-6 border border-slate-800 shadow-2xl relative overflow-hidden glow-border-red">
+      <div class="absolute -right-10 -bottom-10 opacity-15 pointer-events-none text-9xl">
+        🌩️
+      </div>
+
+      <div class="flex flex-col lg:flex-row items-center justify-between gap-6 relative z-10">
+        <!-- Boss Info Left -->
+        <div class="flex items-center space-x-4 flex-1">
+          <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-rose-500/50 shadow-xl shadow-rose-900/40 relative flex-shrink-0">
+            <img id="boss-avatar-img" src="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80" class="w-full h-full object-cover">
+            <span class="absolute bottom-0 inset-x-0 bg-rose-950/80 text-rose-300 text-[10px] font-black text-center py-0.5">WORLD BOSS</span>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-rose-400 font-bold tracking-wider uppercase">資料片三 • 全伺服器合作模式</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+            </div>
+            <h2 id="boss-name-text" class="text-2xl sm:text-3xl font-black text-white font-title tracking-wide">
+              🌩️ 墮落雷神・索爾
+            </h2>
+            <p id="boss-season-period" class="text-xs font-mono font-bold text-amber-300">
+              討伐戰區間：2026/07/27 ~ 2026/09/30
+            </p>
+            <p id="boss-desc-text" class="text-xs text-slate-400 max-w-xl leading-relaxed">
+              雷霆神力失控！唯有全服英雄透過每日汗水鍛鍊（單次達 30 分鐘），轉化為真實物理與魔法輸出，才能將血量歸零！
+            </p>
+          </div>
+        </div>
+
+        <!-- Boss Health & Status Right -->
+        <div class="w-full lg:w-96 space-y-2 bg-slate-950/60 p-4 rounded-2xl border border-slate-800 relative">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs font-bold text-slate-400">魔王剩餘血量</span>
+            <div class="text-right">
+              <span id="boss-hp-text" class="text-lg font-black font-rpg text-rose-400">232,849</span>
+              <span class="text-xs text-slate-500 font-mono">/ 350,000</span>
+              <span id="boss-hp-pct" class="text-xs font-bold text-amber-400 ml-1">(66.5%)</span>
+            </div>
+          </div>
+
+          <!-- Dynamic HP Bar -->
+          <div class="w-full h-5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700 relative">
+            <div id="boss-hp-bar" class="h-full rounded-full boss-hp-bar" style="width: 66.5%;"></div>
+          </div>
+
+          <div class="flex justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+            <span>🚨 倒數：<span id="countdown-text" class="text-amber-400 font-mono font-bold">進行中</span></span>
+            <span class="text-amber-400 font-bold">全服總輸出：<span id="stat-total-damage">117,151</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 Damage Systems Breakdown Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      
+      <!-- Card 1: Physical / Calories -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg flex items-center justify-between hover:border-amber-500/40 transition">
+        <div class="space-y-1">
+          <div class="flex items-center space-x-1.5 text-xs font-bold text-amber-400">
+            <span>🗡️ 物理普攻總和</span>
+            <span class="text-[10px] text-slate-400">(熱量 1:1 累加)</span>
+          </div>
+          <div class="text-2xl font-black font-rpg text-white" id="stat-phys-dmg">13,047</div>
+          <p class="text-[11px] text-slate-400">基礎能量輸出，1 kcal = 1 點真實傷害</p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
+          🔥
+        </div>
+      </div>
+
+      <!-- Card 2: Magic / TRIMP -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg flex items-center justify-between hover:border-cyan-500/40 transition">
+        <div class="space-y-1">
+          <div class="flex items-center space-x-1.5 text-xs font-bold text-cyan-400">
+            <span>🔮 魔法衝力總和</span>
+            <span class="text-[10px] text-slate-400">(TRIMP ×15 累加)</span>
+          </div>
+          <div class="text-2xl font-black font-rpg text-white" id="stat-mag-dmg">73,404</div>
+          <p class="text-[11px] text-slate-400">心血管負荷指標，訓練衝力放大 15 倍</p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl">
+          ⚡
+        </div>
+      </div>
+
+      <!-- Card 3: Critical / Gap -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg flex items-center justify-between hover:border-rose-500/40 transition">
+        <div class="space-y-1">
+          <div class="flex items-center space-x-1.5 text-xs font-bold text-rose-400">
+            <span>💥 爆擊傷害總和</span>
+            <span class="text-[10px] text-slate-400">(單次最高落差 ×100)</span>
+          </div>
+          <div class="text-2xl font-black font-rpg text-white" id="stat-crit-dmg">30,700</div>
+          <p class="text-[11px] text-slate-400">取各英雄賽季最強一次無氧落差輸出</p>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center text-xl">
+          💥
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Main Grid: MVP Leaderboard & Guild War -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left 2 Cols: MVP Hero Leaderboard -->
+      <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="crown" class="w-5 h-5 text-amber-400"></i>
+            <h3 class="text-base font-bold text-white">🏆 討伐軍 MVP 傷害排行榜</h3>
+          </div>
+          <span class="text-xs text-slate-400">點選英雄查看個人戰力卡</span>
+        </div>
+
+        <div class="space-y-2.5" id="mvp-hero-list">
+        </div>
+      </div>
+
+      <!-- Right 1 Col: Guild War & Combat Log -->
+      <div class="space-y-6">
+
+        <!-- Guild War Contributions -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="shield" class="w-5 h-5 text-cyan-400"></i>
+              <h3 class="text-sm font-bold text-white">🛡️ 各公會對魔王總輸出</h3>
+            </div>
+          </div>
+          <div class="space-y-3" id="guild-contribution-list">
+          </div>
+        </div>
+
+        <!-- Live Combat Feed -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <h3 class="text-xs font-bold text-slate-200">📜 即時戰鬥日誌</h3>
+            </div>
+            <span class="text-[11px] text-slate-400 font-mono">Live Logs</span>
+          </div>
+          <div class="space-y-2 max-h-72 overflow-y-auto pr-1" id="battle-combat-feed">
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- ============================================================== -->
+  <!-- EXPANSION 4: 雙城激戰 (Faction War)                           -->
+  <!-- ============================================================== -->
+  <main id="tab-content-faction" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 5: 飢餓法則 (Survival)                              -->
+  <!-- ============================================================== -->
+  <main id="tab-content-survival" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 6: 鋼鐵要塞 (Base Builder)                          -->
+  <!-- ============================================================== -->
+  <main id="tab-content-base" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- EXPANSION 7: 戰神拼圖 (Bingo)                                 -->
+  <!-- ============================================================== -->
+  <main id="tab-content-bingo" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- 📱 手機同步資料片 (需 GM 開啟手機同步 App 才會啟用)            -->
+  <!-- 資料片八：萬步遠征 / 九：夢境守護者 / 十一：不滅之火 / 十三：鐵人修行院 -->
+  <!-- ============================================================== -->
+  <main id="tab-content-expedition" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
+  <main id="tab-content-dream" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
+  <main id="tab-content-flame" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
+  <main id="tab-content-monastery" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
+
+  <!-- GLOBAL TOOL 1: 冒險者戰情室 (Hero Data Viewer & Radar)          -->
+  <!-- ============================================================== -->
+  <main id="tab-content-viewer" class="hidden max-w-7xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-5 sm:space-y-6">
+      
+      <!-- Top Profile & Selector -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 whitespace-nowrap">
+              🔍 冒險者個人戰情室
+            </span>
+            <h2 class="text-base sm:text-lg font-bold text-white">
+              冒險者個人紀錄查詢與生理指標系統
+            </h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">點選英雄與篩選條件，即時查看個人生理指標、百大榮譽徽章牆與歷史運動紀錄（含 Strava 連結）。</p>
+        </div>
+
+        <div class="flex items-center space-x-2 w-full sm:w-auto">
+          <label class="text-xs font-bold text-slate-300 whitespace-nowrap">選擇冒險者：</label>
+          <select id="viewer-hero-select" onchange="loadHeroViewerData()" class="flex-1 sm:flex-initial bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-2.5 sm:py-2 outline-none focus:border-amber-500">
+          </select>
+        </div>
+      </div>
+
+      <!-- Hero Profile HUD & KPI Cards -->
+      <div id="hero-profile-hud" class="space-y-4">
+      </div>
+
+      <!-- 永久榮譽徽章蒐集牆 (100+ Badges Wall with Mystery Fog-of-War) -->
+      <div id="hero-badges-wall-card" class="space-y-3">
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3" id="hero-kpi-cards">
+      </div>
+
+      <!-- Heart Rate Zone Distribution Gauge -->
+      <div id="hero-hr-zone-card" class="bg-slate-950/60 p-3.5 sm:p-4 rounded-2xl border border-slate-800 space-y-2">
+      </div>
+
+      <!-- Activity History Table & Mobile Feed Cards -->
+      <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden space-y-3 p-3.5 sm:p-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-slate-800 pb-3">
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-slate-200 text-sm">運動歷程紀錄</span>
+            <span id="viewer-record-count" class="text-xs text-amber-400 font-mono font-bold">共 0 筆</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:flex items-center gap-2 text-xs w-full sm:w-auto">
+            <input type="text" id="viewer-search-input" placeholder="🔍 搜尋名稱或 Strava ID..." oninput="filterViewerActivities()" class="w-full sm:w-52 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 sm:py-1.5 text-white outline-none focus:border-cyan-500">
+            <select id="viewer-sport-filter" onchange="filterViewerActivities()" class="w-full sm:w-auto bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 sm:py-1.5 text-white outline-none">
+              <option value="">全部運動類型</option>
+              <option value="WeightTraining">WeightTraining (重量訓練)</option>
+              <option value="Workout">Workout (一般鍛鍊)</option>
+              <option value="Run">Run (跑步)</option>
+              <option value="Ride">Ride (自行車騎乘)</option>
+              <option value="Swim">Swim (游泳)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Mobile-First Strava Card Feed (< 640px) -->
+        <div id="viewer-activities-mobile-list" class="sm:hidden space-y-2.5 max-h-[540px] overflow-y-auto pr-0.5">
+        </div>
+
+        <!-- Desktop Analytical 12-Col Table (>= 640px) -->
+        <div class="hidden sm:block overflow-x-auto max-h-96">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800 sticky top-0">
+              <tr>
+                <th class="p-3 sortable" onclick="sortViewerTable('id')">🔗 來源 / Strava ID</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('date')">📅 運動日期</th>
+                <th class="p-3">👤 英雄</th>
+                <th class="p-3">🛡️ 公會</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('duration')">⏱️ 時長</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('avgHr')">💓 平均心率</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('maxHr')">🩸 最高心率</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('calories')">🔥 熱量</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('gap')">🦍 無氧落差</th>
+                <th class="p-3 sortable" onclick="sortViewerTable('trimp')">🚀 TRIMP</th>
+                <th class="p-3">🟢 區間判定</th>
+                <th id="th-viewer-score-col" class="p-3 sortable" onclick="sortViewerTable('damage')">⚔️ 造成傷害</th>
+              </tr>
+            </thead>
+            <tbody id="viewer-activities-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================================================== -->
+  <!-- GLOBAL TOOL 2: 過往英雄史 (Chronicles of Past Heroes)           -->
+  <!-- ============================================================== -->
+  <main id="tab-content-chronicles" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
+      <!-- Chronicles Header & Selector -->
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/40">🏛️ 歷代戰役名人堂</span>
+            <h2 class="text-xl font-black text-white font-title">過往英雄史 (Chronicles of Past Heroes)</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">在此回顧已圓滿結算的歷代賽季快照 (Snapshot) 與榮譽榜單。介面完全還原歷史戰役現況（時間凍結）。</p>
+        </div>
+
+        <div class="flex items-center space-x-2 w-full sm:w-auto min-w-0">
+          <label class="text-xs text-slate-400 font-bold whitespace-nowrap">選擇歷史快照：</label>
+          <select id="chronicles-season-select" onchange="switchChronicleSeason()" class="flex-1 min-w-0 w-full sm:w-auto max-w-full truncate bg-slate-800 border border-purple-500/40 text-purple-300 text-xs font-bold rounded-xl px-3 py-2 outline-none">
+          </select>
+        </div>
+      </div>
+
+      <!-- Dynamic Chronicles Content Container (1:1 Layout with Live Page) -->
+      <div id="chronicles-dynamic-content" class="space-y-6">
+      </div>
+    </div>
+  </main>
+
+  <!-- Interactive Hero Detail Modal (Popup anywhere) -->
+  <div id="modal-hero-profile" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-2xl space-y-4 shadow-2xl modal-enter max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 id="modal-hero-profile-title" class="text-base font-bold text-white flex items-center space-x-2">
+          <i data-lucide="user" class="w-5 h-5 text-cyan-400"></i>
+          <span>冒險者英雄檔案</span>
+        </h3>
+        <button onclick="closeHeroProfileModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="modal-hero-profile-content" class="space-y-4">
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" class="fixed bottom-5 left-3 right-3 sm:left-auto sm:right-5 sm:w-full z-50 space-y-2 pointer-events-none sm:max-w-sm"></div>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/supabaseClient.js"></script>
+  <script src="/js/badgesCatalog.js"></script>
+  <script src="/js/mobileModes.js"></script>
+  <script src="/js/supabaseSync.js"></script>
+  <script src="/js/game.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

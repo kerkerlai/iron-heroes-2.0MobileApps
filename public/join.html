@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>加入鋼鐵英雄紀元 | 手機同步 App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/rpg-theme.css">
+</head>
+<body class="min-h-screen lightning-bg text-slate-100">
+  <main class="max-w-xl mx-auto px-4 py-8 space-y-5">
+    <div class="text-center space-y-2">
+      <div class="text-5xl">☀️</div>
+      <h1 class="text-2xl font-black text-white">加入 鋼鐵英雄紀元</h1>
+      <p class="text-sm text-slate-400">安裝「鋼鐵英雄同步器」，手錶的運動紀錄就會自動計入遊戲</p>
+    </div>
+
+    <div id="join-disabled" class="hidden bg-slate-900/80 border border-slate-800 rounded-2xl p-5 text-center text-sm text-slate-300">
+      📢 手機 App 尚未開放，本賽季仍使用 Strava 同步。<br>請聯繫 GM 綁定你的 Strava 帳號。
+    </div>
+
+    <div id="join-enabled" class="hidden space-y-5">
+      <div class="bg-slate-900/80 border border-amber-500/40 rounded-2xl p-5 space-y-2">
+        <div class="text-xs text-slate-400">你的邀請碼</div>
+        <div class="flex items-center justify-between gap-3">
+          <span id="invite-code" class="font-mono text-2xl font-black text-amber-300 tracking-widest">—</span>
+          <button onclick="copyCode()" class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-cyan-300">📋 複製</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <h2 class="font-black text-white">① 安裝 App</h2>
+        <div id="install-ios" class="hidden space-y-2 text-sm">
+          <p class="text-slate-300">1. 先從 App Store 安裝 Apple 官方的「<b>TestFlight</b>」</p>
+          <a href="https://apps.apple.com/app/testflight/id899247664" class="block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">⬇️ 安裝 TestFlight</a>
+          <p class="text-slate-300">2. 點下方按鈕加入測試並安裝「鋼鐵英雄同步器」</p>
+          <a id="link-testflight" href="#" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🍎 加入 TestFlight 並安裝</a>
+        </div>
+        <div id="install-android" class="hidden space-y-2 text-sm">
+          <a id="link-play" href="#" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🤖 從 Google Play 安裝 (測試版)</a>
+          <a id="link-apk" href="#" class="hidden block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">📦 或直接下載 APK 安裝檔</a>
+          <p class="text-[12px] text-slate-400">首次使用需安裝 Google「Health Connect」(Android 14 以上已內建)。</p>
+        </div>
+        <button id="toggle-platform" onclick="togglePlatform()" class="text-xs text-slate-400 underline">切換顯示另一個平台的安裝方式</button>
+      </div>
+
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3 text-sm">
+        <h2 class="font-black text-white">② 打開 App 輸入邀請碼</h2>
+        <a id="deep-link" href="#" class="block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-amber-500/40 font-bold text-amber-300">🚀 已安裝？點此打開 App 並自動帶入邀請碼</a>
+        <p class="text-slate-400 text-[12px]">選擇你的英雄名稱 → 按「允許」讀取健康資料，就完成了！</p>
+      </div>
+
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3 text-sm">
+        <h2 class="font-black text-white">③ 讓手錶資料進到手機的健康資料庫 (只需設定一次)</h2>
+        <div id="brand-guides" class="space-y-2"></div>
+      </div>
+
+      <p class="text-center text-[11px] text-slate-500">我們只讀取遊戲需要的運動與健康數據，不會讀取位置或聯絡人。<a href="/privacy.html" class="underline">隱私權政策</a></p>
+    </div>
+  </main>
+
+  <script src="/js/env.js"></script>
+  <script src="/js/supabaseClient.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const code = (params.get('code') || '').toUpperCase();
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    let showIOS = isIOS || !/Android/i.test(navigator.userAgent); // 電腦開啟時預設顯示 iPhone 說明
+
+    const GUIDES = {
+      ios: [
+        ['⌚ Apple Watch', '不需設定，資料會自動寫入「健康」App。'],
+        ['⌚ Garmin', 'Garmin Connect → 更多 → 設定 → 已連結的 App → Apple「健康」→ 開啟全部項目。'],
+        ['⌚ 小米 / 紅米', '小米運動健康 → 我的 → 第三方資料 → Apple 健康 → 授權。'],
+        ['⌚ Amazfit / Zepp', 'Zepp → 我的 → 新增帳號 → Apple 健康。'],
+        ['⌚ Polar / COROS / Suunto', '在各自 App 的「已連結服務」開啟 Apple 健康。'],
+        ['⚠️ Fitbit', 'Fitbit 無法寫入 Apple 健康，請聯繫 GM 改用其他方式同步。']
+      ],
+      android: [
+        ['⌚ Samsung Galaxy Watch', 'Samsung Health → 設定 → Health Connect → 開啟並允許全部項目。'],
+        ['⌚ Garmin', 'Garmin Connect → 更多 → 設定 → Health Connect → 開啟。'],
+        ['⌚ 小米 / 紅米', '小米運動健康 → 我的 → 設定 → Health Connect → 開啟要分享的資料。'],
+        ['⌚ Fitbit / Pixel Watch', 'Fitbit App → 個人資料 → 設定 → Health Connect → 開啟。'],
+        ['⌚ Amazfit / Polar / COROS', '在各自 App 的設定中開啟 Health Connect 同步。']
+      ]
+    };
+
+    function copyCode() { navigator.clipboard.writeText(code); }
+    function togglePlatform() { showIOS = !showIOS; render(window.__cfg || {}); }
+
+    function render(cfg) {
+      document.getElementById('install-ios').classList.toggle('hidden', !showIOS);
+      document.getElementById('install-android').classList.toggle('hidden', showIOS);
+      document.getElementById('link-testflight').href = cfg.testflightUrl || '#';
+      document.getElementById('link-play').href = cfg.playUrl || '#';
+      const apk = document.getElementById('link-apk');
+      apk.classList.toggle('hidden', !cfg.apkUrl);
+      apk.href = cfg.apkUrl || '#';
+      document.getElementById('brand-guides').innerHTML = GUIDES[showIOS ? 'ios' : 'android']
+        .map(([t, d]) => `<div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3"><div class="font-bold text-slate-100">${t}</div><div class="text-[12px] text-slate-400 mt-0.5">${d}</div></div>`).join('');
+    }
+
+    (async () => {
+      document.getElementById('invite-code').innerText = code || '(連結中沒有邀請碼)';
+      document.getElementById('deep-link').href = `ironheroes://join?code=${encodeURIComponent(code)}`;
+      let cfg = {};
+      try {
+        const rows = await window.supabase.fetch('game_config', 'select=key,value&key=eq.gm_ops_config');
+        cfg = (rows[0] && rows[0].value && rows[0].value.mobileSync) || {};
+      } catch (e) {}
+      window.__cfg = cfg;
+      document.getElementById(cfg.enabled ? 'join-enabled' : 'join-disabled').classList.remove('hidden');
+      render(cfg);
+    })();
+  </script>
+</body>
+</html>

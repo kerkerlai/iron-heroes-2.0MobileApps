@@ -1,0 +1,566 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=JetBrains+Mono:wght@500;600;700;800&family=Noto+Sans+TC:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+:root {
+  /* Sharp, Modern Athletic Typography */
+  --font-title: 'Plus Jakarta Sans', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Barlow Condensed', 'Plus Jakarta Sans', 'Noto Sans TC', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Noto Sans TC', monospace;
+
+  /* Unified Dark Solar Athletic Color Tokens */
+  --solar-orange: #FC4C02;
+  --solar-orange-light: #FF6B2B;
+  --solar-amber: #F59E0B;
+  --solar-gold: #FBBF24;
+
+  --dark-canvas: #0A0E17;
+  --dark-card: #111827;
+  --dark-recessed: #0B0F19;
+  --dark-elevated: #1E293B;
+  --dark-border: #1E293B;
+  --dark-border-strong: #334155;
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+}
+
+html, body {
+  font-family: var(--font-sans);
+  background-color: var(--dark-canvas) !important;
+  color: var(--text-primary) !important;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Razor-Sharp Athletic Headings */
+h1, h2, h3, h4, .font-title {
+  font-family: var(--font-title) !important;
+  font-weight: 800;
+  letter-spacing: -0.025em !important;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+/* Crisp Tabular Telemetry & Score Numbers */
+.font-mono {
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+
+.font-rpg {
+  font-family: var(--font-display) !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   DARK SOLAR ATHLETIC CANVAS & HEADER
+   ============================================================ */
+.lightning-bg,
+body {
+  background-color: #0A0E17 !important;
+  background-image:
+    radial-gradient(1100px 420px at 50% -100px, rgba(252, 76, 2, 0.14) 0%, transparent 70%),
+    radial-gradient(800px 320px at 85% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 65%),
+    linear-gradient(180deg, #0D1320 0%, #0A0E17 450px) !important;
+  background-attachment: fixed;
+}
+
+header {
+  background: rgba(13, 19, 32, 0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  border-bottom: 1px solid #1E293B !important;
+  border-top: 3px solid var(--solar-orange) !important;
+  box-shadow: 0 8px 28px -6px rgba(0, 0, 0, 0.65) !important;
+}
+
+/* ============================================================
+   UNIFIED DARK CARBON SURFACES & BORDERS (No Rainbow Clutter)
+   ============================================================ */
+.bg-slate-900,
+.bg-slate-900\/95,
+.bg-slate-900\/90,
+.bg-slate-900\/80,
+.bg-slate-900\/70,
+.bg-slate-900\/60,
+.bg-slate-900\/50 {
+  background-color: #111827 !important;
+  border-color: #1E293B !important;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(255, 255, 255, 0.03);
+}
+
+.bg-slate-950,
+.bg-slate-950\/95,
+.bg-slate-950\/90,
+.bg-slate-950\/80,
+.bg-slate-950\/70,
+.bg-slate-950\/60,
+.bg-slate-950\/50,
+.bg-slate-950\/40 {
+  background-color: #0B0F19 !important;
+  border-color: #1E293B !important;
+}
+
+/* Unify All Hero Banners into Dark Solar Athletic Style */
+[class*="from-amber-950"],
+[class*="from-purple-950"],
+[class*="from-rose-950"],
+[class*="from-cyan-950"],
+[class*="from-indigo-950"],
+[class*="from-fuchsia-950"],
+[class*="from-emerald-950"],
+[class*="from-blue-950"],
+#boss-banner-box {
+  background: linear-gradient(135deg, rgba(252, 76, 2, 0.15) 0%, #111827 55%, rgba(245, 158, 11, 0.09) 100%) !important;
+  border: 1px solid rgba(251, 146, 60, 0.38) !important;
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.65), 0 0 24px -8px rgba(252, 76, 2, 0.18) !important;
+}
+
+/* Unify Glow Borders into Clean Solar Athletic Edge */
+.glow-border-gold,
+.glow-border-red,
+.glow-border-purple,
+.glow-border-cyan {
+  border-color: rgba(251, 146, 60, 0.42) !important;
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.65), 0 0 22px -6px rgba(252, 76, 2, 0.22) !important;
+}
+
+/* Eliminate Distracting Purple / Fuchsia / Indigo / Pink Clutter -> Unify to Sleek Slate / Solar Amber */
+[class*="bg-purple-9"],
+[class*="bg-fuchsia-9"],
+[class*="bg-indigo-9"],
+[class*="bg-pink-9"],
+.bg-purple-500\/10, .bg-purple-500\/15, .bg-purple-500\/20,
+.bg-fuchsia-500\/10, .bg-fuchsia-500\/20,
+.bg-indigo-500\/10, .bg-indigo-500\/20 {
+  background-color: rgba(30, 41, 59, 0.75) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+.border-purple-500\/50, .border-purple-500\/40, .border-purple-500\/30, .border-purple-500\/20,
+.border-fuchsia-500\/50, .border-fuchsia-500\/40, .border-fuchsia-500\/30,
+.border-indigo-500\/50, .border-indigo-500\/40, .border-indigo-500\/30,
+.border-purple-800 {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+.text-purple-200,
+.text-purple-300,
+.text-purple-400,
+.text-fuchsia-300,
+.text-fuchsia-400,
+.text-indigo-300,
+.text-indigo-400,
+.text-pink-300,
+.text-pink-400 {
+  color: #FBBF24 !important;
+}
+
+/* ============================================================
+   UNIFIED SOLAR ATHLETIC PRIMARY BUTTONS & ACTIVE TABS
+   ============================================================ */
+button[class*="from-rose-600"],
+button[class*="from-amber-600"],
+button[class*="from-amber-500"],
+button[class*="from-purple-600"],
+button[class*="from-cyan-600"],
+button[class*="from-cyan-500"],
+button[class*="from-emerald-600"],
+button.bg-amber-500,
+button.bg-cyan-600,
+.btn-solar-primary {
+  background: linear-gradient(135deg, #FC4C02 0%, #F97316 100%) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 4px 14px -2px rgba(252, 76, 2, 0.40) !important;
+}
+
+button[class*="from-rose-600"]:hover,
+button[class*="from-amber-600"]:hover,
+button[class*="from-amber-500"]:hover,
+button[class*="from-purple-600"]:hover,
+button[class*="from-cyan-600"]:hover,
+button[class*="from-cyan-500"]:hover,
+button[class*="from-emerald-600"]:hover,
+button.bg-amber-500:hover,
+button.bg-cyan-600:hover,
+.btn-solar-primary:hover {
+  background: linear-gradient(135deg, #FF5A14 0%, #FB923C 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 6px 18px -2px rgba(252, 76, 2, 0.55) !important;
+}
+
+button[class*="from-rose-600"] *,
+button[class*="from-amber-600"] *,
+button[class*="from-amber-500"] *,
+button[class*="from-purple-600"] *,
+button[class*="from-cyan-600"] *,
+button[class*="from-cyan-500"] *,
+button[class*="from-emerald-600"] *,
+button.bg-amber-500 *,
+button.bg-cyan-600 *,
+.btn-solar-primary * {
+  color: #FFFFFF !important;
+}
+
+#nav-btn-active-expansion span.rounded-full {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+  color: #FDE68A !important;
+}
+
+/* ============================================================
+   CLEAN DARK ATHLETIC FORMS, INPUTS & TABLES
+   ============================================================ */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="password"],
+select,
+textarea {
+  background-color: #0B0F19 !important;
+  border: 1.5px solid #334155 !important;
+  color: #F8FAFC !important;
+  font-weight: 600;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--solar-orange) !important;
+  box-shadow: 0 0 0 3px rgba(252, 76, 2, 0.22) !important;
+  outline: none !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #64748B !important;
+  font-weight: 500;
+}
+
+/* Dark Mode Calendar Picker Indicator */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+  cursor: pointer;
+  opacity: 0.85;
+  transition: all 0.2s;
+  padding: 4px;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  transform: scale(1.12);
+}
+
+/* Crisp Dark Data Tables */
+thead,
+thead.bg-slate-900,
+thead.bg-slate-950 {
+  background-color: #0F172A !important;
+  border-bottom: 1.5px solid #1E293B !important;
+}
+
+thead th {
+  color: #94A3B8 !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em;
+}
+
+tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+tbody tr:hover {
+  background-color: rgba(252, 76, 2, 0.06) !important;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: var(--solar-gold) !important;
+}
+
+/* ============================================================
+   BOSS & PROGRESS BARS (Solar Athletic Energy)
+   ============================================================ */
+.boss-hp-bar {
+  background: linear-gradient(90deg, #FC4C02 0%, #F97316 55%, #FBBF24 100%) !important;
+  box-shadow: 0 0 16px rgba(252, 76, 2, 0.65), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+  transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+.boss-hp-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shine 2.5s infinite;
+}
+
+@keyframes shine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Floating Damage Animation */
+@keyframes floatDamage {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
+  80% { opacity: 1; transform: translate(-50%, -30px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -45px) scale(0.9); }
+}
+
+.floating-damage {
+  position: absolute;
+  animation: floatDamage 1.8s ease-out forwards;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Toast Notification Animation */
+@keyframes slideToast {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.toast-animate {
+  animation: slideToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Custom Dark Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A0E17;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Modal Backdrop & Animation */
+.modal-enter {
+  animation: modalFadeIn 0.2s ease-out forwards;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ============================================================
+   GM Avatar Special FX (Birthday / Sunny / Rainy / Aura)
+   ============================================================ */
+@keyframes pulseBirthday {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #FBBF24, 0 0 14px rgba(251, 191, 36, 0.85), 0 0 24px rgba(236, 72, 153, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 3px #F472B6, 0 0 20px rgba(236, 72, 153, 0.85), 0 0 28px rgba(251, 191, 36, 0.75);
+  }
+}
+
+@keyframes pulseSunny {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #FC4C02, 0 0 16px rgba(252, 76, 2, 0.85), 0 0 26px rgba(251, 191, 36, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 3px #FDE047, 0 0 22px rgba(250, 204, 21, 0.95), 0 0 32px rgba(252, 76, 2, 0.75);
+  }
+}
+
+@keyframes pulseRainy {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #06B6D4, 0 0 14px rgba(6, 182, 212, 0.85), 0 0 24px rgba(59, 130, 246, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 2.5px #38BDF8, 0 0 20px rgba(56, 189, 248, 0.95), 0 0 28px rgba(14, 165, 233, 0.75);
+  }
+}
+
+@keyframes pulseAura {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #EF4444, 0 0 16px rgba(239, 68, 68, 0.85), 0 0 26px rgba(245, 158, 11, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 3px #FBBF24, 0 0 22px rgba(245, 158, 11, 0.95), 0 0 32px rgba(225, 29, 72, 0.85);
+  }
+}
+
+.avatar-fx-birthday {
+  border: 2px solid #FBBF24 !important;
+  animation: pulseBirthday 2.2s infinite ease-in-out;
+}
+
+.avatar-fx-sunny {
+  border: 2px solid #FC4C02 !important;
+  animation: pulseSunny 2s infinite ease-in-out;
+}
+
+.avatar-fx-rainy {
+  border: 2px solid #06B6D4 !important;
+  animation: pulseRainy 2.2s infinite ease-in-out;
+}
+
+.avatar-fx-aura {
+  border: 2px solid #EF4444 !important;
+  animation: pulseAura 1.6s infinite ease-in-out;
+}
+
+.avatar-fx-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.avatar-fx-overlay-rainy {
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0px,
+    transparent 6px,
+    rgba(56, 189, 248, 0.22) 6px,
+    rgba(56, 189, 248, 0.22) 7px
+  );
+}
+
+.avatar-fx-overlay-sunny {
+  background: radial-gradient(circle at 20% 20%, rgba(253, 224, 71, 0.28), transparent 65%);
+}
+
+.avatar-fx-overlay-birthday {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), transparent 50%, rgba(244, 114, 182, 0.18));
+}
+
+.avatar-fx-overlay-aura {
+  background: radial-gradient(circle at 50% 90%, rgba(239, 68, 68, 0.28), transparent 70%);
+}
+
+.avatar-fx-corner-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 11px;
+  line-height: 1;
+  background: #0F172A;
+  border: 1px solid rgba(251, 191, 36, 0.7);
+  border-radius: 9999px;
+  padding: 1.5px 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ============================================================
+   100+ Achievement Badges Wall & Hover Tooltip
+   ============================================================ */
+.badge-slot-item {
+  position: relative;
+  transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.badge-slot-item:hover {
+  transform: translateY(-2px);
+}
+
+.badge-slot-item .badge-tooltip-box {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: 230px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.98) !important;
+  border: 1px solid rgba(251, 146, 60, 0.55) !important;
+  box-shadow: 0 14px 32px -4px rgba(0, 0, 0, 0.85) !important;
+  visibility: hidden;
+  opacity: 0;
+  transform: translate(-50%, 6px) scale(0.95);
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 80;
+}
+
+.badge-slot-item:hover .badge-tooltip-box,
+.badge-slot-item:focus-within .badge-tooltip-box {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+/* ============================================================
+   MOBILE & TOUCH RESPONSIVE OPTIMIZATIONS (< 640px)
+   ============================================================ */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent Chinese text in table headers/cells from wrapping into 1-char vertical columns */
+table th,
+table td {
+  white-space: nowrap;
+}
+
+/* Allow description columns in GM badge table to wrap comfortably with a readable min-width */
+#admin-gm-badges-tbody td:nth-child(4),
+#admin-gm-badges-tbody td:nth-child(5),
+#admin-gm-events-tbody td:nth-child(2) {
+  white-space: normal;
+  min-width: 180px;
+}
+
+@media (max-width: 639px) {
+  /* Compact container padding on mobile phones */
+  main .rounded-3xl {
+    border-radius: 1.25rem !important;
+  }
+
+  main .p-6 {
+    padding: 1rem !important;
+  }
+
+  main .p-5 {
+    padding: 0.875rem !important;
+  }
+
+  /* Prevent iOS Safari auto-zoom on input focus */
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Disable floating hover tooltips on touch screens where #badge-mobile-inspector handles tap inspection */
+  .badge-slot-item .badge-tooltip-box {
+    display: none !important;
+  }
+}

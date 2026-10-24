@@ -1,0 +1,2933 @@
+
+function showAdminToast(msg, isError = false) {
+  let toast = document.getElementById("admin-toast-container");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "admin-toast-container";
+    toast.className = "fixed bottom-5 right-5 z-[999] flex flex-col space-y-2 pointer-events-none";
+    document.body.appendChild(toast);
+  }
+  const item = document.createElement("div");
+  item.className = `p-4 rounded-2xl shadow-2xl text-xs font-bold text-white border flex items-center space-x-2 transition-all transform duration-300 pointer-events-auto ${isError ? "bg-rose-900/90 border-rose-600" : "bg-slate-900/95 border-amber-500/60"}`;
+  item.innerHTML = `<span>${msg}</span>`;
+  toast.appendChild(item);
+  setTimeout(() => {
+    item.style.opacity = "0";
+    setTimeout(() => item.remove(), 300);
+  }, 4000);
+}
+
+window.addEventListener("gameStateSynced", (e) => {
+  if (e.detail) {
+    gameState = e.detail;
+    allActivitiesCache = gameState?.activities || [];
+    withDirtyPreserved(() => {
+      populateGlobalSettings();
+      populateFormDropdowns();
+      populateBossConfig();
+    });
+    renderHeroTable();
+    renderSnapshotTable();
+    renderActivityTable();
+    renderCrawlerUI();
+    if (typeof renderGMOpsCenter === "function") renderGMOpsCenter();
+  }
+});
+
+
+// -------------------------------------------------------------
+// GM AUTHENTICATION GATEKEEPER (Master Password: 800402)
+// -------------------------------------------------------------
+const GM_MASTER_PASSWORD = "800402";
+
+function checkGMAuth() {
+  const urlPw = new URLSearchParams(window.location.search).get("pw");
+  if (urlPw === GM_MASTER_PASSWORD) {
+    sessionStorage.setItem("gm_authenticated", GM_MASTER_PASSWORD);
+  }
+  stripPasswordFromUrl();
+  const isAuth = sessionStorage.getItem("gm_authenticated") === GM_MASTER_PASSWORD;
+  const overlay = document.getElementById("admin-login-overlay");
+  if (overlay) {
+    if (isAuth) {
+      overlay.classList.add("hidden");
+    } else {
+      overlay.classList.remove("hidden");
+      setTimeout(() => {
+        const input = document.getElementById("gm-password-input");
+        if (input) input.focus();
+      }, 100);
+    }
+  }
+}
+
+function verifyGMPassword() {
+  const input = document.getElementById("gm-password-input");
+  const errEl = document.getElementById("gm-password-error");
+  const overlay = document.getElementById("admin-login-overlay");
+  const val = (input?.value || "").trim();
+
+  if (val === GM_MASTER_PASSWORD) {
+    sessionStorage.setItem("gm_authenticated", GM_MASTER_PASSWORD);
+    if (errEl) errEl.classList.add("hidden");
+    if (overlay) overlay.classList.add("hidden");
+    showAdminToast("✅ GM 權限認證成功，歡迎進入控制台！");
+    if (window.lucide) lucide.createIcons();
+  } else {
+    if (errEl) errEl.classList.remove("hidden");
+    if (input) {
+      input.classList.add("border-rose-500");
+      input.value = "";
+      input.focus();
+    }
+  }
+}
+
+// 把 ?pw= 從網址列移除 (避免密碼留在瀏覽紀錄/截圖，且登出後重新整理不會自動登入)
+function stripPasswordFromUrl() {
+  try {
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("pw")) {
+      u.searchParams.delete("pw");
+      history.replaceState(null, "", u.pathname + (u.searchParams.toString() ? "?" + u.searchParams.toString() : "") + u.hash);
+    }
+  } catch (e) {}
+}
+
+function logoutGM() {
+  sessionStorage.removeItem("gm_authenticated");
+  stripPasswordFromUrl();
+  const overlay = document.getElementById("admin-login-overlay");
+  const input = document.getElementById("gm-password-input");
+  if (overlay) overlay.classList.remove("hidden");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  showAdminToast("已安全登出 GM 控制台");
+}
+
+
+function dateToInputVal(dateStr) {
+  if (!dateStr) return "";
+  const s = String(dateStr).trim().replace(/-/g, "/");
+  const parts = s.split(" ")[0].split("/");
+  if (parts.length === 3) {
+    const y = parts[0];
+    const m = String(parts[1]).padStart(2, "0");
+    const d = String(parts[2]).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return dateStr;
+}
+
+function inputValToDate(inputVal) {
+  if (!inputVal) return "";
+  return inputVal.replace(/-/g, "/");
+}
+
+/**
+ * 寫入保護：只有在「雲端設定已成功完整載入」後才允許 GM 儲存，
+ * 避免網路異常時表單停留在預設值 (例如 10000/500、World Boss) 而把正式設定與活動資料覆蓋掉。
+ */
+function assertCloudReady() {
+  if (window.__dbSyncOk === true) return true;
+  alert("⚠️ 雲端資料尚未成功載入（或剛才同步失敗），為避免用預設值覆蓋正式設定，本次儲存已取消。\n\n請重新整理頁面，確認資料正確顯示後再操作一次。");
+  return false;
+}
+
+// 表單「髒值」保護：GM 正在編輯 (尚未儲存) 的欄位，不會被背景同步或切換分頁時的重新渲染蓋回舊值
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (el && el.id && (el.id.startsWith("cfg-") || el.id === "gm-badge-start-date")) el.dataset.dirty = "1";
+});
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (el && el.id && (el.id.startsWith("cfg-") || el.id === "gm-badge-start-date")) el.dataset.dirty = "1";
+});
+function clearDirtyInputs() {
+  document.querySelectorAll("[data-dirty]").forEach(el => { delete el.dataset.dirty; });
+}
+function withDirtyPreserved(fn) {
+  const saved = Array.from(document.querySelectorAll("[data-dirty]")).map(el => [el, el.value]);
+  try { return fn(); } finally { saved.forEach(([el, v]) => { el.value = v; }); }
+}
+/**
+ * 鋼鐵英雄紀元 - GM Control Panel Engine (v2.3 動態情境響應版)
+ */
+
+let gameState = null;
+let allActivitiesCache = [];
+
+const RPG_CLASSES = {
+  '狂戰士': { badge: '⚔️', name: '狂戰士', color: '#ef4444', desc: '無氧落差 +30%' },
+  '聖騎士': { badge: '🛡️', name: '聖騎士', color: '#eab308', desc: '出勤×150 + Suffer×1.5' },
+  '遊俠':   { badge: '🏹', name: '遊俠',   color: '#10b981', desc: 'Zone2次數×120 + 熱量+35%' },
+  '大法師': { badge: '🧙', name: '大法師', color: '#06b6d4', desc: 'TRIMP×1.5倍奧術增幅' },
+  '刺客':   { badge: '🗡️', name: '刺客',   color: '#a855f7', desc: '密度×2.0倍暗影加成' }
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+  checkGMAuth();
+  if (typeof window.syncFromDatabase === 'function') {
+    await window.syncFromDatabase();
+  }
+  if (!window.gameState || !window.gameState.heroes || window.gameState.heroes.length === 0) {
+    await fetchAdminData();
+  } else {
+    gameState = window.gameState;
+    allActivitiesCache = gameState?.activities || [];
+  }
+  await fetchCrawlerConfig();
+  populateGlobalSettings();
+  populateFormDropdowns();
+  onExpansionModeChanged();
+  renderSnapshotTable();
+  renderHeroTable();
+  renderActivityTable();
+  renderCrawlerUI();
+  if (typeof renderGMOpsCenter === 'function') renderGMOpsCenter();
+  if (typeof renderMobileSyncSection === 'function') renderMobileSyncSection();
+  if (typeof refreshMobileModeOptions === 'function') refreshMobileModeOptions();
+  initAdminSSE();
+  if (window.lucide) lucide.createIcons();
+});
+
+function initAdminSSE() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const subtab = urlParams.get('subtab');
+  if (subtab && typeof switchGMOpsSubTab === 'function') {
+    switchGMOpsSubTab(subtab);
+  }
+  if (urlParams.get('nosse')) return;
+  try {
+    const sse = new EventSource('/api/stream');
+    sse.addEventListener('game_updated', () => {
+      // 以 Supabase 為唯一資料來源：收到本地伺服器廣播時重新同步雲端，而不是採用本地 JSON 檔 (避免舊資料被後續儲存寫回正式資料庫)
+      if (typeof window.syncFromDatabase === 'function') window.syncFromDatabase();
+    });
+    sse.addEventListener('new_attack', () => {
+      if (typeof window.syncFromDatabase === 'function') window.syncFromDatabase();
+    });
+  } catch (e) {}
+}
+
+const EMBEDDED_DEFAULT_STATE = {
+  activeMode: "world_boss",
+  seasonStart: "2026/08/12",
+  seasonEnd: "2026/08/31",
+  boss: {
+    name: "🌩️ 墮落雷神・索爾 (Fallen Thor)",
+    subtitle: "世界 Boss 討伐戰 (全伺服器合作模式)",
+    maxHp: 350000,
+    currentHp: 232849,
+    seasonStart: "2026/08/12",
+    seasonEnd: "2026/08/31",
+    avatar: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80",
+    description: "索爾受到雷霆魔劍侵蝕陷入瘋狂，諸神黃昏即將降臨！唯有全服英雄透過每日嚴格汗水訓練，轉化為物理與魔法攻擊，方能拯救世界！",
+    rules: { minDurationMinutes: 30.0, physMultiplier: 1.0, magicMultiplier: 15.0, critMultiplier: 100.0 }
+  },
+  guilds: [
+    { name: "Cake", badge: "🍰", color: "#ec4899", members: ["Kerker", "Calla"] },
+    { name: "咪咪胡胡", badge: "🐱", color: "#3b82f6", members: ["Naomi", "Weber"] },
+    { name: "嘿喲嘿喲拔蘿蔔", badge: "🥕", color: "#f97316", members: ["Moupower", "Mooooo"] }
+  ],
+  heroes: [
+    { name: "Kerker", guild: "Cake", age: 35, maxHr: 185, rpgClass: "狂戰士" },
+    { name: "Calla", guild: "Cake", age: 35, maxHr: 185, rpgClass: "刺客" },
+    { name: "Naomi", guild: "咪咪胡胡", age: 33, maxHr: 187, rpgClass: "聖騎士" },
+    { name: "Weber", guild: "咪咪胡胡", age: 35, maxHr: 185, rpgClass: "大法師" },
+    { name: "Moupower", guild: "嘿喲嘿喲拔蘿蔔", age: 35, maxHr: 185, rpgClass: "遊俠" },
+    { name: "Mooooo", guild: "嘿喲嘿喲拔蘿蔔", age: 34, maxHr: 186, rpgClass: "狂戰士" }
+  ],
+  activities: [],
+  snapshots: [],
+  archivedSeasons: []
+};
+
+async function fetchAdminData() {
+  if (window.gameState && window.gameState.heroes && window.gameState.heroes.length > 0) {
+    gameState = window.gameState;
+    allActivitiesCache = gameState?.activities || [];
+    return;
+  }
+  try {
+    const res = await fetch("/api/state");
+    if (res.ok && !window.gameState) {
+      gameState = await res.json();
+    } else {
+      throw new Error("Local API offline");
+    }
+  } catch (e) {
+    try {
+      const fbRes = await fetch("/data/game_data.json");
+      if (fbRes.ok && !window.gameState) {
+        gameState = await fbRes.json();
+      }
+    } catch (err) {}
+  }
+
+  if (window.gameState) {
+    gameState = window.gameState;
+  }
+
+  if (!gameState) {
+    const local = localStorage.getItem("game_state");
+    if (local) {
+      try { gameState = JSON.parse(local); } catch(err) {}
+    }
+  }
+
+  if (!gameState || !gameState.heroes || gameState.heroes.length === 0) {
+    gameState = JSON.parse(JSON.stringify(EMBEDDED_DEFAULT_STATE));
+  }
+
+  allActivitiesCache = gameState?.activities || [];
+  if (!gameState.snapshots && gameState.archivedSeasons) {
+    gameState.snapshots = gameState.archivedSeasons;
+  }
+}
+
+function getModeLabel(mode) {
+  if (mode === 'classic') return '資料片一：經典競技模式';
+  if (mode === 'rpg_talent' || mode === 'rpg') return '資料片二：RPG 職業天賦模式';
+  if (mode === 'world_boss' || mode === 'boss') return '資料片三：世界 Boss 討伐戰 (PvE Raid)';
+  if (mode === 'faction_war') return '資料片四：雙城激戰 (2v2 陣營對抗)';
+  if (mode === 'survival') return '資料片五：飢餓法則 (大逃殺生存戰)';
+  if (mode === 'base_builder') return '資料片六：鋼鐵要塞 (全服資源養成)';
+  if (mode === 'bingo') return '資料片七：戰神拼圖 (九宮格解謎)';
+  if (window.isMobileMode && window.isMobileMode(mode)) { const mm = window.MOBILE_MODE_META[mode]; return `資料片${mm.num}：${mm.name} (📱 手機同步)`; }
+  return '資料片一：經典競技模式';
+}
+
+function populateGlobalSettings() {
+  if (!gameState) return;
+  const modeSelect = document.getElementById('cfg-active-mode');
+  if (modeSelect) modeSelect.value = gameState.activeMode || 'world_boss';
+
+  const sStart = document.getElementById('cfg-season-start');
+  const sEnd = document.getElementById('cfg-season-end');
+
+  const startVal = gameState.seasonStart || gameState.boss?.seasonStart || '2026/08/12';
+  const endVal = gameState.seasonEnd || gameState.boss?.seasonEnd || '2026/08/31';
+
+  if (sStart) sStart.value = dateToInputVal(startVal);
+  if (sEnd) sEnd.value = dateToInputVal(endVal);
+
+  const gmOps = ensureGMOpsState();
+  const badgeStartIso = gmOps.badgeStartDate ? dateToInputVal(gmOps.badgeStartDate) : '';
+  const cfgBadgeStartEl = document.getElementById('cfg-badge-start-date');
+  const gmBadgeStartEl = document.getElementById('gm-badge-start-date');
+  if (cfgBadgeStartEl) cfgBadgeStartEl.value = badgeStartIso;
+  if (gmBadgeStartEl) gmBadgeStartEl.value = badgeStartIso;
+
+  const minDurVal = gameState.summary?.minDurationMinutes || gameState.boss?.rules?.minDurationMinutes || gameState.classic?.minDuration || 30;
+  const globalMinDur = document.getElementById('cfg-global-min-dur');
+  const classicMinDur = document.getElementById('cfg-classic-min-dur');
+  if (globalMinDur) globalMinDur.value = minDurVal;
+  if (classicMinDur) classicMinDur.value = minDurVal;
+
+  if (gameState.faction) {
+    const f1El = document.getElementById('cfg-faction1-name');
+    const f2El = document.getElementById('cfg-faction2-name');
+    const fHpEl = document.getElementById('cfg-faction-basehp');
+    if (f1El && gameState.faction.f1Name) f1El.value = gameState.faction.f1Name;
+    if (f2El && gameState.faction.f2Name) f2El.value = gameState.faction.f2Name;
+    if (fHpEl && gameState.faction.baseHp) fHpEl.value = gameState.faction.baseHp;
+  }
+
+  if (gameState.survival) {
+    const sMaxEl = document.getElementById('cfg-survival-maxhp');
+    const sDecEl = document.getElementById('cfg-survival-decay');
+    if (sMaxEl && gameState.survival.maxHp) sMaxEl.value = gameState.survival.maxHp;
+    if (sDecEl && gameState.survival.decayPerDay !== undefined && gameState.survival.decayPerDay !== null) {
+      // 顯示「目前 / 下一次」生效的每日扣血 (分段扣血時以最新一段為準)
+      const svNow = typeof window.computeSurvivalState === 'function' ? window.computeSurvivalState(gameState) : null;
+      sDecEl.value = svNow ? svNow.decayPerDay : gameState.survival.decayPerDay;
+    }
+  }
+  const schedNote = document.getElementById('cfg-survival-schedule-note');
+  if (schedNote && typeof window.computeSurvivalState === 'function') {
+    const sv = window.computeSurvivalState(gameState);
+    const sched = sv.schedule.length ? sv.schedule : [{ from: sv.startYMD || '-', perDay: sv.decayPerDay }];
+    schedNote.innerHTML = `☣️ 毒圈扣血紀錄：${sched.map(s => `${s.from} 起每日 -${s.perDay}`).join(' ➜ ')}<br>📅 目前第 ${sv.days} 天，全服累計已扣 ${sv.penalty.toLocaleString()} HP${sv.seasonOver ? '（賽季已結束，停止扣血）' : ''}`;
+  }
+
+  if (gameState.base) {
+    const bWoodEl = document.getElementById('cfg-base-wood');
+    const bSteelEl = document.getElementById('cfg-base-steel');
+    const bManaEl = document.getElementById('cfg-base-mana');
+    if (bWoodEl && gameState.base.woodTarget) bWoodEl.value = gameState.base.woodTarget;
+    if (bSteelEl && gameState.base.steelTarget) bSteelEl.value = gameState.base.steelTarget;
+    if (bManaEl && gameState.base.manaTarget) bManaEl.value = gameState.base.manaTarget;
+  }
+
+  if (gameState.bingo) {
+    const bgMultEl = document.getElementById('cfg-bingo-multiplier');
+    if (bgMultEl && gameState.bingo.multiplier !== undefined) bgMultEl.value = gameState.bingo.multiplier;
+  }
+
+  const kwEl = document.getElementById('cfg-exclude-keywords');
+  if (kwEl) {
+    const kws = Array.isArray(gameState.excludeKeywords) && gameState.excludeKeywords.length > 0
+      ? gameState.excludeKeywords
+      : ['羽球', 'Badminton'];
+    kwEl.value = kws.join(', ');
+  }
+
+  populateBossConfig();
+  onExpansionModeChanged();
+}
+
+/**
+ * 當 GM 在控制台切換資料片時，動態調整所有設定面板、補登表單與名冊欄位！
+ */
+function onExpansionModeChanged() {
+  const mode = document.getElementById('cfg-active-mode')?.value || 'classic';
+  
+  // 1. Update Helper Tag
+  const helperTag = document.getElementById('active-mode-helper-tag');
+  if (helperTag) {
+    if (mode === 'classic') helperTag.innerHTML = '當前設定：🏆 資料片一 • 經典競技模式 (公會積分爭霸)';
+    else if (mode === 'rpg_talent') helperTag.innerHTML = '當前設定：⚔️ 資料片二 • RPG 職業天賦模式 (五大職業與羈絆)';
+    else if (mode === 'world_boss') helperTag.innerHTML = '當前設定：🐉 資料片三 • 世界 Boss 討伐戰 (PvE 全服合作打王)';
+    else if (mode === 'faction_war') helperTag.innerHTML = '當前設定：🏰 資料片四 • 雙城激戰 (2v2 陣營攻城戰)';
+    else if (mode === 'survival') helperTag.innerHTML = '當前設定：☠️ 資料片五 • 飢餓法則 (荒野大逃殺生存戰)';
+    else if (mode === 'base_builder') helperTag.innerHTML = '當前設定：🔨 資料片六 • 鋼鐵要塞 (全服基地養成)';
+    else if (mode === 'bingo') helperTag.innerHTML = '當前設定：🧩 資料片七 • 戰神拼圖 (九宮格團隊解謎)';
+    else if (window.isMobileMode && window.isMobileMode(mode)) {
+      const mm = window.MOBILE_MODE_META[mode];
+      helperTag.innerHTML = `當前設定：${mm.icon} 資料片${mm.num} • ${mm.name} (📱 手機同步資料片)`;
+    }
+  }
+  renderMobileModePanel(mode);
+
+  // 2. Toggle Mode-Specific Config Panels
+  const pClassic = document.getElementById('panel-settings-classic');
+  const pRpg = document.getElementById('panel-settings-rpg');
+  const pBoss = document.getElementById('panel-settings-boss');
+
+  if (pClassic) pClassic.classList.toggle('hidden', mode !== 'classic');
+  if (pRpg) pRpg.classList.toggle('hidden', mode !== 'rpg_talent');
+  if (pBoss) pBoss.classList.toggle('hidden', mode !== 'world_boss');
+  const pFaction = document.getElementById('panel-settings-faction');
+  const pSurvival = document.getElementById('panel-settings-survival');
+  const pBase = document.getElementById('panel-settings-base');
+  const pBingo = document.getElementById('panel-settings-bingo');
+  if (pFaction) pFaction.classList.toggle('hidden', mode !== 'faction_war');
+  if (pSurvival) pSurvival.classList.toggle('hidden', mode !== 'survival');
+  if (pBase) pBase.classList.toggle('hidden', mode !== 'base_builder');
+  if (pBingo) pBingo.classList.toggle('hidden', mode !== 'bingo');
+
+  // 3. Dynamic Adjustments to Manual Check-in Form
+  const formTitle = document.getElementById('manual-form-title');
+  const formSub = document.getElementById('manual-form-subtitle');
+  const btnSubmitText = document.getElementById('btn-manual-submit-text');
+  const lbl1 = document.getElementById('prev-lbl-1');
+  const lbl2 = document.getElementById('prev-lbl-2');
+  const lbl3 = document.getElementById('prev-lbl-3');
+  const lbl4 = document.getElementById('prev-lbl-4');
+
+  if (mode === 'classic') {
+    if (formTitle) formTitle.innerText = '🏋️ 登錄經典競技訓練';
+    if (formSub) formSub.innerText = '登錄有效運動 (滿30分)，自動試算有氧/無氧指標並計入公會積分';
+    if (btnSubmitText) btnSubmitText.innerText = '登錄訓練並計入經典競技積分';
+    if (lbl1) lbl1.innerText = '🔋 燃脂熱量 (kcal)';
+    if (lbl2) lbl2.innerText = '🚀 訓練衝力 (TRIMP)';
+    if (lbl3) lbl3.innerText = '🦍 無氧落差 (Gap)';
+    if (lbl4) lbl4.innerText = '📊 100分制加權試算';
+  } else if (mode === 'rpg_talent') {
+    if (formTitle) formTitle.innerText = '⚔️ 登錄英雄修煉打卡';
+    if (formSub) formSub.innerText = '鍛鍊數據套用英雄職業被動天賦，轉化為 RPG 戰鬥評分 (CP)';
+    if (btnSubmitText) btnSubmitText.innerText = '登錄打卡並轉化為職業專精戰力 (CP)';
+    if (lbl1) lbl1.innerText = '🔥 基礎能量';
+    if (lbl2) lbl2.innerText = '⚡ 奧術衝力';
+    if (lbl3) lbl3.innerText = '✨ 專精天賦加成';
+    if (lbl4) lbl4.innerText = '⚡ RPG 戰鬥評分 (CP)';
+  } else if (window.isMobileMode && window.isMobileMode(mode)) {
+    const mm = window.MOBILE_MODE_META[mode];
+    if (formTitle) formTitle.innerText = `${mm.icon} 手動補登運動 (${mm.name})`;
+    if (formSub) formSub.innerText = '手機同步資料片主要使用 App 上傳的步數/睡眠等數據；此處補登的運動會計入「有效運動」相關的分數 (訓練里程、攻擊分、活動之火、修煉分)';
+    if (btnSubmitText) btnSubmitText.innerText = '登錄運動紀錄';
+    if (lbl1) lbl1.innerText = '🔋 熱量 (kcal)';
+    if (lbl2) lbl2.innerText = '🚀 TRIMP × 15';
+    if (lbl3) lbl3.innerText = '🦍 落差 × 100';
+    if (lbl4) lbl4.innerText = '📊 參考值';
+  } else if (mode === 'survival') {
+    if (formTitle) formTitle.innerText = '☠️ 手動補登荒野求生打卡';
+    if (formSub) formSub.innerText = '鍛鍊數據轉化為狩獵補血 (熱量) 與搜刮物資 (TRIMP × 1.5)，抵抗每日毒圈扣血';
+    if (btnSubmitText) btnSubmitText.innerText = '登錄打卡並補充生存值 (HP)';
+    if (lbl1) lbl1.innerText = '🍖 狩獵補血 (熱量)';
+    if (lbl2) lbl2.innerText = '🎒 搜刮物資 (TRIMP×1.5)';
+    if (lbl3) lbl3.innerText = '—';
+    if (lbl4) lbl4.innerText = '❤️ 本次補充生存值';
+  } else {
+    if (formTitle) formTitle.innerText = '⚔️ 手動打卡發動討伐攻擊';
+    if (formSub) formSub.innerText = '鍛鍊數據轉化為 3 大傷害體系，即時扣除 Boss 血量';
+    if (btnSubmitText) btnSubmitText.innerText = '發動攻擊並登記打卡 (扣除 Boss 血量)';
+    if (lbl1) lbl1.innerText = '🗡️ 普攻 (熱量)';
+    if (lbl2) lbl2.innerText = '🔮 魔攻 (TRIMP)';
+    if (lbl3) lbl3.innerText = '💥 爆擊 (Gap)';
+    if (lbl4) lbl4.innerText = '⚔️ 總討伐傷害';
+  }
+
+  // 4. Dynamic Adjustments to Hero Roster
+  const rosterTitle = document.getElementById('hero-roster-title');
+  const btnRandom = document.getElementById('btn-random-classes');
+  const thClass = document.getElementById('th-hero-class-col');
+
+  if (mode === 'classic') {
+    if (rosterTitle) rosterTitle.innerText = '👥 參賽者名冊與小隊管理 (經典競技)';
+    if (btnRandom) btnRandom.classList.add('hidden');
+    if (thClass) thClass.innerText = '🛡️ 小隊角色';
+  } else if (mode === 'rpg_talent') {
+    if (rosterTitle) rosterTitle.innerText = '👥 冒險者名冊與天賦職業配置 (RPG 專精)';
+    if (btnRandom) btnRandom.classList.remove('hidden');
+    if (thClass) thClass.innerText = '⚔️ RPG 天賦職業';
+  } else if (mode === 'survival') {
+    if (rosterTitle) rosterTitle.innerText = '👥 荒野求生者名冊 (飢餓法則)';
+    if (btnRandom) btnRandom.classList.add('hidden');
+    if (thClass) thClass.innerText = '⚔️ 職業 (本資料片不影響分數)';
+  } else {
+    if (rosterTitle) rosterTitle.innerText = '👥 討伐軍名冊與先鋒部隊 (世界 Boss)';
+    if (btnRandom) btnRandom.classList.add('hidden');
+    if (thClass) thClass.innerText = '⚔️ 攻擊部隊';
+  }
+
+  populateFormDropdowns();
+  previewDamageCalculation();
+  renderHeroTable();
+  if (window.lucide) lucide.createIcons();
+}
+
+async function syncAllSettingsToSupabase(customMsg) {
+  if (!assertCloudReady()) return;
+  const activeMode = document.getElementById('cfg-active-mode')?.value || gameState?.activeMode || 'world_boss';
+  if (window.isMobileMode && window.isMobileMode(activeMode) && !gameState?.gmOps?.mobileSync?.enabled) {
+    alert('⛔ 此資料片需要「手機同步 App」。\n\n請先到下方「📱 手機同步 App 管理中心」勾選啟用並儲存，再切換到手機同步資料片。');
+    return;
+  }
+  const mobileModesConfig = collectMobileModesConfig();
+  const startRaw = document.getElementById('cfg-season-start')?.value || '';
+  const endRaw = document.getElementById('cfg-season-end')?.value || '';
+
+  const seasonStart = inputValToDate(startRaw) || gameState?.seasonStart || '2026/08/12';
+  const seasonEnd = inputValToDate(endRaw) || gameState?.seasonEnd || '2026/08/31';
+
+  const globalMinDurEl = document.getElementById('cfg-global-min-dur');
+  const classicMinDurEl = document.getElementById('cfg-classic-min-dur');
+  const minDur = parseFloat(globalMinDurEl?.value || classicMinDurEl?.value) || 30.0;
+  if (globalMinDurEl) globalMinDurEl.value = minDur;
+  if (classicMinDurEl) classicMinDurEl.value = minDur;
+
+  // Boss Config
+  const bossConfig = gameState?.boss || {};
+  const bossName = document.getElementById('cfg-boss-name')?.value?.trim();
+  const bossMaxHp = parseInt(document.getElementById('cfg-boss-maxhp')?.value);
+  const magMult = parseFloat(document.getElementById('cfg-mag-mult')?.value) || 15.0;
+  if (bossName) bossConfig.name = bossName;
+  if (bossMaxHp > 0) bossConfig.maxHp = bossMaxHp;
+  delete bossConfig.currentHp;
+  bossConfig.seasonStart = seasonStart;
+  bossConfig.seasonEnd = seasonEnd;
+  if (!bossConfig.rules) bossConfig.rules = {};
+  bossConfig.rules.minDurationMinutes = minDur;
+  bossConfig.rules.magicMultiplier = magMult;
+
+  // Classic & RPG Config (只儲存真正的設定欄位，不把即時運算出來的排行榜塞進設定檔)
+  const classicConfig = {
+    seasonStart: seasonStart,
+    seasonEnd: seasonEnd,
+    minDuration: minDur
+  };
+
+  const rpgConfig = {
+    seasonStart: seasonStart,
+    seasonEnd: seasonEnd
+  };
+
+  // Expansion 4: Faction Config
+  const factionConfig = {
+    f1Name: document.getElementById('cfg-faction1-name')?.value || gameState?.faction?.f1Name || '🟢 均衡聯盟',
+    f2Name: document.getElementById('cfg-faction2-name')?.value || gameState?.faction?.f2Name || '🔴 狂怒部落',
+    baseHp: parseInt(document.getElementById('cfg-faction-basehp')?.value) || gameState?.faction?.baseHp || 500000
+  };
+
+  // Expansion 5: Survival Config (支援 0；中途調整每日扣血時以「分段排程」從明天起生效，不回溯)
+  const prevSurvival = gameState?.survival || {};
+  const maxHpInput = parseInt(document.getElementById('cfg-survival-maxhp')?.value, 10);
+  const decayInput = parseInt(document.getElementById('cfg-survival-decay')?.value, 10);
+  const prevSv = typeof window.computeSurvivalState === 'function' ? window.computeSurvivalState(gameState) : { decayPerDay: prevSurvival.decayPerDay ?? 200 };
+  const newDecay = Number.isFinite(decayInput) && decayInput >= 0 ? decayInput : (prevSv.decayPerDay ?? 200);
+  const prevStartYMD = window.normalizeDateYMD ? window.normalizeDateYMD(gameState?.seasonStart || '') : '';
+  const newStartYMD = window.normalizeDateYMD ? window.normalizeDateYMD(seasonStart) : seasonStart;
+  let decaySchedule = Array.isArray(prevSurvival.decaySchedule) ? prevSurvival.decaySchedule.map(s => ({ ...s })) : [];
+  if (prevStartYMD && newStartYMD && prevStartYMD !== newStartYMD) {
+    // 新賽季 (開始日變更)：重設毒圈排程
+    decaySchedule = [{ from: newStartYMD, perDay: newDecay }];
+  } else if (newDecay !== prevSv.decayPerDay) {
+    if (decaySchedule.length === 0) decaySchedule.push({ from: newStartYMD, perDay: Number(prevSv.decayPerDay ?? 200) });
+    const tomorrowYMD = window.addDaysYMD ? window.addDaysYMD(window.getTodayYMD(), 1) : '';
+    const effectiveFrom = (tomorrowYMD && newStartYMD && tomorrowYMD > newStartYMD) ? tomorrowYMD : newStartYMD;
+    decaySchedule = decaySchedule.filter(s => window.normalizeDateYMD(s.from) < effectiveFrom);
+    decaySchedule.push({ from: effectiveFrom, perDay: newDecay });
+    if (decaySchedule.length === 1) decaySchedule[0].from = newStartYMD;
+  }
+  // 合併連續相同扣血值的區段 (例如當天打錯又改回原值)，保持排程乾淨
+  decaySchedule = decaySchedule.filter((s, i, arr) => i === 0 || Number(s.perDay) !== Number(arr[i - 1].perDay));
+  const survivalConfig = {
+    maxHp: Number.isFinite(maxHpInput) && maxHpInput > 0 ? maxHpInput : (prevSurvival.maxHp || 3000),
+    decayPerDay: newDecay,
+    decaySchedule: decaySchedule
+  };
+
+  // Expansion 6: Base Builder Config
+  const baseConfig = {
+    woodTarget: parseInt(document.getElementById('cfg-base-wood')?.value) || gameState?.base?.woodTarget || 10000,
+    steelTarget: parseInt(document.getElementById('cfg-base-steel')?.value) || gameState?.base?.steelTarget || 500,
+    manaTarget: parseInt(document.getElementById('cfg-base-mana')?.value) || gameState?.base?.manaTarget || 500
+  };
+
+  // Expansion 7: Bingo Config
+  const bingoConfig = {
+    multiplier: parseFloat(document.getElementById('cfg-bingo-multiplier')?.value) || gameState?.bingo?.multiplier || 1.0
+  };
+
+  // GM Ops Badge Start Date Sync
+  const gmOps = ensureGMOpsState();
+  const cfgBadgeStartEl = document.getElementById('cfg-badge-start-date');
+  if (cfgBadgeStartEl) {
+    gmOps.badgeStartDate = cfgBadgeStartEl.value ? inputValToDate(cfgBadgeStartEl.value) : '';
+    const gmBadgeStartEl = document.getElementById('gm-badge-start-date');
+    if (gmBadgeStartEl) gmBadgeStartEl.value = cfgBadgeStartEl.value;
+    try { localStorage.setItem('gm_ops_config', JSON.stringify(gmOps)); } catch (e) {}
+  }
+
+  await Promise.all([
+    window.supabase.insert("game_config", { key: "active_mode", value: activeMode }),
+    window.supabase.insert("game_config", { key: "boss_config", value: bossConfig }),
+    window.supabase.insert("game_config", { key: "classic_config", value: classicConfig }),
+    window.supabase.insert("game_config", { key: "rpg_config", value: rpgConfig }),
+    window.supabase.insert("game_config", { key: "faction_config", value: factionConfig }),
+    window.supabase.insert("game_config", { key: "survival_config", value: survivalConfig }),
+    window.supabase.insert("game_config", { key: "base_config", value: baseConfig }),
+    window.supabase.insert("game_config", { key: "bingo_config", value: bingoConfig }),
+    window.supabase.insert("game_config", { key: "gm_ops_config", value: gmOps }),
+    window.supabase.insert("game_config", { key: "mobile_modes_config", value: mobileModesConfig })
+  ]);
+
+  if (gameState) {
+    gameState.activeMode = activeMode;
+    gameState.seasonStart = seasonStart;
+    gameState.seasonEnd = seasonEnd;
+    gameState.boss = bossConfig;
+    gameState.classic = classicConfig;
+    gameState.rpg = rpgConfig;
+    gameState.faction = factionConfig;
+    gameState.survival = survivalConfig;
+    gameState.base = baseConfig;
+    gameState.bingo = bingoConfig;
+    gameState.mobileModes = mobileModesConfig;
+  }
+
+  clearDirtyInputs();
+  if (window.syncFromDatabase) await window.syncFromDatabase();
+  alert(customMsg || `🎉 資料片模式【${getModeLabel(activeMode)}】與所有遊戲條件參數已成功同步寫入 Supabase！前台看板立即生效！`);
+  showAdminToast("✅ 賽事核心參數與資料片條件已成功儲存至雲端！");
+  onExpansionModeChanged();
+}
+
+async function saveGlobalGameSettings() {
+  try {
+    await syncAllSettingsToSupabase();
+  } catch (e) {
+    console.error("Save Global Settings Error:", e);
+    alert("❌ 儲存至雲端資料庫異常：" + e.message);
+  }
+}
+
+// -------------------------------------------------------------
+// SNAPSHOTS CRUD MANAGEMENT (100% 完整賽季快照封存)
+// -------------------------------------------------------------
+
+function getSnapshotsList() {
+  if (gameState?.snapshots && Array.isArray(gameState.snapshots)) {
+    return gameState.snapshots;
+  }
+  return [];
+}
+
+function renderSnapshotTable() {
+  const tbody = document.getElementById('admin-snapshots-table-body');
+  if (!tbody) return;
+
+  const snapshots = getSnapshotsList();
+  tbody.innerHTML = '';
+
+  if (snapshots.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">目前尚無歷史快照紀錄</td></tr>`;
+    return;
+  }
+
+  snapshots.forEach(snap => {
+    const tr = document.createElement('tr');
+    const isVisible = snap.isVisible !== false;
+    tr.className = `hover:bg-slate-900/60 transition ${!isVisible ? 'opacity-50 bg-slate-950/40' : ''}`;
+
+    let typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">🏆 經典競技</span>';
+    if (snap.type === 'rpg' || snap.type === 'rpg_talent') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">⚔️ 職業天賦</span>';
+    } else if (snap.type === 'survival') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">☠️ 飢餓法則</span>';
+    } else if (window.isMobileMode && window.isMobileMode(snap.type)) {
+      const mm = window.MOBILE_MODE_META[snap.type];
+      typeLabel = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">${mm.icon} ${mm.name}</span>`;
+    } else if (snap.type === 'world_boss' || snap.type === 'boss') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">🐉 世界 Boss</span>';
+    }
+
+    const statusBadge = isVisible
+      ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🟢 前台顯示中</span>'
+      : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">👁️‍🗨️ 已隱藏 (不顯示)</span>';
+
+    tr.innerHTML = `
+      <td class="p-3">
+        <div class="font-bold text-white">${snap.seasonTitle || snap.id}</div>
+        <div class="text-[10px] text-slate-400 font-mono">ID: ${snap.id}</div>
+      </td>
+      <td class="p-3">${typeLabel}</td>
+      <td class="p-3 font-mono text-slate-300">${snap.seasonPeriod || '—'}</td>
+      <td class="p-3 font-mono text-slate-400">${snap.archivedAt || '歷史預載'}</td>
+      <td class="p-3">${statusBadge}</td>
+      <td class="p-3 text-right space-x-2 whitespace-nowrap">
+        <button onclick="toggleSnapshotVisibility('${snap.id}')" class="text-xs font-bold ${isVisible ? 'text-slate-400 hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}">
+          ${isVisible ? '👁️‍🗨️ 設為不顯示' : '👁️ 設為顯示'}
+        </button>
+        <button onclick="exportSingleSnapshot('${snap.id}')" class="text-cyan-400 hover:text-cyan-300 font-bold text-xs" title="下載快照 JSON">
+          💾 匯出
+        </button>
+        <button onclick="deleteSnapshot('${snap.id}')" class="text-rose-400 hover:text-rose-300 font-bold text-xs">
+          🗑️ 刪除
+        </button>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function toggleSnapshotVisibility(snapId) {
+  if (!assertCloudReady()) return;
+  const snapshots = getSnapshotsList();
+  const snap = snapshots.find(s => s.id === snapId);
+  if (!snap) return;
+
+  snap.isVisible = snap.isVisible === false ? true : false;
+  if (gameState) gameState.snapshots = snapshots;
+
+  try {
+    await window.supabase.insert("game_config", { key: "snapshots", value: snapshots });
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    renderSnapshotTable();
+    showAdminToast(`✅ 快照【${snap.seasonTitle}】已成功設為【${snap.isVisible ? '前台正常顯示' : '隱藏不顯示'}】！`);
+  } catch (e) {
+    console.error("Toggle Snapshot Visibility Error:", e);
+    renderSnapshotTable();
+    showAdminToast("❌ 更新失敗：" + e.message, true);
+  }
+}
+
+async function deleteSnapshot(snapId) {
+  if (!assertCloudReady()) return;
+  const snapshots = getSnapshotsList();
+  const snap = snapshots.find(s => s.id === snapId);
+  const snapTitle = snap?.seasonTitle || snapId;
+
+  if (!confirm(`確定要從 Supabase 雲端資料庫永久刪除快照【${snapTitle}】嗎？\n刪除後此歷史紀錄將從過往英雄史中移除！`)) return;
+
+  const updatedSnapshots = snapshots.filter(s => s.id !== snapId);
+  if (gameState) gameState.snapshots = updatedSnapshots;
+  renderSnapshotTable();
+
+  try {
+    await window.supabase.insert("game_config", { key: "snapshots", value: updatedSnapshots });
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    renderSnapshotTable();
+    alert(`🗑️ 快照【${snapTitle}】已成功自 Supabase 雲端資料庫刪除！前後台已同步更新！`);
+    showAdminToast(`🗑️ 快照【${snapTitle}】已成功刪除！`);
+  } catch (e) {
+    console.error("Delete Snapshot Error:", e);
+    alert("❌ 刪除失敗：" + e.message);
+  }
+}
+
+function exportSingleSnapshot(snapId) {
+  const snapshots = getSnapshotsList();
+  const snap = snapshots.find(s => s.id === snapId);
+  if (!snap) return;
+
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snap, null, 2));
+  const downloadAnchor = document.createElement('a');
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", `snapshot_${snap.id}.json`);
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+}
+
+/**
+ * 建立當前賽季 100% 完整快照 (Snapshot)
+ */
+async function archiveCurrentSeason() {
+  if (!assertCloudReady()) return;
+  const activeMode = gameState?.activeMode || 'classic';
+  const boss = gameState?.boss || {};
+  let defaultTitle = '2026 S2 • 經典競技模式 (封存快照)';
+  if (activeMode === 'rpg_talent' || activeMode === 'rpg') defaultTitle = '2026 S2 • RPG 職業天賦爭霸 (封存快照)';
+  if (activeMode === 'survival') defaultTitle = '資料片五 • 飢餓法則 (結算快照)';
+  if (window.isMobileMode && window.isMobileMode(activeMode)) { const mm = window.MOBILE_MODE_META[activeMode]; defaultTitle = `資料片${mm.num} • ${mm.name} (結算快照)`; }
+  else if (activeMode === 'world_boss' || activeMode === 'boss') defaultTitle = `${boss.name || '世界 Boss 討伐戰'} (結算快照)`;
+
+  const customTitle = prompt('請輸入要建立的快照名稱 (Snapshot Title)：', defaultTitle);
+  if (customTitle === null) return;
+  const snapshotTitle = customTitle.trim() || defaultTitle;
+
+  try {
+    const curStartRaw = document.getElementById("cfg-season-start")?.value;
+    const curEndRaw = document.getElementById("cfg-season-end")?.value;
+    const activeStartStr = (curStartRaw ? inputValToDate(curStartRaw) : null) || gameState?.seasonStart || "2026/07/27";
+    const activeEndStr = (curEndRaw ? inputValToDate(curEndRaw) : null) || gameState?.seasonEnd || "2026/09/30";
+
+    const now = new Date();
+    const timeStampStr = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    let newArchive = null;
+
+    // 1. CLASSIC MODE SNAPSHOT (直接克隆當前已運算好的經典競技完整狀態)
+    if (activeMode === 'classic') {
+      const classicStats = (window.calculateLiveClassicStats ? window.calculateLiveClassicStats(gameState) : null) || gameState?.classic || {};
+      newArchive = {
+        id: `snapshot_classic_${Date.now()}`,
+        type: 'classic',
+        seasonTitle: snapshotTitle,
+        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
+        archivedAt: timeStampStr,
+        status: 'completed',
+        statusLabel: '🏁 本賽季已圓滿結算 (歷史數據已凍結)',
+        isVisible: true,
+        classicData: classicStats,
+        champions: classicStats.champions || {},
+        teamMetrics: classicStats.teamMetrics || [],
+        guildList: classicStats.guildList || [],
+        heroList: classicStats.heroList || []
+      };
+    }
+
+    // 2. RPG CLASS & TALENT SNAPSHOT (直接克隆當前已運算好的 RPG 完整狀態)
+    else if (activeMode === 'rpg_talent' || activeMode === 'rpg') {
+      const rpgStats = (window.calculateLiveRPGStats ? window.calculateLiveRPGStats(gameState) : null) || gameState?.rpg || {};
+      newArchive = {
+        id: `snapshot_rpg_${Date.now()}`,
+        type: 'rpg',
+        seasonTitle: snapshotTitle,
+        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
+        archivedAt: timeStampStr,
+        status: 'completed',
+        statusLabel: '🏁 本賽季職業爭霸已圓滿結算封存',
+        isVisible: true,
+        classMasters: rpgStats.classMasters || {},
+        guildSynergyList: rpgStats.guildSynergyList || [],
+        heroRpgList: rpgStats.heroRpgList || []
+      };
+    }
+
+    // 3. SURVIVAL SNAPSHOT (資料片五：飢餓法則，凍結結算當下的生存值與存活/淘汰名單)
+    else if (activeMode === 'survival') {
+      const svState = window.computeSurvivalState({ ...gameState, seasonStart: activeStartStr, seasonEnd: activeEndStr });
+      const heroSurvival = (gameState?.heroStats || window.heroStatsList || []).map(h => {
+        const hp = window.computeSurvivalHeroHp(h, svState);
+        return { name: h.name, guild: h.guild, avatar: h.avatar, currentHp: hp.currentHp, isDead: hp.isDead, food: hp.food, scavenge: hp.scavenge, validWorkouts: h.validWorkouts || 0 };
+      }).sort((a, b) => b.currentHp - a.currentHp);
+      newArchive = {
+        id: `snapshot_survival_${Date.now()}`,
+        type: 'survival',
+        seasonTitle: snapshotTitle,
+        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
+        archivedAt: timeStampStr,
+        status: 'completed',
+        statusLabel: '🏁 飢餓法則已結算封存 (生存榜已凍結)',
+        isVisible: true,
+        survival: { maxHp: svState.maxHp, decayPerDay: svState.decayPerDay, decaySchedule: svState.schedule, days: svState.days, penalty: svState.penalty },
+        heroSurvival
+      };
+    }
+
+    // 3b. 📱 手機同步資料片快照 (萬步遠征 / 夢境守護者 / 不滅之火 / 鐵人修行院)
+    else if (window.isMobileMode && window.isMobileMode(activeMode)) {
+      const r = window.computeMobileMode(activeMode, { ...gameState, seasonStart: activeStartStr, seasonEnd: activeEndStr });
+      let leaderboard = [], guilds = [], summaryText = '';
+      if (activeMode === 'expedition') {
+        leaderboard = r.heroes.map(h => ({ name: h.name, value: `${h.km} km`, detail: `步數 ${h.stepKm} / 訓練 ${h.workoutKm} km` }));
+        guilds = r.guilds.map(g => ({ name: g.name, value: `${g.km} km` }));
+        summaryText = `${r.cfg.routeName}：全服累計 ${r.totalKm} / ${r.routeKm} km ${r.completed ? '🏆 遠征成功' : '(未抵達終點)'}`;
+      } else if (activeMode === 'dream') {
+        leaderboard = r.heroes.map(h => ({ name: h.name, value: h.damage.toLocaleString(), detail: `睡眠 ${h.sleepPts} / 規律 ${h.regPts} / 攻擊 ${h.atkPts}` }));
+        guilds = r.guilds.map(g => ({ name: g.name, value: `人均 ${g.perMember.toLocaleString()}` }));
+        summaryText = `夢魘血量 ${r.maxHp.toLocaleString()}，全服傷害 ${r.totalDamage.toLocaleString()} ${r.defeated ? '🏆 夢魘已擊倒' : '(夢魘倖存)'}`;
+      } else if (activeMode === 'flame') {
+        leaderboard = r.heroes.map(h => ({ name: h.name, value: `火種 ${h.embers}`, detail: `三火全亮 ${h.perfectDays} 天` }));
+        guilds = r.guilds.map(g => ({ name: g.name, value: `聖火 Lv.${g.level}` }));
+        summaryText = `冠軍公會：${r.guilds[0] ? r.guilds[0].name + ' (聖火 Lv.' + r.guilds[0].level + ')' : '—'}`;
+      } else if (activeMode === 'monastery') {
+        leaderboard = r.heroes.map(h => ({ name: h.name, value: `${h.total.toLocaleString()} 修為`, detail: `${h.rank}${h.rhrDrop !== null ? `，靜止心率 ${h.rhrDrop > 0 ? '−' : '+'}${Math.abs(h.rhrDrop)}` : ''}` }));
+        guilds = r.guilds.map(g => ({ name: g.name, value: `人均 ${g.perMember.toLocaleString()}` }));
+        summaryText = `最高境界：${r.heroes[0] ? r.heroes[0].name + '（' + r.heroes[0].rank + '）' : '—'}`;
+      }
+      newArchive = {
+        id: `snapshot_${activeMode}_${Date.now()}`,
+        type: activeMode,
+        seasonTitle: snapshotTitle,
+        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
+        archivedAt: timeStampStr,
+        status: 'completed',
+        statusLabel: '🏁 手機同步資料片已結算封存',
+        isVisible: true,
+        config: r.cfg,
+        summaryText,
+        leaderboard,
+        guilds
+      };
+    }
+
+    // 4. WORLD BOSS SNAPSHOT (100% 絕對零誤差：直接克隆當前 live gameState 中的全部實時輸出與排行榜)
+    else {
+      const currentHeroStats = JSON.parse(JSON.stringify(gameState?.heroStats || window.heroStatsList || []));
+      currentHeroStats.sort((a, b) => (b.totalDamage || b.score || 0) - (a.totalDamage || a.score || 0));
+      const currentGuilds = JSON.parse(JSON.stringify(gameState?.guilds || []));
+      currentGuilds.sort((a, b) => (b.totalDamage || b.score || 0) - (a.totalDamage || a.score || 0));
+      const currentSummary = JSON.parse(JSON.stringify(gameState?.summary || {}));
+      const currentBoss = JSON.parse(JSON.stringify(gameState?.boss || {}));
+
+      newArchive = {
+        id: `snapshot_boss_${Date.now()}`,
+        type: 'world_boss',
+        seasonTitle: snapshotTitle,
+        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
+        archivedAt: timeStampStr,
+        status: "completed",
+        statusLabel: "🏁 本賽季討伐戰已圓滿結算封存",
+        isVisible: true,
+        boss: {
+          ...currentBoss,
+          seasonStart: activeStartStr,
+          seasonEnd: activeEndStr,
+          currentHp: currentBoss.currentHp !== undefined ? currentBoss.currentHp : Math.max(0, (currentBoss.maxHp || 350000) - (currentSummary.totalDamage || 0))
+        },
+        summary: currentSummary,
+        heroStats: currentHeroStats,
+        guildContributions: currentGuilds,
+        activities: (gameState?.activities || []).filter(a => a.isValidAttack).slice(0, 30)
+      };
+    }
+
+    const snapshots = getSnapshotsList();
+    snapshots.unshift(newArchive);
+
+    try {
+      await window.supabase.insert("game_config", { key: "snapshots", value: snapshots });
+      if (window.syncFromDatabase) await window.syncFromDatabase();
+      renderSnapshotTable();
+      alert(`🎉 成功生成賽季完整歷史快照【${snapshotTitle}】並同步寫入 Supabase 雲端資料庫！前台【過往英雄史】已永久保存！`);
+    } catch (err) {
+      console.error("Archive Save Error:", err);
+      alert("❌ 封存快照寫入雲端失敗：" + err.message);
+    }
+  } catch (e) {
+    console.error("Archive error:", e);
+    alert("封存失敗：" + e.message);
+  }
+}
+
+// -------------------------------------------------------------
+// HERO ROSTER & RANDOM ROLL (動態適應當前資料片)
+// -------------------------------------------------------------
+
+function renderHeroTable() {
+  const tbody = document.getElementById('admin-heroes-table-body');
+  if (!tbody || !gameState?.heroes) return;
+
+  const mode = document.getElementById('cfg-active-mode')?.value || 'classic';
+  tbody.innerHTML = '';
+
+    const heroesArr = Array.isArray(gameState.heroes) ? gameState.heroes : Object.values(gameState.heroes || {});
+  const sortedHeroes = heroesArr.sort((a,b) => {
+      let ag = a.guild || '', bg = b.guild || '';
+      if(ag !== bg) return ag.localeCompare(bg);
+      let ac = a.rpgClass || '', bc = b.rpgClass || '';
+      if(ac !== bc) return ac.localeCompare(bc);
+      return (a.name||'').localeCompare(b.name||'');
+  });
+  sortedHeroes.forEach(h => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-900/60 transition';
+    const heroClass = h.rpgClass || '狂戰士';
+    const meta = RPG_CLASSES[heroClass] || RPG_CLASSES['狂戰士'];
+
+    let classCellHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 bg-amber-950/40 border border-amber-800">主力成員</span>`;
+    if (mode === 'rpg_talent') {
+      classCellHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-bold" style="color: ${meta.color}; background: rgba(0,0,0,0.4); border: 1px solid ${meta.color}50;">${meta.badge} ${heroClass}</span>`;
+    } else if (mode === 'world_boss') {
+      classCellHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-bold text-rose-400 bg-rose-950/40 border border-rose-800">⚔️ 討伐先鋒</span>`;
+    }
+
+    const stravaIdDisplay = h.stravaId ? 
+      `<a href="https://www.strava.com/athletes/${h.stravaId}" target="_blank" class="font-mono text-cyan-400 font-bold hover:underline">#${h.stravaId} ↗</a>` : 
+      `<span class="text-slate-500 italic">未綁定</span>`;
+
+    const heroAvatarHtml = typeof window.renderHeroAvatarHtml === 'function'
+      ? window.renderHeroAvatarHtml(h, 'w-7 h-7', 'rounded-lg')
+      : `<div class="w-7 h-7 rounded-lg bg-slate-800 overflow-hidden border border-slate-700"><img src="${h.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${h.name}`}" class="w-full h-full object-cover"></div>`;
+    const heroCustomTitle = typeof window.renderHeroCustomTitleHtml === 'function'
+      ? window.renderHeroCustomTitleHtml(h.name)
+      : '';
+    const unlockedCount = Object.keys(gameState?.heroBadges?.[h.name] || {}).length;
+
+    tr.innerHTML = `
+      <td class="p-3 font-bold text-white flex items-center space-x-2">
+        ${heroAvatarHtml}
+        <span>${h.name}</span>
+        ${heroCustomTitle}
+        <span class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40 text-[9px] font-mono">🎖️${unlockedCount}</span>
+      </td>
+      <td class="p-3 font-mono">${h.age} 歲</td>
+      <td class="p-3 font-mono text-cyan-400 font-bold">${h.maxHr} bpm</td>
+      <td class="p-3"><span class="bg-slate-800 text-amber-300 px-2 py-0.5 rounded text-[11px]">${h.guild}</span></td>
+      <td class="p-3">${classCellHtml}</td>
+      <td class="p-3">${stravaIdDisplay}</td>
+      <td class="p-3 text-right space-x-1.5">
+        <button onclick="openEditHeroModal('${h.name}')" class="px-2.5 py-1 bg-cyan-950/60 text-cyan-300 border border-cyan-800/60 hover:bg-cyan-900 rounded-lg text-xs font-bold transition">✏️ 編輯</button>
+        <button onclick="deleteHero('${h.name}')" class="px-2.5 py-1 bg-rose-950/60 text-rose-300 border border-rose-800/60 hover:bg-rose-900 rounded-lg text-xs font-bold transition">🗑️ 刪除</button>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function randomizeAllHeroClasses() {
+  if (!confirm('確定要為所有冒險者隨機重新抽籤分配職業嗎？\n（分配後您依然可以點擊個別英雄進行手動調整）')) return;
+
+  const classes = ['狂戰士', '聖騎士', '遊俠', '大法師', '刺客'];
+  let heroes = [...(gameState?.heroes || [])];
+  if (heroes.length === 0) return;
+
+  let pool = [];
+  while (pool.length < heroes.length) {
+    pool = pool.concat([...classes].sort(() => Math.random() - 0.5));
+  }
+
+  try {
+    for (let i = 0; i < heroes.length; i++) {
+      const assignedClass = pool[i];
+      await window.supabase.update("heroes", `name=eq.${encodeURIComponent(heroes[i].name)}`, {
+        rpg_class: assignedClass
+      });
+    }
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert("🎉 隨機抽籤分配完成！所有冒險者天賦已更新並寫入 Supabase 資料庫！全服即刻生效！");
+  } catch (e) {
+    console.error("Randomize Classes Error:", e);
+    alert("❌ 職業分配失敗：" + e.message);
+  }
+}
+
+function openAddHeroModal() {
+  document.getElementById('modal-hero-title').innerText = '新增冒險者';
+  document.getElementById('hero-edit-original-name').value = '';
+  document.getElementById('hero-modal-name').value = '';
+  document.getElementById('hero-modal-name').disabled = false;
+  document.getElementById('hero-modal-age').value = '35';
+  document.getElementById('hero-modal-guild').value = '';
+  document.getElementById('hero-modal-class').value = '狂戰士';
+  const stravaInput = document.getElementById('hero-modal-strava-id');
+  if (stravaInput) stravaInput.value = '';
+  updateModalMaxHr();
+  document.getElementById('modal-hero').classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function openEditHeroModal(heroName) {
+  const hero = gameState?.heroes?.find(h => h.name === heroName);
+  if (!hero) return;
+
+  document.getElementById('modal-hero-title').innerText = `編輯冒險者 - ${hero.name}`;
+  document.getElementById('hero-edit-original-name').value = hero.name;
+  document.getElementById('hero-modal-name').value = hero.name;
+  document.getElementById('hero-modal-name').disabled = true;
+  document.getElementById('hero-modal-age').value = hero.age;
+  document.getElementById('hero-modal-guild').value = hero.guild;
+  document.getElementById('hero-modal-class').value = hero.rpgClass || '狂戰士';
+  const stravaInput = document.getElementById('hero-modal-strava-id');
+  if (stravaInput) stravaInput.value = hero.stravaId || '';
+  updateModalMaxHr();
+  document.getElementById('modal-hero').classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeHeroModal() {
+  document.getElementById('modal-hero').classList.add('hidden');
+}
+
+function updateModalMaxHr() {
+  const age = parseInt(document.getElementById('hero-modal-age').value) || 35;
+  const maxHr = 220 - age;
+  document.getElementById('hero-modal-maxhr-text').innerText = maxHr;
+}
+
+async function saveHeroFromModal() {
+  const origName = document.getElementById('hero-edit-original-name').value;
+  const name = document.getElementById('hero-modal-name').value.trim();
+  const age = parseInt(document.getElementById('hero-modal-age').value) || 35;
+  const guild = document.getElementById('hero-modal-guild').value.trim() || '自由英雄';
+  const rpgClass = document.getElementById('hero-modal-class').value;
+  const stravaId = (document.getElementById('hero-modal-strava-id')?.value || "").trim();
+
+  if (!name) {
+    alert('請填寫英雄姓名');
+    return;
+  }
+  if (!assertCloudReady()) return;
+
+  if (!origName && gameState?.heroes?.some(h => h.name === name)) {
+    alert(`⚠️ 已經有名為【${name}】的冒險者，請改用「編輯」或換一個名字（避免覆蓋既有英雄資料）。`);
+    return;
+  }
+
+  const existingHero = gameState?.heroes?.find(h => h.name === (origName || name));
+  // 年齡未變更時保留原本的最大心率 (避免覆蓋 GM 自訂的 MaxHR)，年齡變更才以 220 - 年齡 重新估算
+  const maxHr = (existingHero && Number(existingHero.age) === age && existingHero.maxHr) ? existingHero.maxHr : 220 - age;
+  const preservedAvatar = existingHero?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}&backgroundColor=0f172a`;
+
+  const heroObj = {
+    name: name,
+    age: age,
+    max_hr: maxHr,
+    guild: guild,
+    rpg_class: rpgClass,
+    strava_id: stravaId,
+    avatar: preservedAvatar
+  };
+
+  try {
+    await window.supabase.insert("heroes", heroObj);
+    closeHeroModal();
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(`🎉 冒險者【${name}】已成功儲存至 Supabase 雲端資料庫！全站即刻同步！`);
+    showAdminToast(`已儲存冒險者：${name}`);
+  } catch (e) {
+    console.error("Save Hero Error:", e);
+    alert("❌ 儲存失敗：" + e.message);
+  }
+}
+
+async function deleteHero(name) {
+  if (!confirm(`確定要從 Supabase 雲端資料庫徹底刪除冒險者【${name}】嗎？`)) return;
+
+  try {
+    await window.supabase.delete("heroes", `name=eq.${encodeURIComponent(name)}`);
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(`🗑️ 冒險者【${name}】已成功自雲端資料庫刪除！`);
+    showAdminToast(`已刪除冒險者：${name}`);
+  } catch (e) {
+    console.error("Delete Hero Error:", e);
+    alert("❌ 刪除失敗：" + e.message);
+  }
+}
+
+function populateFormDropdowns() {
+  const select = document.getElementById('inp-hero');
+  if (!select || !gameState?.heroes) return;
+
+  const mode = document.getElementById('cfg-active-mode')?.value || 'classic';
+  select.innerHTML = '';
+  gameState.heroes.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.name;
+    if (mode === 'rpg_talent') {
+      opt.innerText = `${h.name} (${h.guild} • ${h.rpgClass || '狂戰士'})`;
+    } else {
+      opt.innerText = `${h.name} (${h.guild})`;
+    }
+    select.appendChild(opt);
+  });
+}
+
+function populateBossConfig() {
+  const boss = gameState?.boss || {};
+  const nameEl = document.getElementById('cfg-boss-name');
+  const maxHpEl = document.getElementById('cfg-boss-maxhp');
+  const currHpEl = document.getElementById('cfg-boss-currhp');
+  const minDurEl = document.getElementById('cfg-min-dur');
+  const magMultEl = document.getElementById('cfg-mag-mult');
+
+  if (nameEl) nameEl.value = boss.name || '';
+  if (maxHpEl) maxHpEl.value = boss.maxHp || 350000;
+  if (currHpEl) currHpEl.value = boss.currentHp !== undefined ? boss.currentHp : 232849;
+  if (minDurEl) minDurEl.value = boss.rules?.minDurationMinutes || 30;
+  if (magMultEl) magMultEl.value = boss.rules?.magicMultiplier || 15;
+}
+
+function previewDamageCalculation() {
+  const mode = document.getElementById('cfg-active-mode')?.value || 'classic';
+  const heroName = document.getElementById('inp-hero')?.value || '';
+  const hero = gameState?.heroes?.find(h => h.name === heroName);
+  const maxHrEst = hero?.maxHr || 185;
+
+  const duration = parseFloat(document.getElementById('inp-duration')?.value) || 0;
+  const avgHr = parseFloat(document.getElementById('inp-avg-hr')?.value) || 0;
+  const maxHr = parseFloat(document.getElementById('inp-max-hr')?.value) || 0;
+  const calories = parseFloat(document.getElementById('inp-calories')?.value) || 0;
+
+  const minDur = parseFloat(document.getElementById('cfg-global-min-dur')?.value || document.getElementById('cfg-classic-min-dur')?.value) || 30.0;
+  const magMult = parseFloat(document.getElementById('cfg-mag-mult')?.value) || 15.0;
+
+  let val1 = 0, val2 = 0, val3 = 0, totalVal = 0;
+
+  if (duration >= minDur) {
+    val1 = Math.round(calories);
+    if (maxHrEst > 0 && avgHr > 0) {
+      const ratio = avgHr / maxHrEst;
+      const trimp = duration * ratio * Math.exp(1.92 * ratio);
+      val2 = Math.round(trimp * magMult);
+    }
+    const gap = Math.max(0, maxHr - avgHr);
+    val3 = Math.round(gap * 100);
+    if (mode === 'survival') {
+      // 飢餓法則：狩獵補血 = 熱量、搜刮物資 = TRIMP × 1.5 (不計爆擊)
+      const ratio = (maxHrEst > 0 && avgHr > 0) ? avgHr / maxHrEst : 0;
+      const trimp = ratio > 0 ? duration * ratio * Math.exp(1.92 * ratio) : 0;
+      val2 = Math.round(trimp * 1.5);
+      val3 = 0;
+    }
+  }
+
+  totalVal = val1 + val2 + val3;
+
+  const p1 = document.getElementById('prev-phys');
+  const p2 = document.getElementById('prev-mag');
+  const p3 = document.getElementById('prev-crit');
+  const pt = document.getElementById('prev-total');
+  if (p1) p1.innerText = val1.toLocaleString();
+  if (p2) p2.innerText = val2.toLocaleString();
+  if (p3) p3.innerText = val3.toLocaleString();
+  if (pt) pt.innerText = totalVal.toLocaleString();
+}
+
+async function handleManualAttack(e) {
+  e.preventDefault();
+
+  const heroName = document.getElementById('inp-hero').value;
+  const type = document.getElementById('inp-type').value;
+  const duration = parseFloat(document.getElementById('inp-duration').value) || 0;
+  const avgHr = parseFloat(document.getElementById('inp-avg-hr').value) || 0;
+  const maxHr = parseFloat(document.getElementById('inp-max-hr').value) || 0;
+  const calories = parseFloat(document.getElementById('inp-calories').value) || 0;
+  const title = document.getElementById('inp-title').value.trim() || '手動打卡鍛鍊';
+
+  if (!heroName) { alert('請選擇英雄'); return; }
+  if (duration <= 0) { alert('運動時長必須大於 0 分鐘'); return; }
+
+  const newActId = `manual_${Date.now()}`;
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  const actObj = {
+    id: newActId,
+    hero: heroName,
+    date: dateStr,
+    type: type,
+    name: title,
+    duration: duration,
+    distance: 0,
+    elevation: 0,
+    avg_hr: avgHr,
+    max_hr: maxHr,
+    calories: calories,
+    is_manual: true,
+    is_excluded: false
+  };
+
+  try {
+    await window.supabase.insert("activities", actObj);
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(`🎉 登錄成功！${heroName} 完成鍛鍊打卡，數據已即時同步至 Supabase 雲端資料庫並計入前台看板！`);
+    document.getElementById('form-manual-entry').reset();
+    previewDamageCalculation();
+  } catch (err) {
+    console.error("Manual Entry Error:", err);
+    alert("❌ 補登失敗：" + err.message);
+  }
+}
+
+async function saveClassicSettings() {
+  const minDur = parseFloat(document.getElementById('cfg-classic-min-dur')?.value) || 30;
+  const globalMinDurEl = document.getElementById('cfg-global-min-dur');
+  if (globalMinDurEl) globalMinDurEl.value = minDur;
+
+  try {
+    await syncAllSettingsToSupabase('✅ 經典競技參數與資料片模式已成功儲存至 Supabase 雲端資料庫！');
+  } catch (e) {
+    console.error("Save Classic Settings Error:", e);
+    alert("❌ 儲存失敗：" + e.message);
+  }
+}
+
+async function saveBossSettings() {
+  try {
+    await syncAllSettingsToSupabase('✅ 世界 Boss 血量與討伐參數已成功更新至 Supabase 雲端資料庫！前台看板立即生效！');
+  } catch (e) {
+    console.error('Save boss settings error:', e);
+    alert("❌ 儲存失敗：" + e.message);
+  }
+}
+
+// -------------------------------------------------------------
+// ACTIVITY CRUD & ANOMALY DETECTION (含日期/時長/心率/熱量/傷害欄位排序)
+// -------------------------------------------------------------
+let adminSortCol = 'date';
+let adminSortAsc = false; // 預設最新日期在最上方 (降冪)
+
+function parseAdminActivityTimestamp(dateStr) {
+  if (!dateStr) return 0;
+  if (typeof window.parseActivityDate === 'function') {
+    const d = window.parseActivityDate(dateStr);
+    if (d && !isNaN(d.getTime())) return d.getTime();
+  }
+  const s = String(dateStr).trim().replace(/-/g, '/');
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function formatAdminActivityDate(dateStr) {
+  if (!dateStr) return '—';
+  const ts = parseAdminActivityTimestamp(dateStr);
+  if (!ts) return dateStr;
+  const d = new Date(ts);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  if (hh === '00' && min === '00' && !String(dateStr).includes(':')) {
+    return `${yyyy}/${mm}/${dd}`;
+  }
+  return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+}
+
+function sortAdminActivities(col) {
+  if (adminSortCol === col) {
+    adminSortAsc = !adminSortAsc;
+  } else {
+    adminSortCol = col;
+    adminSortAsc = false;
+  }
+
+  const cols = ['date', 'duration', 'avgHr', 'calories', 'damage'];
+  cols.forEach(c => {
+    const el = document.getElementById(`admin-sort-${c}`);
+    if (el) {
+      if (c === adminSortCol) {
+        el.innerText = adminSortAsc ? '▲' : '▼';
+        el.className = 'text-amber-400 font-bold';
+      } else {
+        el.innerText = '↕';
+        el.className = 'text-slate-600';
+      }
+    }
+  });
+
+  filterAdminActivities();
+}
+
+function renderActivityTable() {
+  const tbody = document.getElementById('admin-activities-table-body');
+  const heroFilter = document.getElementById('admin-act-hero-filter');
+  if (!tbody) return;
+
+  // 手動補登資料已全部存放於 Supabase；清除舊版殘留在瀏覽器的本地快取 (避免出現幽靈紀錄 / 永久作廢)
+  try {
+    localStorage.removeItem('manual_activities');
+    localStorage.removeItem('excluded_activity_ids');
+  } catch(e) {}
+  if (!allActivitiesCache) allActivitiesCache = [];
+
+  if (heroFilter && gameState?.heroes) {
+    const currHero = heroFilter.value;
+    heroFilter.innerHTML = '<option value="">全部英雄</option>';
+    gameState.heroes.forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h.name;
+      opt.innerText = h.name;
+      if (h.name === currHero) opt.selected = true;
+      heroFilter.appendChild(opt);
+    });
+  }
+
+  filterAdminActivities();
+}
+
+function filterAdminActivities() {
+  const tbody = document.getElementById('admin-activities-table-body');
+  if (!tbody) return;
+
+  const query = (document.getElementById('admin-act-search')?.value || '').toLowerCase().trim();
+  const selectedHero = document.getElementById('admin-act-hero-filter')?.value || '';
+
+  tbody.innerHTML = '';
+
+  const filtered = (allActivitiesCache || []).filter(a => {
+    if (selectedHero && a.hero !== selectedHero) return false;
+    if (query) {
+      const matchHero = (a.hero || '').toLowerCase().includes(query);
+      const matchTitle = (a.title || a.name || '').toLowerCase().includes(query);
+      const matchType = (a.type || '').toLowerCase().includes(query);
+      const matchId = String(a.id || '').toLowerCase().includes(query);
+      const matchDup = (query.includes('重複') || query === 'dup') && a.isSuspectedDuplicate;
+      if (!matchHero && !matchTitle && !matchType && !matchId && !matchDup) return false;
+    }
+    return true;
+  });
+
+  // Sort BEFORE slicing so all records across all months are ordered properly
+  filtered.sort((a, b) => {
+    let va = 0, vb = 0;
+    if (adminSortCol === 'date') {
+      va = parseAdminActivityTimestamp(a.date || a.time);
+      vb = parseAdminActivityTimestamp(b.date || b.time);
+    } else if (adminSortCol === 'duration') {
+      va = Number(a.duration) || 0;
+      vb = Number(b.duration) || 0;
+    } else if (adminSortCol === 'avgHr') {
+      va = Number(a.avgHr) || 0;
+      vb = Number(b.avgHr) || 0;
+    } else if (adminSortCol === 'calories') {
+      va = Number(a.calories) || 0;
+      vb = Number(b.calories) || 0;
+    } else if (adminSortCol === 'damage') {
+      va = Number(a.damage) || 0;
+      vb = Number(b.damage) || 0;
+    }
+    if (va === vb) {
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    }
+    return adminSortAsc ? (va - vb) : (vb - va);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-500">查無符合條件的運動打卡紀錄</td></tr>`;
+    return;
+  }
+
+  filtered.slice(0, 500).forEach(a => {
+    const tr = document.createElement('tr');
+    const actId = String(a.id);
+    const isExcluded = Boolean(a.isExcluded);
+    // 只有手動補登的紀錄可以永久刪除；Strava 紀錄若被刪除，爬蟲下次會重新抓回並恢復計分，因此一律以「作廢」處理
+    const isManual = String(actId).startsWith('ACT-') || String(actId).startsWith('manual_') || Boolean(a.isManual);
+    const isNumericStrava = /^\d+$/.test(actId);
+
+    const anomalies = [];
+    const heroInfo = gameState?.heroes?.find(h => h.name === a.hero);
+    const maxHrLimit = heroInfo?.maxHr || 185;
+
+    if (a.avgHr > maxHrLimit || a.maxHr > 220) {
+      anomalies.push('<span class="bg-rose-900/60 text-rose-300 border border-rose-600 px-1 py-0.2 rounded text-[9px]">⚠️心率異常</span>');
+    }
+    if (a.duration > 300) {
+      anomalies.push('<span class="bg-amber-900/60 text-amber-300 border border-amber-600 px-1 py-0.2 rounded text-[9px]">⚠️時長過長</span>');
+    }
+    if ((a.rawCalories ?? a.calories) > 3000) {
+      anomalies.push('<span class="bg-purple-900/60 text-purple-300 border border-purple-600 px-1 py-0.2 rounded text-[9px]">⚠️熱量過高</span>');
+    }
+
+    tr.className = `hover:bg-slate-900/60 transition ${isExcluded ? 'opacity-40 line-through bg-rose-950/20' : ''}`;
+
+    const sourceHtml = isNumericStrava 
+      ? `<a href="https://www.strava.com/activities/${actId}" target="_blank" class="text-orange-400 font-mono font-bold hover:underline">#${actId} ↗</a>`
+      : `<span class="text-amber-400 font-mono font-bold">手動 #${actId.slice(-6)}</span>`;
+
+    const dupBadge = (!isExcluded && a.isSuspectedDuplicate)
+      ? `<label class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold border cursor-pointer whitespace-nowrap ${a.duplicateIncluded ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-600'}" title="與紀錄 #${a.duplicateOf} 運動時間重疊，系統保留分數最高的一筆。勾選後此筆也會納入計分。">
+          <input type="checkbox" class="accent-emerald-500" ${a.duplicateIncluded ? 'checked' : ''} onchange="toggleDuplicateInclude('${actId}', this.checked)">
+          ${a.duplicateIncluded ? '重複但已納入計算' : '⚠️ 疑似重複(不計分) • 勾選納入'}
+        </label>`
+      : '';
+    const statusBadge = isExcluded
+      ? '<span class="text-[10px] bg-rose-950 text-rose-400 border border-rose-800 px-1.5 py-0.5 rounded font-bold">GM作廢</span>'
+      : dupBadge ? dupBadge : (a.isValidAttack ? '<span class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded font-bold">有效打卡</span>' : '<span class="text-[10px] text-slate-500">不計分</span>');
+
+    const actTitle = a.title || a.name || a.type || '運動';
+    const actTypeBadge = a.type && a.type !== actTitle
+      ? `<span class="text-[9px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded ml-1">${a.type}</span>`
+      : '';
+
+    const eventBonusPill = (a.eventBonusPct > 0 && a.isValidAttack && !isExcluded)
+      ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold" title="${a.eventBonusLabel || '活動加成'}">⚡+${a.eventBonusPct}%</span>`
+      : '';
+
+    tr.innerHTML = `
+      <td class="p-3">${sourceHtml}</td>
+      <td class="p-3 font-mono text-slate-300 whitespace-nowrap">${formatAdminActivityDate(a.date || a.time)}</td>
+      <td class="p-3 font-bold text-white whitespace-nowrap">${a.hero} <span class="text-[10px] text-slate-400 font-normal">(${a.guild})</span></td>
+      <td class="p-3 text-slate-300 max-w-[180px] truncate" title="${actTitle} (${a.type || ''})">${actTitle}${actTypeBadge}</td>
+      <td class="p-3 font-mono">${a.duration}分</td>
+      <td class="p-3 font-mono text-cyan-300">${a.avgHr} / ${a.maxHr}</td>
+      <td class="p-3 font-mono" title="原始熱量: ${Math.round(a.rawCalories ?? a.calories)} kcal">${Math.round(a.rawCalories ?? a.calories)}</td>
+      <td class="p-3 font-mono font-bold text-amber-400">${(a.damage || 0).toLocaleString()} ${eventBonusPill}</td>
+      <td class="p-3">
+        <div class="flex items-center space-x-1">
+          ${statusBadge}
+          ${anomalies.join(' ')}
+        </div>
+      </td>
+      <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
+        <button onclick="openEditActivityModal('${actId}')" class="text-cyan-400 hover:text-cyan-300 font-bold text-xs">編輯</button>
+        ${isExcluded 
+          ? `<button onclick="toggleExcludeActivity('${actId}', false)" class="text-emerald-400 hover:text-emerald-300 font-bold text-xs">恢復計算</button>`
+          : `<button onclick="toggleExcludeActivity('${actId}', true)" class="text-rose-400 hover:text-rose-300 font-bold text-xs">作廢扣分</button>`
+        }
+        ${isManual ? `<button onclick="deleteManualActivity('${actId}')" class="text-slate-400 hover:text-rose-400 font-bold text-xs">刪除</button>` : ''}
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+/**
+ * GM 勾選 / 取消「疑似重複」紀錄是否納入計分 (存在 gm_ops_config.duplicateOverrides，不改動原始運動資料)
+ */
+async function toggleDuplicateInclude(actId, include) {
+  const gmOps = ensureGMOpsState();
+  if (!gmOps.duplicateOverrides || typeof gmOps.duplicateOverrides !== 'object') gmOps.duplicateOverrides = {};
+  if (include) gmOps.duplicateOverrides[String(actId)] = true;
+  else delete gmOps.duplicateOverrides[String(actId)];
+  const ok = await persistGMOpsToSupabase(include
+    ? `✅ 紀錄 #${actId} 已由 GM 確認納入計分（不再視為重複）`
+    : `⚠️ 紀錄 #${actId} 恢復為「疑似重複(不計分)」`);
+  if (ok === false) renderActivityTable();
+}
+
+async function toggleExcludeActivity(actId, shouldExclude) {
+  try {
+    await window.supabase.update("activities", `id=eq.${encodeURIComponent(actId)}`, { is_excluded: shouldExclude });
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(shouldExclude ? `🚫 紀錄 #${actId} 已在 Supabase 資料庫設為作廢，不再計入分數！` : `✅ 紀錄 #${actId} 已在 Supabase 資料庫恢復計入分數！`);
+  } catch (e) {
+    console.error("Toggle Exclude Error:", e);
+    alert("❌ 操作失敗：" + e.message);
+  }
+}
+
+async function deleteManualActivity(actId) {
+  if (!confirm(`確定要從 Supabase 雲端資料庫永久刪除紀錄 #${actId} 嗎？`)) return;
+
+  try {
+    await window.supabase.delete("activities", `id=eq.${encodeURIComponent(actId)}`);
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(`🗑️ 紀錄 #${actId} 已從 Supabase 雲端資料庫永久刪除！`);
+  } catch (e) {
+    console.error("Delete Activity Error:", e);
+    alert("❌ 刪除失敗：" + e.message);
+  }
+}
+
+function openEditActivityModal(actId) {
+  const act = allActivitiesCache.find(a => String(a.id) === String(actId));
+  if (!act) return;
+
+  document.getElementById('act-edit-id').value = act.id;
+  document.getElementById('act-edit-title').value = act.title || act.name || '';
+  document.getElementById('act-edit-duration').value = act.duration || 0;
+  document.getElementById('act-edit-calories').value = Math.round(act.rawCalories ?? act.calories ?? 0);
+  document.getElementById('act-edit-avghr').value = act.avgHr || 0;
+  document.getElementById('act-edit-maxhr').value = act.maxHr || 0;
+
+  document.getElementById('modal-activity').classList.remove('hidden');
+}
+
+function closeActivityModal() {
+  document.getElementById('modal-activity').classList.add('hidden');
+}
+
+async function saveActivityFromModal() {
+  const actId = document.getElementById('act-edit-id').value;
+  const act = allActivitiesCache.find(a => String(a.id) === String(actId));
+  if (!act) return;
+
+  const newTitle = document.getElementById('act-edit-title').value.trim();
+  const newDuration = parseFloat(document.getElementById('act-edit-duration').value) || 0;
+  const newCalories = parseFloat(document.getElementById('act-edit-calories').value) || 0;
+  const newAvgHr = parseFloat(document.getElementById('act-edit-avghr').value) || 0;
+  const newMaxHr = parseFloat(document.getElementById('act-edit-maxhr').value) || 0;
+
+  act.title = newTitle;
+  act.name = newTitle;
+  act.duration = newDuration;
+  act.calories = newCalories;
+  act.avgHr = newAvgHr;
+  act.maxHr = newMaxHr;
+
+  try {
+    await window.supabase.update("activities", `id=eq.${encodeURIComponent(actId)}`, {
+      name: newTitle,
+      duration: newDuration,
+      calories: newCalories,
+      avg_hr: newAvgHr,
+      max_hr: newMaxHr
+    });
+    closeActivityModal();
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert('✅ 運動紀錄已成功更新並同步至 Supabase 雲端資料庫！');
+    showAdminToast(`✅ 已更新運動紀錄 #${actId}`);
+  } catch (e) {
+    console.error("Save Activity Error:", e);
+    alert('❌ 更新失敗：' + e.message);
+  }
+}
+
+function exportFullBackupJSON() {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(gameState, null, 2));
+  const downloadAnchor = document.createElement('a');
+  const d = new Date();
+  const dateTag = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", `iron_heroes_backup_${dateTag}.json`);
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+}
+
+function importFullBackupJSON(event) {
+  const input = event.target;
+  const file = input.files[0];
+  input.value = ''; // 允許重複選取同一個檔案
+  if (!file) return;
+  if (!assertCloudReady()) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let b;
+    try {
+      b = JSON.parse(e.target.result);
+    } catch (err) {
+      alert('❌ 匯入失敗：JSON 格式無效！');
+      return;
+    }
+    if (!b || !Array.isArray(b.heroes) || !Array.isArray(b.activities)) {
+      alert('❌ 這不是由「匯出備份」產生的完整備份檔 (缺少 heroes / activities)。');
+      return;
+    }
+    if (!confirm(`確定要以此備份還原 Supabase 雲端資料嗎？\n\n英雄 ${b.heroes.length} 位 / 運動紀錄 ${b.activities.length} 筆 / 遊戲設定與 GM 活動、徽章設定\n\n※ 備份內的資料會覆蓋雲端同 ID 的資料；雲端多出來（備份裡沒有）的紀錄會保留不刪除。`)) return;
+
+    try {
+      const heroRows = b.heroes.filter(h => h && h.name).map(h => ({
+        name: h.name,
+        age: h.age ?? 35,
+        max_hr: h.maxHr ?? h.max_hr ?? 185,
+        guild: h.guild || '自由英雄',
+        rpg_class: h.rpgClass || h.rpg_class || '狂戰士',
+        strava_id: h.stravaId || h.strava_id || '',
+        avatar: h.avatar || ''
+      }));
+      if (heroRows.length) await window.supabase.insert('heroes', heroRows);
+
+      // 運動紀錄還原時使用「原始熱量」(rawCalories)，避免把限時活動加成後的數值寫回資料庫造成重複加成
+      const actRows = b.activities.filter(a => a && a.id !== undefined && a.hero).map(a => ({
+        id: String(a.id),
+        hero: a.hero,
+        date: a.date || a.time,
+        type: a.type || 'Workout',
+        name: a.name || a.title || '運動',
+        duration: Number(a.duration) || 0,
+        distance: Number(a.distance) || 0,
+        elevation: Number(a.elevation) || 0,
+        avg_hr: Number(a.avgHr ?? a.avg_hr) || 0,
+        max_hr: Number(a.maxHr ?? a.max_hr) || 0,
+        calories: Number(a.rawCalories ?? a.calories) || 0,
+        is_manual: Boolean(a.isManual ?? a.is_manual),
+        is_excluded: Boolean(a.isExcluded ?? a.is_excluded)
+      }));
+      for (let i = 0; i < actRows.length; i += 500) {
+        await window.supabase.insert('activities', actRows.slice(i, i + 500));
+      }
+
+      const seasonOnly = (c) => c ? { seasonStart: c.seasonStart, seasonEnd: c.seasonEnd, minDuration: c.minDuration } : undefined;
+      const bossCfg = b.boss ? { ...b.boss } : undefined;
+      if (bossCfg) delete bossCfg.currentHp;
+      const cfgRows = {
+        active_mode: b.activeMode,
+        boss_config: bossCfg,
+        classic_config: seasonOnly(b.classic),
+        rpg_config: b.rpg ? { seasonStart: b.rpg.seasonStart, seasonEnd: b.rpg.seasonEnd } : undefined,
+        faction_config: b.faction,
+        survival_config: b.survival,
+        base_config: b.base,
+        bingo_config: b.bingo,
+        gm_ops_config: b.gmOps,
+        snapshots: b.snapshots,
+        exclude_keywords: b.excludeKeywords
+      };
+      await Promise.all(Object.entries(cfgRows)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([key, value]) => window.supabase.insert('game_config', { key, value })));
+
+      alert('🎉 備份已成功還原至 Supabase 雲端資料庫！頁面將重新整理。');
+      window.location.reload();
+    } catch (err) {
+      console.error('Import Backup Error:', err);
+      alert('❌ 還原失敗：' + err.message + '\n(部分資料可能已寫入，請重新整理確認)');
+    }
+  };
+  reader.readAsText(file);
+}
+
+
+// -------------------------------------------------------------
+// 6. STRAVA CRAWLER & GITHUB ACTIONS SETTINGS
+// -------------------------------------------------------------
+let crawlerConfig = {
+  athleteProfiles: {
+    "468395126": "Kerker",
+    "972959242": "Calla",
+    "449473529": "Naomi",
+    "2029007949": "Weber",
+    "822925839": "Mooooo",
+    "387396829": "Moupower"
+  },
+  excludeKeywords: ["羽球", "不想抓的關鍵字"],
+  sheetUrl: "https://docs.google.com/spreadsheets/d/1gNr8ptE_zjIeZsliaEqddqp5xz3Ir0LT7AkLmnSh3pY/edit",
+  worksheetName: "Rawdata"
+};
+
+async function fetchCrawlerConfig() {
+  try {
+    const res = await fetch("/api/crawler/config");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Object.keys(data).length > 0) {
+        crawlerConfig = Object.assign(crawlerConfig, data);
+      }
+    } else {
+      throw new Error("Local API offline");
+    }
+  } catch (e) {
+    try {
+      const fbRes = await fetch("/data/crawler_config.json");
+      if (fbRes.ok) {
+        const data = await fbRes.json();
+        if (data) crawlerConfig = Object.assign(crawlerConfig, data);
+      }
+    } catch (err) {}
+  }
+  renderCrawlerUI();
+}
+
+function renderCrawlerUI() {
+  if (window.lucide) lucide.createIcons();
+}
+
+function addCrawlerAthlete() {
+  const idInput = document.getElementById("crawler-new-ath-id");
+  const heroSelect = document.getElementById("crawler-new-ath-hero");
+  const customNameInput = document.getElementById("crawler-new-ath-custom-name");
+  const customGuildInput = document.getElementById("crawler-new-ath-custom-guild");
+  const ageInput = document.getElementById("crawler-new-ath-age");
+
+  const athId = (idInput?.value || "").trim();
+  const customName = (customNameInput?.value || "").trim();
+  const customGuild = (customGuildInput?.value || "").trim() || "自由英雄";
+  const age = parseInt(ageInput?.value || "35", 10) || 35;
+  const maxHr = 220 - age;
+  const selectedName = (heroSelect?.value || "").trim();
+
+  const heroName = customName || selectedName;
+
+  if (!athId) {
+    alert("❌ 請輸入選手的 Strava 數字 ID！");
+    return;
+  }
+  if (!heroName) {
+    alert("❌ 請選擇或手動輸入冒險者姓名！");
+    return;
+  }
+
+  // Ensure hero exists in gameState.heroes
+  if (!gameState.heroes) gameState.heroes = [];
+  let existingHero = gameState.heroes.find(h => h.name === heroName);
+  if (!existingHero) {
+    existingHero = {
+      name: heroName,
+      age: age,
+      maxHr: maxHr,
+      guild: customGuild,
+      rpgClass: "狂戰士",
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${heroName}&backgroundColor=0f172a`
+    };
+    gameState.heroes.push(existingHero);
+  } else if (customName) {
+    existingHero.age = age;
+    existingHero.maxHr = maxHr;
+    existingHero.guild = customGuild;
+  }
+
+  localStorage.setItem("game_state", JSON.stringify(gameState));
+
+  if (!crawlerConfig.athleteProfiles) crawlerConfig.athleteProfiles = {};
+  crawlerConfig.athleteProfiles[athId] = heroName;
+
+  if (idInput) idInput.value = "";
+  if (customNameInput) customNameInput.value = "";
+  if (customGuildInput) customGuildInput.value = "";
+
+  populateFormDropdowns();
+  renderHeroTable();
+  renderCrawlerUI();
+
+  alert(`🎉 成功綁定選手：${heroName} (公會: ${existingHero.guild} • 年齡: ${existingHero.age}歲/極限心率: ${existingHero.maxHr}bpm) ➔ Strava ID: #${athId}！\n請記得點擊右上角【💾 儲存爬蟲設定】以同步生效！`);
+  showAdminToast(`已加入選手：${heroName} (#${athId})`);
+}
+
+function deleteCrawlerAthlete(athId) {
+  if (crawlerConfig.athleteProfiles && crawlerConfig.athleteProfiles[athId]) {
+    const name = crawlerConfig.athleteProfiles[athId];
+    delete crawlerConfig.athleteProfiles[athId];
+    renderCrawlerUI();
+    showAdminToast(`已移除選手：${name} (#${athId})`);
+  }
+}
+
+function addCrawlerKeyword() {
+  const kwInput = document.getElementById("crawler-new-keyword");
+  const kw = (kwInput?.value || "").trim();
+  if (!kw) return;
+
+  if (!crawlerConfig.excludeKeywords) crawlerConfig.excludeKeywords = [];
+  if (!crawlerConfig.excludeKeywords.includes(kw)) {
+    crawlerConfig.excludeKeywords.push(kw);
+  }
+  if (kwInput) kwInput.value = "";
+  renderCrawlerUI();
+  showAdminToast(`已加入排除關鍵字：${kw}`);
+}
+
+function deleteCrawlerKeyword(kw) {
+  if (crawlerConfig.excludeKeywords) {
+    crawlerConfig.excludeKeywords = crawlerConfig.excludeKeywords.filter(k => k !== kw);
+    renderCrawlerUI();
+    showAdminToast(`已移除排除字：${kw}`);
+  }
+}
+
+async function saveCrawlerConfig() {
+  const sheetInput = document.getElementById("crawler-sheet-url");
+  const wsInput = document.getElementById("crawler-worksheet-name");
+
+  if (sheetInput) crawlerConfig.sheetUrl = sheetInput.value.trim();
+  if (wsInput) crawlerConfig.worksheetName = wsInput.value.trim() || "Rawdata";
+
+  localStorage.setItem("iron_heroes_crawler_config", JSON.stringify(crawlerConfig));
+
+  const athleteCount = Object.keys(crawlerConfig.athleteProfiles || {}).length;
+  const athleteSummary = Object.entries(crawlerConfig.athleteProfiles || {})
+    .map(([id, name]) => `• #${id} ➔ ${name}`)
+    .join("\n");
+
+  try {
+    const res = await fetch("/api/crawler/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(crawlerConfig)
+    });
+    if (res.ok) {
+      alert(`✅【Strava 爬蟲設定已成功儲存並同步！】\n\n👥 目前監控的選手名單 (${athleteCount} 位)：\n${athleteSummary}\n\n🚫 排除關鍵字：${(crawlerConfig.excludeKeywords || []).join(", ") || "無"}\n📊 目標試算表：${crawlerConfig.worksheetName}\n\n⚡ 下次 GitHub Actions 雲端定時排程（每 30 分鐘）或手動 Run workflow 時，將自動爬取以上所有選手！`);
+      showAdminToast("✅ Strava 爬蟲設定已成功儲存至伺服器！");
+    } else {
+      alert(`✅ 爬蟲設定已保存至本地快取！\n共有 ${athleteCount} 位選手納入監控名冊。`);
+    }
+  } catch (e) {
+    alert(`✅ 爬蟲設定已於本地保存！\n共有 ${athleteCount} 位選手納入監控名冊。`);
+  }
+}
+
+async function runCrawlerNow() {
+  const modal = document.getElementById("modal-crawler-log");
+  const outEl = document.getElementById("crawler-terminal-output");
+  if (modal) modal.classList.remove("hidden");
+  if (outEl) outEl.innerText = "[系統] 🚀 正在檢查 Strava 爬蟲狀態與雲端工作流...\n\n";
+
+  try {
+    const res = await fetch("/api/crawler/run", { method: "POST" });
+    if (res.ok) {
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        if (outEl) {
+          outEl.innerText = (data.output || "無輸出紀錄") + (data.success ? "\n\n✅ 狀態檢查完成！" : "\n\n❌ 執行結束");
+        }
+        return;
+      } catch (err) {}
+    }
+  } catch (e) {}
+
+  if (outEl) {
+    outEl.innerText = `[GitHub Actions 雲端爬蟲架構]
+⚡ Strava 爬蟲已由 GitHub Actions 雲端排程託管 (每 30 分鐘自動定時執行)！
+
+💡 隨時「立即手動抓取」最新運動步驟：
+1. 請開啟您的 GitHub Repository Actions 頁面：
+   👉 https://github.com/kerkerlai/strava-web_2.0/actions
+2. 點選左側工作流【Strava to Supabase Cloud Crawler】
+3. 點選右側藍色【Run workflow】按鈕 ➔ 雲端將在 30 秒內自動爬取並寫入 Supabase 資料庫！
+
+寫入完成後，全體玩家打開網頁即可秒速看到最新戰況！`;
+  }
+}
+
+function closeCrawlerLogModal() {
+  const modal = document.getElementById("modal-crawler-log");
+  if (modal) modal.classList.add("hidden");
+}
+
+
+function downloadCrawlerConfigJSON() {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(crawlerConfig, null, 2));
+  const downloadAnchor = document.createElement("a");
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", "crawler_config.json");
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+  showAdminToast("✅ 已下載最新的 crawler_config.json！");
+}
+
+async function saveFactionSettings() {
+  try {
+    await syncAllSettingsToSupabase("🎉 雙城激戰陣營參數與資料片設定已儲存並同步至雲端！前台看板立即生效！");
+  } catch (e) {
+    alert("儲存失敗: " + e.message);
+  }
+}
+
+async function saveSurvivalSettings() {
+  try {
+    await syncAllSettingsToSupabase("🎉 飢餓法則生存參數與資料片設定已儲存並同步至雲端！前台看板立即生效！");
+  } catch (e) {
+    alert("儲存失敗: " + e.message);
+  }
+}
+
+async function saveBaseSettings() {
+  try {
+    await syncAllSettingsToSupabase("🎉 鋼鐵要塞資源門檻與資料片設定已儲存並同步至雲端！前台看板立即生效！");
+  } catch (e) {
+    alert("儲存失敗: " + e.message);
+  }
+}
+
+async function saveBingoSettings() {
+  try {
+    await syncAllSettingsToSupabase("🎉 戰神拼圖難度倍率與資料片設定已儲存並同步至雲端！前台看板立即生效！");
+  } catch (e) {
+    alert("儲存失敗: " + e.message);
+  }
+}
+
+async function saveExcludeKeywordsToSupabase() {
+  if (!assertCloudReady()) return;
+  const raw = document.getElementById('cfg-exclude-keywords')?.value || '';
+  const kws = raw
+    .split(/[,，、\n]/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (!gameState) gameState = {};
+  gameState.excludeKeywords = kws;
+
+  try {
+    await window.supabase.insert("game_config", { key: "exclude_keywords", value: kws });
+    if (window.syncFromDatabase) await window.syncFromDatabase();
+    alert(`✅ 爬蟲剃除關鍵字已成功儲存至 Supabase 雲端資料庫！\n目前排除清單：${kws.join(', ') || '無'}`);
+    showAdminToast("✅ 已更新爬蟲剃除關鍵字設定！");
+  } catch (e) {
+    console.error("Save Exclude Keywords Error:", e);
+    alert("❌ 儲存失敗：" + e.message);
+  }
+}
+
+// =====================================================================
+// 7. GM LIVE EVENTS, HERO AVATAR FX & 100->500 BADGE ENCYCLOPEDIA
+// =====================================================================
+
+function ensureGMOpsState() {
+  if (!gameState) gameState = {};
+  if (!gameState.gmOps) {
+    try {
+      const localOps = JSON.parse(localStorage.getItem('gm_ops_config') || 'null');
+      gameState.gmOps = localOps || { events: [], heroFx: {}, manualBadges: {} };
+    } catch (e) {
+      gameState.gmOps = { events: [], heroFx: {}, manualBadges: {} };
+    }
+  }
+  if (!Array.isArray(gameState.gmOps.events)) gameState.gmOps.events = [];
+  if (!gameState.gmOps.heroFx) gameState.gmOps.heroFx = {};
+  if (!gameState.gmOps.manualBadges) gameState.gmOps.manualBadges = {};
+  return gameState.gmOps;
+}
+
+async function persistGMOpsToSupabase(toastMsg) {
+  if (!assertCloudReady()) return false;
+  const gmOps = ensureGMOpsState();
+  try {
+    localStorage.setItem('gm_ops_config', JSON.stringify(gmOps));
+  } catch (e) {}
+
+  try {
+    await window.supabase.insert("game_config", { key: "gm_ops_config", value: gmOps });
+    ['gm-badge-start-date', 'cfg-badge-start-date'].forEach(id => { const el = document.getElementById(id); if (el) delete el.dataset.dirty; });
+    if (typeof window.syncFromDatabase === 'function') {
+      await window.syncFromDatabase();
+    } else if (typeof window.evaluateAllHeroesBadges === 'function') {
+      window.evaluateAllHeroesBadges(gameState);
+    }
+    renderGMOpsCenter();
+    renderHeroTable();
+    renderActivityTable();
+    if (toastMsg) showAdminToast(toastMsg);
+  } catch (e) {
+    console.error("Persist GM Ops Error:", e);
+    alert("❌ 儲存至雲端失敗：" + e.message);
+  }
+}
+
+function switchGMOpsSubTab(tabName) {
+  const tabs = ['events', 'fx', 'badges'];
+  tabs.forEach(t => {
+    const btn = document.getElementById(`gm-ops-tab-${t}`);
+    const panel = document.getElementById(`gm-ops-panel-${t}`);
+    const isAct = t === tabName;
+    if (panel) panel.classList.toggle('hidden', !isAct);
+    if (btn) {
+      btn.className = isAct
+        ? 'justify-center px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl font-bold bg-amber-500 text-slate-950 transition shadow whitespace-nowrap flex items-center'
+        : 'justify-center px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl font-bold bg-slate-800 text-slate-300 hover:text-white transition whitespace-nowrap flex items-center';
+    }
+  });
+  renderGMOpsCenter();
+}
+
+function renderGMOpsCenter() {
+  ensureGMOpsState();
+
+  // Set default date on event inputs if empty
+  const startInp = document.getElementById('gm-event-start');
+  const endInp = document.getElementById('gm-event-end');
+  if (startInp && !startInp.value) {
+    const now = new Date();
+    const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    startInp.value = todayIso;
+    if (endInp && !endInp.value) endInp.value = todayIso;
+  }
+
+  renderGMEventsTable();
+  populateGMFxHeroDropdown();
+  renderGMHeroFxActiveList();
+  renderGMBadgeEncyclopedia();
+}
+
+// -------------------------------------------------------------
+// SUB-PANEL 1: ⚡ 限時積分加倍活動日曆 CRUD (支援預告與回溯修改 %)
+// -------------------------------------------------------------
+function onGMEventThemeSelect() {
+  const editId = document.getElementById('gm-event-edit-id')?.value;
+  if (editId) return; // 編輯既有活動時不自動覆蓋標題与%
+  const themeKey = document.getElementById('gm-event-theme')?.value || 'typhoon';
+  const preset = window.EVENT_THEME_PRESETS?.[themeKey];
+  if (preset) {
+    const titleEl = document.getElementById('gm-event-title');
+    const pctEl = document.getElementById('gm-event-pct');
+    if (titleEl) titleEl.value = preset.label.replace(/^[^\s]+\s*/, '');
+    if (pctEl && preset.defaultBonus != null) pctEl.value = preset.defaultBonus;
+  }
+}
+
+function resetGMEventForm() {
+  const editIdEl = document.getElementById('gm-event-edit-id');
+  const modeLbl = document.getElementById('gm-event-form-mode-label');
+  const cancelBtn = document.getElementById('btn-cancel-gm-event-edit');
+  const titleEl = document.getElementById('gm-event-title');
+  const pctEl = document.getElementById('gm-event-pct');
+  const noteEl = document.getElementById('gm-event-note');
+
+  if (editIdEl) editIdEl.value = '';
+  if (modeLbl) modeLbl.innerHTML = '<span>⚡ 新增 / 排程限時積分加倍活動 (全資料片通用)</span>';
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+  if (titleEl) titleEl.value = '颱風假防颱特訓';
+  if (pctEl) pctEl.value = '20';
+  if (noteEl) noteEl.value = '';
+}
+
+function editGMEvent(eventId) {
+  const gmOps = ensureGMOpsState();
+  const ev = gmOps.events.find(e => e.id === eventId);
+  if (!ev) return;
+
+  document.getElementById('gm-event-edit-id').value = ev.id;
+  document.getElementById('gm-event-theme').value = ev.theme || 'custom';
+  document.getElementById('gm-event-title').value = ev.title || '';
+  document.getElementById('gm-event-start').value = dateToInputVal(ev.startDate);
+  document.getElementById('gm-event-end').value = dateToInputVal(ev.endDate || ev.startDate);
+  document.getElementById('gm-event-pct').value = ev.bonusPct || 20;
+  document.getElementById('gm-event-note').value = ev.note || '';
+
+  const modeLbl = document.getElementById('gm-event-form-mode-label');
+  const cancelBtn = document.getElementById('btn-cancel-gm-event-edit');
+  if (modeLbl) {
+    modeLbl.innerHTML = `<span class="text-cyan-400">✏️ 正在回溯修改活動：【${ev.title}】 (修改後全服歷史與當前分數將自動重新計算)</span>`;
+  }
+  if (cancelBtn) cancelBtn.classList.remove('hidden');
+}
+
+async function saveGMEvent() {
+  const gmOps = ensureGMOpsState();
+  const editId = document.getElementById('gm-event-edit-id')?.value || '';
+  const theme = document.getElementById('gm-event-theme')?.value || 'typhoon';
+  const title = (document.getElementById('gm-event-title')?.value || '').trim();
+  const startRaw = document.getElementById('gm-event-start')?.value || '';
+  const endRaw = document.getElementById('gm-event-end')?.value || startRaw;
+  const bonusPct = parseFloat(document.getElementById('gm-event-pct')?.value) || 0;
+  const note = (document.getElementById('gm-event-note')?.value || '').trim();
+
+  if (!title) { alert('請填寫活動公告名稱！'); return; }
+  if (!startRaw) { alert('請選擇活動開始日期！'); return; }
+  if (bonusPct <= 0) { alert('加成百分比必須大於 0%！'); return; }
+  if (bonusPct > 500) { alert('加成百分比上限為 500%，請確認是否輸入錯誤！'); return; }
+
+  const startDate = inputValToDate(startRaw);
+  const endDate = inputValToDate(endRaw || startRaw);
+  if (endDate < startDate) {
+    alert('結束日期不能早於開始日期！');
+    return;
+  }
+
+  // 與其他活動日期重疊時提醒 GM：重疊期間的加成會相加
+  const overlaps = (gmOps.events || []).filter(ev => ev.id !== editId && ev.enabled !== false && (() => {
+    const s2 = window.normalizeDateYMD(ev.startDate), e2 = window.normalizeDateYMD(ev.endDate || ev.startDate);
+    return s2 && startDate <= e2 && endDate >= s2;
+  })());
+  if (overlaps.length > 0) {
+    const desc = overlaps.map(ev => `【${ev.title} ${ev.startDate}~${ev.endDate || ev.startDate} +${ev.bonusPct}%】`).join('\n');
+    if (!confirm(`⚠️ 此活動日期與以下活動重疊，重疊日期的加成會「相加」：\n${desc}\n\n確定要儲存嗎？`)) return;
+  }
+
+  const preset = window.EVENT_THEME_PRESETS?.[theme] || window.EVENT_THEME_PRESETS?.custom || { icon: '⚡' };
+  const eventPayload = {
+    id: editId || `evt_${Date.now()}`,
+    theme: theme,
+    icon: preset.icon || '⚡',
+    title: title,
+    startDate: startDate,
+    endDate: endDate,
+    bonusPct: bonusPct,
+    note: note,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (editId) {
+    const idx = gmOps.events.findIndex(e => e.id === editId);
+    if (idx >= 0) gmOps.events[idx] = eventPayload;
+    else gmOps.events.unshift(eventPayload);
+  } else {
+    gmOps.events.unshift(eventPayload);
+  }
+
+  resetGMEventForm();
+  await persistGMOpsToSupabase(`🎉 限時活動【${eventPayload.icon} ${title} (+${bonusPct}%)】已同步雲端並重算全服積分！`);
+}
+
+async function deleteGMEvent(eventId) {
+  const gmOps = ensureGMOpsState();
+  const ev = gmOps.events.find(e => e.id === eventId);
+  if (!ev) return;
+
+  if (!confirm(`確定要刪除活動【${ev.title} (${ev.startDate} ~ ${ev.endDate} +${ev.bonusPct}%)】嗎？\n刪除後，該時段運動打卡將立即恢復為原始 1.0x 倍率！`)) return;
+
+  gmOps.events = gmOps.events.filter(e => e.id !== eventId);
+  if (document.getElementById('gm-event-edit-id')?.value === eventId) {
+    resetGMEventForm();
+  }
+  await persistGMOpsToSupabase(`🗑️ 已刪除活動【${ev.title}】，前台分數已自動還原重算！`);
+}
+
+function renderGMEventsTable() {
+  const tbody = document.getElementById('admin-gm-events-tbody');
+  if (!tbody) return;
+
+  const gmOps = ensureGMOpsState();
+  const events = [...(gmOps.events || [])].sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+
+  if (events.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="p-5 text-center text-slate-500">目前尚無排程或歷史加倍活動。上方可隨時新增「未來預告活動」或「事後回溯補登颱風假/豪雨加成」！</td></tr>`;
+    return;
+  }
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+  const acts = gameState?.activities || [];
+
+  tbody.innerHTML = events.map(ev => {
+    const s = String(ev.startDate || '').replace(/-/g, '/');
+    const e = String(ev.endDate || ev.startDate || '').replace(/-/g, '/');
+    let statusBadge = '';
+    if (todayStr >= s && todayStr <= e) {
+      statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50">🔥 生效中 (前台廣播中)</span>`;
+    } else if (todayStr < s) {
+      statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/50">⏳ 即將開始 (前台預告中)</span>`;
+    } else {
+      statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✅ 歷史生效中 (可回溯修改)</span>`;
+    }
+
+    // Count affected activities
+    const affectedCount = acts.filter(a => {
+      if (a.isExcluded || !a.isValidAttack) return false;
+      const ad = String(a.date || a.time || '').trim().replace(/-/g, '/').split(' ')[0];
+      if (!ad) return false;
+      const parts = ad.split('/');
+      if (parts.length !== 3) return false;
+      const normAd = `${parts[0]}/${String(parts[1]).padStart(2, '0')}/${String(parts[2]).padStart(2, '0')}`;
+      return normAd >= s && normAd <= e;
+    }).length;
+
+    return `
+      <tr class="hover:bg-slate-900/60 transition">
+        <td class="p-3 whitespace-nowrap">${statusBadge}</td>
+        <td class="p-3">
+          <div class="font-bold text-white flex items-center space-x-1.5">
+            <span class="text-base">${ev.icon || '⚡'}</span>
+            <span>${ev.title}</span>
+          </div>
+          ${ev.note ? `<div class="text-[11px] text-slate-400 mt-0.5">${ev.note}</div>` : ''}
+        </td>
+        <td class="p-3 font-mono text-slate-300 whitespace-nowrap">${s === e ? s : `${s} ~ ${e}`}</td>
+        <td class="p-3 font-mono font-black text-amber-400 text-sm whitespace-nowrap">+${ev.bonusPct}%</td>
+        <td class="p-3 font-mono text-cyan-300 whitespace-nowrap">${affectedCount} 筆運動</td>
+        <td class="p-3 text-right space-x-2 whitespace-nowrap">
+          <button type="button" onclick="editGMEvent('${ev.id}')" class="px-2.5 py-1 rounded-lg bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 font-bold text-xs transition">
+            ✏️ 修改 % / 日期
+          </button>
+          <button type="button" onclick="deleteGMEvent('${ev.id}')" class="px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 font-bold text-xs transition">
+            🗑️ 刪除
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// SUB-PANEL 2: 🎨 英雄頭像特效與自訂稱號 CRUD
+// -------------------------------------------------------------
+function populateGMFxHeroDropdown() {
+  const select = document.getElementById('gm-fx-hero');
+  if (!select || !gameState?.heroes) return;
+
+  const currVal = select.value;
+  select.innerHTML = '';
+  gameState.heroes.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.name;
+    opt.innerText = `${h.name} (${h.guild})`;
+    if (h.name === currVal) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  if (!currVal && gameState.heroes.length > 0) {
+    onGMFxHeroSelect();
+  }
+}
+
+function onGMFxHeroSelect() {
+  const heroName = document.getElementById('gm-fx-hero')?.value;
+  if (!heroName) return;
+  const gmOps = ensureGMOpsState();
+  const fx = gmOps.heroFx?.[heroName] || { type: 'none', fx: 'none', customTitle: '', expiresAt: '' };
+
+  const typeEl = document.getElementById('gm-fx-type');
+  const titleEl = document.getElementById('gm-fx-title');
+  const expEl = document.getElementById('gm-fx-expires');
+
+  if (typeEl) typeEl.value = fx.fx || fx.type || 'none';
+  if (titleEl) titleEl.value = fx.customTitle || '';
+  if (expEl) expEl.value = fx.expiresAt ? dateToInputVal(fx.expiresAt) : '';
+}
+
+function onGMFxTypeSelect() {
+  const type = document.getElementById('gm-fx-type')?.value || 'none';
+  const titleEl = document.getElementById('gm-fx-title');
+  if (!titleEl) return;
+  if (type === 'none') {
+    titleEl.value = '';
+    return;
+  }
+  const preset = window.AVATAR_FX_PRESETS?.[type];
+  if (preset) {
+    titleEl.value = preset.defaultTitle || '';
+  }
+}
+
+async function saveGMHeroFx() {
+  const heroName = document.getElementById('gm-fx-hero')?.value;
+  if (!heroName) return;
+
+  const type = document.getElementById('gm-fx-type')?.value || 'none';
+  const customTitle = (document.getElementById('gm-fx-title')?.value || '').trim();
+  const expRaw = document.getElementById('gm-fx-expires')?.value || '';
+  const expiresAt = expRaw ? inputValToDate(expRaw) : '';
+
+  const gmOps = ensureGMOpsState();
+  const prevHistory = Array.isArray(gmOps.heroFx?.[heroName]?.history) ? [...gmOps.heroFx[heroName].history] : [];
+  if (type && type !== 'none' && !prevHistory.includes(type)) {
+    prevHistory.push(type);
+  }
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+
+  if (type === 'none' && !customTitle) {
+    if (prevHistory.length > 0) {
+      gmOps.heroFx[heroName] = { type: 'none', fx: 'none', customTitle: '', expiresAt: '', history: prevHistory, updatedAt: gmOps.heroFx?.[heroName]?.updatedAt || todayStr };
+    } else {
+      delete gmOps.heroFx[heroName];
+    }
+    await persistGMOpsToSupabase(`🧹 已清除【${heroName}】的頭像特效與稱號`);
+  } else {
+    gmOps.heroFx[heroName] = {
+      type: type,
+      fx: type,
+      customTitle: customTitle,
+      expiresAt: expiresAt,
+      history: prevHistory,
+      updatedAt: todayStr
+    };
+    await persistGMOpsToSupabase(`✨ 已為【${heroName}】掛載頭像特效與稱號！前台全服同步生效！`);
+  }
+}
+
+async function clearGMHeroFx(targetHero) {
+  const heroName = targetHero || document.getElementById('gm-fx-hero')?.value;
+  if (!heroName) return;
+
+  const gmOps = ensureGMOpsState();
+  const prevHistory = Array.isArray(gmOps.heroFx?.[heroName]?.history) ? [...gmOps.heroFx[heroName].history] : [];
+  if (prevHistory.length > 0) {
+    // 保留原本的 updatedAt，讓「曾獲得特效」類徽章的取得日期固定不變
+    gmOps.heroFx[heroName] = { type: 'none', fx: 'none', customTitle: '', expiresAt: '', history: prevHistory, updatedAt: gmOps.heroFx?.[heroName]?.updatedAt || '' };
+  } else {
+    delete gmOps.heroFx[heroName];
+  }
+  onGMFxHeroSelect();
+  await persistGMOpsToSupabase(`🧹 已移除【${heroName}】的頭像特效與稱號 (永久成就徽章仍予以保留)`);
+}
+
+function renderGMHeroFxActiveList() {
+  const container = document.getElementById('admin-gm-fx-active-list');
+  if (!container) return;
+
+  const gmOps = ensureGMOpsState();
+  const entries = Object.entries(gmOps.heroFx || {}).filter(([, v]) => v && ((v.type && v.type !== 'none') || v.customTitle));
+
+  if (entries.length === 0) {
+    container.innerHTML = `<div class="col-span-full p-4 rounded-2xl bg-slate-950/50 border border-slate-800 text-center text-slate-500">目前尚無英雄掛載特殊頭像特效或壽星金框。可於上方選單為壽星或當日 MVP 點亮專屬特效！</div>`;
+    return;
+  }
+
+  container.innerHTML = entries.map(([hName, fx]) => {
+    const heroObj = (gameState?.heroes || []).find(h => h.name === hName) || { name: hName, guild: '' };
+    const avatarPreview = typeof window.renderHeroAvatarHtml === 'function'
+      ? window.renderHeroAvatarHtml(heroObj, 'w-11 h-11', 'rounded-xl')
+      : '';
+    const preset = window.AVATAR_FX_PRESETS?.[fx.type] || { label: '自訂稱號' };
+    return `
+      <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex items-center justify-between gap-2">
+        <div class="flex items-center space-x-3 min-w-0">
+          ${avatarPreview}
+          <div class="min-w-0">
+            <div class="font-bold text-white truncate">${hName}</div>
+            <div class="text-[10px] text-amber-300 truncate">${preset.label} ${fx.customTitle ? `• 「${fx.customTitle}」` : ''}</div>
+            <div class="text-[9px] text-slate-500 font-mono">${fx.expiresAt ? `到期日: ${fx.expiresAt}` : '永久有效 (手動關閉)'}</div>
+          </div>
+        </div>
+        <button type="button" onclick="clearGMHeroFx('${hName}')" class="px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/50 text-[10px] font-bold flex-shrink-0">
+          ✖ 移除
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// SUB-PANEL 3: 🎖️ GM 專屬全服 100 徽章圖鑑、開始時間設定與手動授勳
+// -------------------------------------------------------------
+async function saveGMBadgeStartDate() {
+  const gmOps = ensureGMOpsState();
+  const rawVal = document.getElementById('gm-badge-start-date')?.value || '';
+  gmOps.badgeStartDate = rawVal ? inputValToDate(rawVal) : '';
+
+  const cfgEl = document.getElementById('cfg-badge-start-date');
+  if (cfgEl) cfgEl.value = rawVal;
+
+  if (typeof window.evaluateAllHeroesBadges === 'function') {
+    window.evaluateAllHeroesBadges(gameState);
+  }
+
+  const msg = gmOps.badgeStartDate
+    ? `⏰ 已設定徽章累計開始時間為【${gmOps.badgeStartDate}】！僅該日(含)後的運動計入徽章，全服已重算完成！`
+    : `♾️ 已清空徽章開始時間限制，恢復採計全部歷史運動紀錄！`;
+  await persistGMOpsToSupabase(msg);
+}
+
+async function setBadgeStartToSeasonStart() {
+  const sStartRaw = document.getElementById('cfg-season-start')?.value || dateToInputVal(gameState?.seasonStart || '2026/08/12');
+  const gmEl = document.getElementById('gm-badge-start-date');
+  const cfgEl = document.getElementById('cfg-badge-start-date');
+  if (gmEl) gmEl.value = sStartRaw;
+  if (cfgEl) cfgEl.value = sStartRaw;
+  await saveGMBadgeStartDate();
+}
+
+async function setBadgeStartToToday() {
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const gmEl = document.getElementById('gm-badge-start-date');
+  const cfgEl = document.getElementById('cfg-badge-start-date');
+  if (gmEl) gmEl.value = todayIso;
+  if (cfgEl) cfgEl.value = todayIso;
+  await saveGMBadgeStartDate();
+}
+
+async function clearGMBadgeStartDate() {
+  const gmEl = document.getElementById('gm-badge-start-date');
+  const cfgEl = document.getElementById('cfg-badge-start-date');
+  if (gmEl) gmEl.value = '';
+  if (cfgEl) cfgEl.value = '';
+  await saveGMBadgeStartDate();
+}
+
+function renderGMBadgeEncyclopedia() {
+  const tbody = document.getElementById('admin-gm-badges-tbody');
+  if (!tbody) return;
+
+  const gmOps = ensureGMOpsState();
+  const badgeStartIso = gmOps.badgeStartDate ? dateToInputVal(gmOps.badgeStartDate) : '';
+  const gmBadgeStartEl = document.getElementById('gm-badge-start-date');
+  const cfgBadgeStartEl = document.getElementById('cfg-badge-start-date');
+  if (gmBadgeStartEl && document.activeElement !== gmBadgeStartEl && !gmBadgeStartEl.dataset.dirty) gmBadgeStartEl.value = badgeStartIso;
+  if (cfgBadgeStartEl && document.activeElement !== cfgBadgeStartEl && !cfgBadgeStartEl.dataset.dirty) cfgBadgeStartEl.value = badgeStartIso;
+
+  const statusTextEl = document.getElementById('gm-badge-start-status-text');
+  if (statusTextEl) {
+    const minDur = gameState?.summary?.minDurationMinutes || 30;
+    const normStart = typeof window.normalizeDateYMD === 'function' ? window.normalizeDateYMD(gmOps.badgeStartDate || '') : (gmOps.badgeStartDate || '');
+    const validActsCount = (gameState?.activities || []).filter(a => {
+      if (a.isExcluded || (Number(a.duration) || 0) < minDur) return false;
+      if (normStart) {
+        const actYMD = typeof window.normalizeDateYMD === 'function' ? window.normalizeDateYMD(a.date || a.time) : '';
+        if (!actYMD || actYMD < normStart) return false;
+      }
+      return true;
+    }).length;
+
+    if (normStart) {
+      statusTextEl.innerHTML = `⏰ 目前採計：<span class="text-white">${normStart} (含) 之後</span>（共 ${validActsCount} 筆有效運動）`;
+    } else {
+      statusTextEl.innerHTML = `♾️ 目前採計：<span class="text-white">全部歷史紀錄</span>（共 ${validActsCount} 筆有效運動）`;
+    }
+  }
+
+  const catalog = window.BADGE_CATALOG || [];
+  const totalCountEl = document.getElementById('gm-badge-total-count');
+  if (totalCountEl) totalCountEl.innerText = catalog.length;
+
+  if (typeof window.evaluateAllHeroesBadges === 'function') {
+    window.evaluateAllHeroesBadges(gameState);
+  }
+
+  // Populate category filter if needed
+  const catSelect = document.getElementById('gm-badge-cat-filter');
+  if (catSelect && catSelect.options.length <= 1 && catalog.length > 0) {
+    const cats = Array.from(new Set(catalog.map(b => b.cat)));
+    cats.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.innerText = c;
+      catSelect.appendChild(opt);
+    });
+  }
+
+  // Populate Manual Grant hero & badge dropdowns
+  const grantHeroSel = document.getElementById('gm-grant-hero');
+  if (grantHeroSel && gameState?.heroes) {
+    const curH = grantHeroSel.value;
+    grantHeroSel.innerHTML = '';
+    gameState.heroes.forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h.name;
+      opt.innerText = `${h.name} (${h.guild})`;
+      if (h.name === curH) opt.selected = true;
+      grantHeroSel.appendChild(opt);
+    });
+  }
+
+  const grantBadgeSel = document.getElementById('gm-grant-badge');
+  if (grantBadgeSel && grantBadgeSel.options.length !== catalog.length) {
+    const curB = grantBadgeSel.value;
+    grantBadgeSel.innerHTML = '';
+    catalog.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.innerText = `#${String(b.num).padStart(3, '0')} ${b.icon} ${b.name} — ${b.desc}`;
+      if (b.id === curB) opt.selected = true;
+      grantBadgeSel.appendChild(opt);
+    });
+  }
+
+  const query = (document.getElementById('gm-badge-search')?.value || '').toLowerCase().trim();
+  const catFilter = document.getElementById('gm-badge-cat-filter')?.value || 'ALL';
+  const unlockFilter = document.getElementById('gm-badge-unlock-filter')?.value || 'ALL';
+  const rarityMeta = window.BADGE_RARITY_META || {};
+  const heroBadgesAll = gameState?.heroBadges || {};
+
+  const filtered = catalog.filter(b => {
+    if (catFilter !== 'ALL' && b.cat !== catFilter) return false;
+
+    const holders = Object.keys(heroBadgesAll).filter(hName => heroBadgesAll[hName]?.[b.id]);
+    if (unlockFilter === 'UNLOCKED' && holders.length === 0) return false;
+    if (unlockFilter === 'LOCKED' && holders.length > 0) return false;
+
+    if (query) {
+      const numStr = `#${String(b.num).padStart(3, '0')}`;
+      const matchNum = numStr.includes(query);
+      const matchName = (b.name || '').toLowerCase().includes(query);
+      const matchDesc = (b.desc || '').toLowerCase().includes(query);
+      const matchHolder = holders.some(h => h.toLowerCase().includes(query));
+      if (!matchNum && !matchName && !matchDesc && !matchHolder) return false;
+    }
+    return true;
+  });
+
+  tbody.innerHTML = filtered.map(b => {
+    const numStr = `#${String(b.num).padStart(3, '0')}`;
+    const rMeta = rarityMeta[b.rarity] || rarityMeta.common || { label: '普通', color: 'text-slate-300', border: 'border-slate-700', bg: 'bg-slate-900' };
+    const holders = Object.keys(heroBadgesAll).filter(hName => heroBadgesAll[hName]?.[b.id]);
+
+    const holdersHtml = holders.length === 0
+      ? `<span class="text-slate-600 italic">🔒 尚無英雄解鎖</span>`
+      : `<div class="flex flex-wrap gap-1.5">
+          ${holders.map(hName => {
+            const info = heroBadgesAll[hName][b.id];
+            const isManualGrant = Boolean(gmOps.manualBadges?.[hName]?.[b.id]);
+            return `
+              <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 border border-amber-500/40 text-amber-300" title="取得時間: ${info.unlockedAt}&#10;紀錄: ${info.actTitle || ''}">
+                <span>${hName}</span>
+                <span class="text-[9px] text-slate-400 font-mono">(${info.unlockedAt})</span>
+                ${isManualGrant ? `<button type="button" onclick="revokeManualBadgeFromHero('${hName}', '${b.id}')" class="ml-1 text-rose-400 hover:text-rose-300" title="撤銷手動頒發">✖</button>` : ''}
+              </span>
+            `;
+          }).join('')}
+        </div>`;
+
+    return `
+      <tr class="hover:bg-slate-900/60 transition">
+        <td class="p-3 font-mono font-bold text-slate-400">${numStr}</td>
+        <td class="p-3 whitespace-nowrap">
+          <div class="flex items-center space-x-2">
+            <span class="text-xl">${b.icon}</span>
+            <span class="font-bold ${rMeta.color}">${b.name}</span>
+          </div>
+        </td>
+        <td class="p-3 whitespace-nowrap">
+          <span class="text-[10px] text-slate-400">${b.cat}</span>
+          <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold border ${rMeta.border} ${rMeta.bg} ${rMeta.color}">${rMeta.label}</span>
+        </td>
+        <td class="p-3 text-slate-200 font-medium">${b.desc}</td>
+        <td class="p-3">${holdersHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function grantManualBadgeToHero() {
+  const heroName = document.getElementById('gm-grant-hero')?.value;
+  const badgeId = document.getElementById('gm-grant-badge')?.value;
+  const reason = (document.getElementById('gm-grant-reason')?.value || 'GM 榮譽授勳').trim();
+  if (!heroName || !badgeId) return;
+
+  const gmOps = ensureGMOpsState();
+  if (!gmOps.manualBadges[heroName]) gmOps.manualBadges[heroName] = {};
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+  gmOps.manualBadges[heroName][badgeId] = {
+    unlockedAt: todayStr,
+    actTitle: `🏅 ${reason}`
+  };
+
+  const badgeObj = (window.BADGE_CATALOG || []).find(b => b.id === badgeId);
+  await persistGMOpsToSupabase(`🏅 已手動頒發徽章【${badgeObj?.name || badgeId}】予 ${heroName}！`);
+}
+
+async function revokeManualBadgeFromHero(heroName, badgeId) {
+  if (!confirm(`確定要撤銷手動頒發給【${heroName}】的徽章 (${badgeId}) 嗎？\n(若該英雄本身的運動紀錄已自然達成條件，系統仍會保留其自然達成資格)`)) return;
+  const gmOps = ensureGMOpsState();
+  if (gmOps.manualBadges?.[heroName]) {
+    delete gmOps.manualBadges[heroName][badgeId];
+  }
+  await persistGMOpsToSupabase(`🧹 已撤銷【${heroName}】的手動授勳紀錄`);
+}
+
+
+
+// =====================================================================
+// 8. 📱 手機同步 App 管理中心 (預備功能)
+//    - 開關與下載連結存放於 gm_ops_config.mobileSync
+//    - 邀請碼 / 裝置管理透過 Edge Function admin-mobile (需部署並設定 GM_PASSWORD)
+//    - 來源對帳純前端計算，不需要任何後端
+// =====================================================================
+function getMobileSyncConfig() {
+  const gmOps = ensureGMOpsState();
+  if (!gmOps.mobileSync || typeof gmOps.mobileSync !== 'object') gmOps.mobileSync = { enabled: false };
+  return gmOps.mobileSync;
+}
+
+function renderMobileSyncSection() {
+  const section = document.getElementById('mobile-sync-section');
+  if (!section) return;
+  const cfg = getMobileSyncConfig();
+  const setIfIdle = (id, val, prop = 'value') => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el && !el.dataset.dirty) el[prop] = val;
+  };
+  setIfIdle('mobile-sync-enabled', Boolean(cfg.enabled), 'checked');
+  setIfIdle('mobile-sync-testflight', cfg.testflightUrl || '');
+  setIfIdle('mobile-sync-play', cfg.playUrl || '');
+  setIfIdle('mobile-sync-apk', cfg.apkUrl || '');
+
+  const pill = document.getElementById('mobile-sync-status-pill');
+  if (pill) {
+    pill.className = `px-3 py-1 rounded-full text-[11px] font-bold border ${cfg.enabled ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-700'}`;
+    pill.innerText = cfg.enabled ? '🟢 已啟用 (與 Strava 並行中)' : '⏸️ 未啟用 (維持 Strava 爬蟲)';
+  }
+  const panels = document.getElementById('mobile-sync-panels');
+  if (panels) panels.classList.toggle('hidden', !cfg.enabled);
+  if (cfg.enabled) {
+    renderMobileDevices(gameState?.devices || []);
+    renderMobileReconciliation();
+  }
+}
+
+async function saveMobileSyncSettings() {
+  const cfg = getMobileSyncConfig();
+  const wantEnabled = Boolean(document.getElementById('mobile-sync-enabled')?.checked);
+  if (!wantEnabled && window.isMobileMode && window.isMobileMode(gameState?.activeMode)) {
+    alert('⛔ 目前進行中的是「手機同步資料片」，關閉手機同步會讓遊戲無法計分。\n\n請先在上方「選擇啟用的資料片」切換回 7 大經典資料片並儲存，再關閉手機同步。');
+    const el = document.getElementById('mobile-sync-enabled');
+    if (el) { el.checked = true; delete el.dataset.dirty; }
+    return;
+  }
+  cfg.enabled = wantEnabled;
+  cfg.testflightUrl = (document.getElementById('mobile-sync-testflight')?.value || '').trim();
+  cfg.playUrl = (document.getElementById('mobile-sync-play')?.value || '').trim();
+  cfg.apkUrl = (document.getElementById('mobile-sync-apk')?.value || '').trim();
+  ['mobile-sync-enabled', 'mobile-sync-testflight', 'mobile-sync-play', 'mobile-sync-apk'].forEach(id => {
+    const el = document.getElementById(id); if (el) delete el.dataset.dirty;
+  });
+  await persistGMOpsToSupabase(cfg.enabled ? '📱 手機同步 App 已啟用！玩家可透過邀請連結加入 (Strava 爬蟲仍並行運作)' : '⏸️ 手機同步 App 已關閉，維持 Strava 爬蟲模式');
+  if (cfg.enabled) refreshMobilePanels();
+}
+
+async function callAdminMobile(action, payload = {}) {
+  const res = await fetch(`${SUPABASE_CONFIG.url}/functions/v1/admin-mobile`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_CONFIG.anonKey,
+      'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+      'x-gm-password': GM_MASTER_PASSWORD
+    },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function refreshMobilePanels() {
+  const list = document.getElementById('mobile-invite-list');
+  try {
+    const [inv, dev] = await Promise.all([callAdminMobile('list_invites'), callAdminMobile('list_devices')]);
+    renderMobileInvites(inv.invites || []);
+    renderMobileDevices(dev.devices || []);
+  } catch (e) {
+    if (list) list.innerHTML = `<div class="p-3 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300">⚠️ 無法連線 admin-mobile Edge Function：${e.message}<br>請確認已部署 supabase/functions/admin-mobile 並設定環境變數 GM_PASSWORD。</div>`;
+  }
+  renderMobileReconciliation();
+}
+
+function renderMobileInvites(invites) {
+  const list = document.getElementById('mobile-invite-list');
+  if (!list) return;
+  if (!invites.length) { list.innerHTML = '<div class="text-slate-500">尚未產生任何邀請碼</div>'; return; }
+  const base = `${window.location.origin}/join.html?code=`;
+  list.innerHTML = invites.map(i => `
+    <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2">
+      <div class="flex items-center gap-2"><span class="font-mono font-black text-amber-300 text-sm">${i.code}</span><span class="text-slate-400">${i.season || ''} • 已使用 ${i.used_count || 0}/${i.max_uses || '∞'}</span></div>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="navigator.clipboard.writeText('${base}${i.code}'); showAdminToast('已複製邀請連結')" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-cyan-300 font-bold">📋 複製邀請連結</button>
+        <button type="button" onclick="deleteMobileInvite('${i.code}')" class="px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 font-bold">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+
+async function createMobileInvite() {
+  try {
+    const season = (document.getElementById('mobile-invite-season')?.value || 'S').trim();
+    const maxUses = parseInt(document.getElementById('mobile-invite-max')?.value, 10) || 30;
+    const { invite } = await callAdminMobile('create_invite', { season, max_uses: maxUses });
+    showAdminToast(`🎟️ 已產生邀請碼 ${invite.code}`);
+    refreshMobilePanels();
+  } catch (e) { alert('❌ 產生邀請碼失敗：' + e.message); }
+}
+
+async function deleteMobileInvite(code) {
+  if (!confirm(`確定刪除邀請碼 ${code}？(已加入的玩家不受影響)`)) return;
+  try { await callAdminMobile('delete_invite', { code }); refreshMobilePanels(); } catch (e) { alert('❌ 刪除失敗：' + e.message); }
+}
+
+async function toggleMobileDevice(deviceId, revoke) {
+  if (revoke && !confirm('確定停用這支手機？停用後它將無法再上傳資料 (玩家可用新邀請碼重新綁定)。')) return;
+  try { await callAdminMobile(revoke ? 'revoke_device' : 'restore_device', { device_id: deviceId }); refreshMobilePanels(); } catch (e) { alert('❌ 操作失敗：' + e.message); }
+}
+
+function renderMobileDevices(devices) {
+  const tbody = document.getElementById('mobile-devices-tbody');
+  if (!tbody) return;
+  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">尚無玩家綁定手機</td></tr>'; return; }
+  const now = Date.now();
+  tbody.innerHTML = devices.map(d => {
+    const last = d.last_sync_at ? new Date(d.last_sync_at) : null;
+    const hours = last ? (now - last.getTime()) / 3600000 : Infinity;
+    const light = d.revoked ? '⛔ 已停用' : (hours <= 24 ? '🟢 正常' : (hours <= 48 ? '🟡 稍久未同步' : '🔴 超過 48 小時'));
+    return `<tr>
+      <td class="p-3 font-bold text-white">${d.hero}</td>
+      <td class="p-3">${d.platform === 'ios' ? '🍎 iPhone' : '🤖 Android'} <span class="text-slate-500">${d.device_model || ''}</span></td>
+      <td class="p-3 font-mono">${last ? last.toLocaleString('zh-TW', { hour12: false }) : '尚未同步'}</td>
+      <td class="p-3 font-mono text-slate-400">${d.app_version || '-'}</td>
+      <td class="p-3">${light}</td>
+      <td class="p-3 text-right">${d.revoked
+        ? `<button type="button" onclick="toggleMobileDevice('${d.id}', false)" class="text-emerald-400 font-bold">恢復</button>`
+        : `<button type="button" onclick="toggleMobileDevice('${d.id}', true)" class="text-rose-400 font-bold">停用</button>`}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderMobileReconciliation() {
+  const tbody = document.getElementById('mobile-recon-tbody');
+  if (!tbody) return;
+  const acts = gameState?.activities || [];
+  const cutoff = Date.now() - 14 * 86400000;
+  const recent = acts.filter(a => {
+    if (a.isExcluded) return false;
+    const d = typeof window.parseActivityDate === 'function' ? window.parseActivityDate(a.date) : new Date(a.date);
+    return d && d.getTime() >= cutoff;
+  });
+  const isMobile = a => a.source === 'apple_health' || a.source === 'health_connect';
+  const byId = new Map(recent.map(a => [String(a.id), a]));
+  const matched = new Set();
+  recent.forEach(a => {
+    if (!a.duplicateOf) return;
+    const partner = byId.get(String(a.duplicateOf));
+    if (partner && isMobile(partner) !== isMobile(a)) { matched.add(String(a.id)); matched.add(String(partner.id)); }
+  });
+  const heroes = (gameState?.heroes || []).map(h => h.name);
+  tbody.innerHTML = heroes.map(name => {
+    const mine = recent.filter(a => a.hero === name);
+    const strava = mine.filter(a => a.source === 'strava');
+    const mobile = mine.filter(isMobile);
+    const both = mobile.filter(a => matched.has(String(a.id))).length;
+    const onlyStrava = strava.filter(a => !matched.has(String(a.id))).length;
+    const onlyMobile = mobile.filter(a => !matched.has(String(a.id))).length;
+    const status = mobile.length === 0 ? '<span class="text-slate-500">尚未連接手機</span>'
+      : (onlyStrava === 0 ? '<span class="text-emerald-400 font-bold">✅ 一致</span>' : '<span class="text-amber-400 font-bold">⚠️ 請確認手錶 App 是否已開啟同步</span>');
+    return `<tr><td class="p-3 font-bold text-white">${name}</td><td class="p-3 font-mono">${strava.length}</td><td class="p-3 font-mono">${mobile.length}</td><td class="p-3 font-mono text-emerald-300">${both}</td><td class="p-3 font-mono ${onlyStrava ? 'text-amber-300' : ''}">${onlyStrava}</td><td class="p-3 font-mono">${onlyMobile}</td><td class="p-3">${status}</td></tr>`;
+  }).join('');
+}
+
+window.addEventListener('gameStateSynced', () => { try { renderMobileSyncSection(); } catch (e) { console.error(e); } });
+document.addEventListener('input', (e) => { if (e.target?.id?.startsWith('mobile-sync-')) e.target.dataset.dirty = '1'; });
+document.addEventListener('change', (e) => { if (e.target?.id?.startsWith('mobile-sync-')) e.target.dataset.dirty = '1'; });
+
+// =====================================================================
+// 9. 📱 手機同步資料片 (八/九/十一/十三) — GM 參數面板
+//    參數存於 game_config.mobile_modes_config，由 syncAllSettingsToSupabase 一併儲存
+// =====================================================================
+const MM_FIELD_META = {
+  expedition: {
+    intro: '全服合作推進地圖：<b>每日里程 = min(步數, 每日上限) ÷ 每公里步數 ＋ 有效運動分鐘 × 每分鐘里程 ＋ 騎車距離 × 騎車折算 ＋ 游泳距離 × 游泳折算</b>，再乘上當日限時加成倍率。全服累計抵達終點即勝利，公會依里程排名。',
+    fields: [
+      ['routeName', '路線名稱', '顯示在前台的遠征名稱', 'text'],
+      ['routeKm', '🏁 終點里程 (km)【勝利條件】', '全服累計里程達到此數字即遠征成功。建議：人數 × 賽季週數 × 15 km', 'number', 1],
+      ['stepsPerKm', '每公里步數', '一般成人約 1,300 步 = 1 km', 'number', 1],
+      ['dailyStepCap', '每人每日步數上限', '防止刷步數；超過的步數不計', 'number', 1],
+      ['workoutKmPerMin', '有效運動每分鐘里程 (km)', '讓重訓/健身房訓練也能推進；0.05 = 60 分鐘換 3 km', 'number', 0.01],
+      ['rideFactor', '騎車距離折算', '騎車比走路省力，1 km 騎車 = 0.3 km', 'number', 0.1],
+      ['swimFactor', '游泳距離折算', '游泳距離短但很累，1 km 游泳 = 4 km', 'number', 0.1],
+      ['checkpoints', '地圖城市 (每行「名稱:里程」)', '抵達的城市會在前台亮起 🚩，最後一站建議等於終點里程', 'textarea']
+    ]
+  },
+  dream: {
+    intro: '每天 (以起床日計) 最高 100 分：<b>睡眠分 + 規律分 + 攻擊分</b>，乘上當日限時加成倍率 = 對夢魘的傷害。全服打倒夢魘即勝利，公會依人均傷害排名。',
+    fields: [
+      ['sleepTargetMin', '睡眠目標 (分鐘)', '睡滿此時長拿滿睡眠分；睡更久不再加分 (420 = 7 小時)', 'number', 10],
+      ['sleepPts', '睡眠分上限', '', 'number', 1],
+      ['regularityPts', '規律分上限', '', 'number', 1],
+      ['regularityToleranceMin', '入睡時間容許偏差 (分鐘)', '與個人前 N 晚入睡中位數相差此分鐘數 → 規律分歸零', 'number', 5],
+      ['regularityWindowDays', '規律度參考天數', '取前幾晚的入睡時間中位數作為個人習慣', 'number', 1],
+      ['workoutPts', '攻擊分上限 (白天運動)', '只睡不動最多拿 睡眠分+規律分', 'number', 1],
+      ['workoutFullMin', '攻擊分滿分所需運動分鐘', '當天有效運動累計達此分鐘數拿滿攻擊分', 'number', 5],
+      ['nightmareHpPerHeroDay', '👹 夢魘血量係數【勝利條件】', '夢魘總血量 = 英雄數 × 賽季天數 × 此係數。60 = 大家平均每天拿 60 分剛好打完', 'number', 1]
+    ]
+  },
+  flame: {
+    intro: '每人每天三道火：<b>① 活動分鐘 ≥ 目標或完成一次有效運動　② 步數 ≥ 目標　③ 睡眠 ≥ 目標</b>。公會所有「有資料」成員都點亮 ≥ N 道火 → 聖火熱度 +1 (× 限時加成倍率)；有成員 0 道火 → 熱度 − 衰減值。賽季結束時聖火等級最高的公會獲勝。',
+    fields: [
+      ['activeMinGoal', '🔥① 中高強度活動分鐘目標', '心率 ≥ 最大心率 64% 的分鐘數；完成一次有效運動也直接點亮', 'number', 5],
+      ['stepGoal', '🔥② 每日步數目標', '', 'number', 500],
+      ['sleepGoalMin', '🔥③ 睡眠目標 (分鐘)', '420 = 7 小時', 'number', 10],
+      ['minRingsForGuildDay', '公會「全員點火」門檻 (每人至少幾道火)【勝利條件】', '設 3 = 超硬核，設 1 = 輕鬆模式', 'number', 1],
+      ['decayOnZeroDay', '有成員 0 道火時聖火熱度扣除', '設 0 = 不懲罰', 'number', 0.5]
+    ]
+  },
+  monastery: {
+    intro: '跟自己比：<b>每日修為 = 訓練分 (TRIMP) + 恢復分 (睡眠) + 活動分 (活動分鐘)</b> × 限時加成倍率；靜止心率比個人基準下降可得「靜心加成」；急慢性負荷比過高且睡眠不足 → 走火入魔 (當日修為打折)。依總修為晉級境界。',
+    fields: [
+      ['trimpCap', '訓練分滿分 TRIMP', '當日 TRIMP 達此值拿滿訓練分 (約一次 60 分鐘中高強度訓練)', 'number', 5],
+      ['trainPts', '訓練分上限', '', 'number', 1],
+      ['sleepTargetMin', '恢復分睡眠目標 (分鐘)', '', 'number', 10],
+      ['recoveryPts', '恢復分上限', '', 'number', 1],
+      ['activeMinGoal', '活動分滿分活動分鐘', '', 'number', 5],
+      ['activePts', '活動分上限', '', 'number', 1],
+      ['baselineDays', '靜止心率基準天數', '賽季開始後前 N 天 (有資料) 的中位數 = 個人基準', 'number', 1],
+      ['rhrPointsPerBpm', '靜止心率每下降 1 bpm 修為', '心肺進步的長期獎勵', 'number', 10],
+      ['acwrLimit', '走火入魔：負荷比上限 (ACWR)', '近 7 天 ÷ (近 28 天 ÷ 4)；運動科學常用 1.5 為受傷風險警戒線', 'number', 0.1],
+      ['poorSleepMin', '走火入魔：近 3 晚平均睡眠低於 (分鐘)', '360 = 6 小時', 'number', 10],
+      ['acwrMinChronic', '走火入魔：最低慢性負荷 (每週 TRIMP)', '慢性負荷低於此值不判定，避免剛開始運動的新手被誤判', 'number', 10],
+      ['overtrainPenalty', '走火入魔當日修為倍率', '0.5 = 打五折', 'number', 0.05],
+      ['ranks', '🏯 境界門檻 (每行「名稱:修為」)【勝利條件】', '例如 宗師:7200', 'textarea']
+    ]
+  }
+};
+
+function renderMobileModePanel(mode) {
+  const panel = document.getElementById('panel-settings-mobile-mode');
+  if (!panel) return;
+  const isMM = window.isMobileMode && window.isMobileMode(mode);
+  panel.classList.toggle('hidden', !isMM);
+  if (!isMM) { panel.dataset.mode = ''; return; }
+  const meta = window.MOBILE_MODE_META[mode];
+  const def = MM_FIELD_META[mode];
+  const cfg = window.getMobileModesConfig(gameState)[mode];
+  const enabled = Boolean(gameState?.gmOps?.mobileSync?.enabled);
+  if (panel.dataset.mode !== mode) {
+    panel.dataset.mode = mode;
+    panel.innerHTML = `
+      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-base font-bold text-white">${meta.icon} 資料片${meta.num} • ${meta.name} 參數設定</h2>
+        <span id="mm-panel-sync-warning" class="text-[11px] font-bold"></span>
+      </div>
+      <p class="text-[12px] text-slate-300 leading-relaxed bg-slate-950/60 border border-slate-800 rounded-xl p-3">📐 ${def.intro}<br><span class="text-slate-500">⚡ 限時加成活動自動套用；缺資料只是拿不到該項分數，不會倒扣。前台會用目前的參數顯示同樣的公式說明。</span></p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        ${def.fields.map(([key, label, help, type, step]) => `
+          <div class="${type === 'textarea' ? 'sm:col-span-2' : ''}">
+            <label class="font-bold text-slate-300 block mb-1">${label}</label>
+            ${type === 'textarea'
+              ? `<textarea id="cfg-mm-${mode}-${key}" rows="4" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none"></textarea>`
+              : `<input id="cfg-mm-${mode}-${key}" type="${type === 'number' ? 'number' : 'text'}" ${type === 'number' ? `min="0" step="${step || 1}"` : ''} class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">`}
+            ${help ? `<p class="text-[11px] text-slate-500 mt-1">${help}</p>` : ''}
+          </div>`).join('')}
+      </div>
+      <div class="flex flex-wrap justify-end gap-2">
+        <button type="button" onclick="resetMobileModePanelDefaults('${mode}')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold rounded-xl text-xs">↺ 填入建議預設值</button>
+        <button type="button" onclick="saveMobileModeSettings()" class="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs">💾 儲存資料片參數</button>
+      </div>`;
+  }
+  def.fields.forEach(([key]) => {
+    const el = document.getElementById(`cfg-mm-${mode}-${key}`);
+    if (el && !el.dataset.dirty && document.activeElement !== el) el.value = cfg[key];
+  });
+  const warn = document.getElementById('mm-panel-sync-warning');
+  if (warn) {
+    warn.className = `text-[11px] font-bold ${enabled ? 'text-emerald-400' : 'text-rose-400'}`;
+    warn.innerText = enabled ? '🟢 手機同步已啟用' : '⛔ 請先開啟「手機同步 App」才能使用此資料片';
+  }
+}
+
+function resetMobileModePanelDefaults(mode) {
+  const def = MM_FIELD_META[mode];
+  def.fields.forEach(([key]) => {
+    const el = document.getElementById(`cfg-mm-${mode}-${key}`);
+    if (el) { el.value = window.MOBILE_MODE_DEFAULTS[mode][key]; el.dataset.dirty = '1'; }
+  });
+  showAdminToast('已填入建議預設值，按「儲存資料片參數」後生效');
+}
+
+/** 從面板收集目前資料片的參數，其他資料片沿用已儲存的設定 */
+function collectMobileModesConfig() {
+  const saved = JSON.parse(JSON.stringify(gameState?.mobileModes || {}));
+  const panel = document.getElementById('panel-settings-mobile-mode');
+  const mode = panel?.dataset?.mode;
+  if (mode && MM_FIELD_META[mode]) {
+    const cur = { ...(window.MOBILE_MODE_DEFAULTS[mode] || {}), ...(saved[mode] || {}) };
+    MM_FIELD_META[mode].fields.forEach(([key, , , type]) => {
+      const el = document.getElementById(`cfg-mm-${mode}-${key}`);
+      if (!el) return;
+      if (type === 'number') {
+        const v = parseFloat(el.value);
+        if (Number.isFinite(v) && v >= 0) cur[key] = v;
+      } else {
+        const v = String(el.value || '').trim();
+        if (v) cur[key] = v;
+      }
+    });
+    saved[mode] = cur;
+  }
+  return saved;
+}
+
+async function saveMobileModeSettings() {
+  await syncAllSettingsToSupabase('🎉 手機同步資料片參數已儲存！前台計分與規則說明已同步更新。');
+}
+
+function refreshMobileModeOptions() {
+  const enabled = Boolean(gameState?.gmOps?.mobileSync?.enabled);
+  document.querySelectorAll('#cfg-active-mode option[data-mobile]').forEach(opt => {
+    opt.disabled = !enabled && opt.value !== (gameState?.activeMode || '');
+    opt.textContent = opt.textContent.replace(/ ⛔需先開啟手機同步$/, '') + (enabled ? '' : ' ⛔需先開啟手機同步');
+  });
+}
+
+window.addEventListener('gameStateSynced', () => {
+  try {
+    refreshMobileModeOptions();
+    renderMobileModePanel(document.getElementById('cfg-active-mode')?.value || gameState?.activeMode);
+  } catch (e) { console.error(e); }
+});

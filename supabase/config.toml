@@ -1,0 +1,2 @@
+# Supabase CLI 設定 (只給 deploy_edge_functions.yml 用)
+project_id = "iron-heroes-2"

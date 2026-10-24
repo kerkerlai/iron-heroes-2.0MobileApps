@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""
+鋼鐵英雄紀元 2.0 — 舊資料庫 → 新資料庫 同步工具
+=====================================================================
+安全原則：
+  * 舊資料庫「只讀」：程式裡對舊庫只有 GET，完全沒有寫入的程式碼路徑。
+  * 只寫新資料庫；若新舊網址相同會立刻中止。
+  * 缺少任何設定就中止 (不會自動退回任何預設資料庫)。
+
+模式：
+  mirror (預設，GitHub Actions 每 30 分鐘)：
+      只「新增」新庫沒有的英雄 / 運動紀錄 (ID 重複就跳過)，
+      不會覆蓋你在 2.0 做的任何修改 (GM 設定、作廢、補登都保留)。
+  full (第一次搬家，或想把新庫重置成跟舊庫一樣時手動執行)：
+      英雄 / 運動紀錄 / 遊戲設定 全部以舊庫為準覆蓋 (不會刪除新庫多出來的資料)，
+      並複製全部頭像。
+  --dry-run：只讀取並列出會做什麼，不寫入任何東西。
+
+環境變數：
+  OLD_SUPABASE_URL / OLD_SUPABASE_ANON_KEY   舊專案 (只讀)
+  SUPABASE_URL     / SUPABASE_ANON_KEY       新專案 (寫入)
+用法：
+  python scripts/sync_old_to_new.py [mirror|full] [--dry-run]
+"""
+import os
+import sys
+import requests
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from data_source import get_mode, write_status  # noqa: E402
+
+MODE = "full" if "full" in sys.argv[1:] else "mirror"
+DRY = "--dry-run" in sys.argv[1:]
+FORCE = "--force" in sys.argv[1:]
+
+OLD_URL = os.environ.get("OLD_SUPABASE_URL", "").strip().rstrip("/")
+OLD_KEY = os.environ.get("OLD_SUPABASE_ANON_KEY", "").strip()
+NEW_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+NEW_KEY = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+
+missing = [n for n, v in [("OLD_SUPABASE_URL", OLD_URL), ("OLD_SUPABASE_ANON_KEY", OLD_KEY),
+                          ("SUPABASE_URL", NEW_URL), ("SUPABASE_ANON_KEY", NEW_KEY)] if not v]
+if missing:
+    sys.exit(f"❌ 缺少設定：{', '.join(missing)} (GitHub → Settings → Secrets and variables → Actions)。同步中止。")
+if OLD_URL == NEW_URL:
+    sys.exit("❌ 新舊資料庫網址相同，為避免誤寫，同步中止。")
+
+OLD_H = {"apikey": OLD_KEY, "Authorization": f"Bearer {OLD_KEY}"}
+NEW_H = {"apikey": NEW_KEY, "Authorization": f"Bearer {NEW_KEY}"}
+OLD_STORAGE = f"{OLD_URL}/storage/v1/object/public/avatars/"
+NEW_STORAGE = f"{NEW_URL}/storage/v1/object/public/avatars/"
+CHUNK = 500
+
+
+# ---------------- 讀取 (舊庫只會用到這裡) ----------------
+def read_all(base, headers, table, order):
+    out, size = [], 1000
+    while True:
+        r = requests.get(f"{base}/rest/v1/{table}?select=*&order={order}.asc&limit={size}&offset={len(out)}",
+                         headers=headers, timeout=30)
+        if r.status_code == 404 and base == NEW_URL:
+            sys.exit(f"❌ 新資料庫找不到資料表 {table}：請先在新 Supabase 的 SQL Editor 執行 scripts/supabase_full_setup_v2.sql")
+        r.raise_for_status()
+        rows = r.json()
+        out.extend(rows)
+        if len(rows) < size:
+            return out
+
+
+def old_read(table, order):
+    return read_all(OLD_URL, OLD_H, table, order)
+
+
+def new_read(table, order):
+    return read_all(NEW_URL, NEW_H, table, order)
+
+
+# ---------------- 寫入 (只寫新庫) ----------------
+def new_write(table, rows, overwrite):
+    if not rows or DRY:
+        return
+    prefer = "resolution=merge-duplicates" if overwrite else "resolution=ignore-duplicates"
+    for i in range(0, len(rows), CHUNK):
+        r = requests.post(f"{NEW_URL}/rest/v1/{table}", headers={**NEW_H, "Content-Type": "application/json",
+                          "Prefer": f"{prefer},return=minimal"}, json=rows[i:i + CHUNK], timeout=60)
+        if not r.ok:
+            sys.exit(f"❌ 寫入新庫 {table} 失敗 ({r.status_code})：{r.text[:300]}")
+
+
+def copy_avatar(url):
+    """把舊庫頭像複製到新庫 avatars bucket，回傳新網址；非舊庫圖片原樣回傳。"""
+    if not url or not url.startswith(OLD_STORAGE):
+        return url
+    rest = url[len(OLD_STORAGE):]
+    path, _, query = rest.partition("?")
+    new_url = NEW_STORAGE + path + (f"?{query}" if query else "")
+    if DRY:
+        return new_url
+    src = requests.get(OLD_STORAGE + path, timeout=30)
+    if not src.ok:
+        print(f"  ⚠️ 頭像下載失敗 {path} ({src.status_code})，保留原網址")
+        return url
+    up = requests.post(f"{NEW_URL}/storage/v1/object/avatars/{path}",
+                       headers={**NEW_H, "Content-Type": src.headers.get("content-type", "image/webp"),
+                                "x-upsert": "true"}, data=src.content, timeout=60)
+    if not up.ok:
+        print(f"  ⚠️ 頭像上傳失敗 {path} ({up.status_code})：{up.text[:200]}，保留原網址")
+        return url
+    return new_url
+
+
+def strip_ts(row):
+    # 保留原始 created_at / updated_at (批次寫入時每筆欄位必須一致，所以不刪任何欄位)
+    return row
+
+
+def main():
+    print(f"🔁 模式：{MODE}{' (dry-run，不寫入)' if DRY else ''}")
+    print(f"   舊庫 (只讀)：{OLD_URL}\n   新庫 (寫入)：{NEW_URL}")
+
+    # 🛰️ GM 後台「資料來源」開關：已切到「自己抓 Strava」就不再從舊庫複製
+    source = get_mode(NEW_URL, NEW_KEY)
+    if source is None:
+        sys.exit("❌ 無法讀取資料來源開關 (新資料庫連不上？)，本次不同步。")
+    if source == "strava" and not FORCE:
+        print("⏸️ 資料來源 = 新 repo 自己抓 Strava (已正式切換)，鏡像同步本次只報到、不複製。")
+        if not DRY:
+            write_status(NEW_URL, NEW_KEY, "mirror", {"result": "skipped", "mode": source})
+        return
+
+    old_heroes = old_read("heroes", "name")
+    old_acts = old_read("activities", "id")
+    new_heroes = {h["name"]: h for h in new_read("heroes", "name")}
+    new_act_ids = {a["id"] for a in new_read("activities", "id")}
+    print(f"   舊庫：英雄 {len(old_heroes)}、運動紀錄 {len(old_acts)}")
+    print(f"   新庫：英雄 {len(new_heroes)}、運動紀錄 {len(new_act_ids)}")
+
+    # ---- 英雄 ----
+    if MODE == "full":
+        hero_rows = old_heroes
+    else:
+        hero_rows = [h for h in old_heroes if h["name"] not in new_heroes]
+    out = []
+    for h in hero_rows:
+        h = strip_ts(dict(h))
+        h["avatar"] = copy_avatar(h.get("avatar") or "")
+        out.append(h)
+    new_write("heroes", out, overwrite=(MODE == "full"))
+    print(f"🦸 英雄：{'覆蓋' if MODE == 'full' else '新增'} {len(out)} 位 {[h['name'] for h in out]}")
+
+    # mirror 模式：補救新庫裡仍指向舊庫的頭像
+    if MODE == "mirror":
+        fixes = []
+        for name, h in new_heroes.items():
+            av = h.get("avatar") or ""
+            if av.startswith(OLD_STORAGE):
+                nu = copy_avatar(av)
+                if nu != av:
+                    fixes.append((name, nu))
+        for name, nu in fixes:
+            if not DRY:
+                requests.patch(f"{NEW_URL}/rest/v1/heroes?name=eq.{requests.utils.quote(name)}",
+                               headers={**NEW_H, "Content-Type": "application/json"},
+                               json={"avatar": nu}, timeout=30).raise_for_status()
+        if fixes:
+            print(f"🖼️ 修正仍指向舊庫的頭像：{[n for n, _ in fixes]}")
+
+    # ---- 運動紀錄 ----
+    if MODE == "full":
+        act_rows = old_acts
+    else:
+        act_rows = [a for a in old_acts if a["id"] not in new_act_ids]
+    out = []
+    for a in act_rows:
+        a = strip_ts(dict(a))
+        a["source"] = "manual" if a.get("is_manual") else (a.get("source") or "strava")
+        out.append(a)
+    new_write("activities", out, overwrite=(MODE == "full"))
+    print(f"🏃 運動紀錄：{'覆蓋/新增' if MODE == 'full' else '新增'} {len(out)} 筆")
+
+    # ---- 遊戲設定 (只在 full 模式) ----
+    if MODE == "full":
+        cfg = [strip_ts(dict(c)) for c in old_read("game_config", "key")]
+        new_write("game_config", cfg, overwrite=True)
+        print(f"⚙️ 遊戲設定：覆蓋 {len(cfg)} 項 {[c['key'] for c in cfg]}")
+
+    if not DRY:
+        write_status(NEW_URL, NEW_KEY, "mirror", {"result": "ok", "mode": source, "run": MODE,
+                     "heroesAdded": len(hero_rows) if MODE == "mirror" else 0, "activitiesAdded": len(act_rows) if MODE == "mirror" else 0,
+                     "oldActivities": len(old_acts)})
+    print("✅ 完成" + (" (dry-run，沒有寫入任何資料)" if DRY else ""))
+
+
+if __name__ == "__main__":
+    main()
