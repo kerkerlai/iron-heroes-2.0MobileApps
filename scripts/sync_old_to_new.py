@@ -109,6 +109,54 @@ def copy_avatar(url):
     return new_url
 
 
+def load_aliases():
+    """GM 在 2.0 改過名字的英雄：game_config.hero_aliases = {舊名: 新名}。
+    舊遊戲資料庫裡仍是舊名，鏡像時要換成新名，避免又多出一位「舊名」的重複英雄。"""
+    try:
+        r = requests.get(f"{NEW_URL}/rest/v1/game_config?key=eq.hero_aliases&select=value", headers=NEW_H, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+        v = (rows[0].get("value") if rows else None) or {}
+        return {str(k): str(x) for k, x in v.items() if k and x and k != x} if isinstance(v, dict) else {}
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"❌ 讀取英雄改名對照表失敗：{e}（為避免產生重複英雄，本次不同步）")
+
+
+def resolve_name(name, aliases):
+    seen = set()
+    while name in aliases and name not in seen:
+        seen.add(name)
+        name = aliases[name]
+    return name
+
+
+def heal_duplicates(aliases, new_heroes):
+    """自我修復：新庫若已經有「舊名」英雄 (舊版鏡像造成的重複)，而新名英雄也存在，
+    就把舊名底下的運動紀錄搬到新名，再刪除重複的舊名英雄 (有手機綁定/健康數據時不動，只提示)。"""
+    healed = []
+    for old_name in list(aliases):
+        target = resolve_name(old_name, aliases)
+        if old_name not in new_heroes or target not in new_heroes or target == old_name:
+            continue
+        q = requests.utils.quote(old_name)
+        dh = requests.get(f"{NEW_URL}/rest/v1/daily_health?select=hero&hero=eq.{q}&limit=1", headers=NEW_H, timeout=15)
+        dv = requests.get(f"{NEW_URL}/rest/v1/devices_public?select=hero&hero=eq.{q}&limit=1", headers=NEW_H, timeout=15)
+        if (dh.ok and dh.json()) or (dv.ok and dv.json()):
+            print(f"  ⚠️ 重複英雄「{old_name}」有手機資料，請 GM 在後台處理 (未自動合併)")
+            continue
+        if not DRY:
+            r1 = requests.patch(f"{NEW_URL}/rest/v1/activities?hero=eq.{q}", headers={**NEW_H, "Content-Type": "application/json"},
+                                json={"hero": target}, timeout=30)
+            r1.raise_for_status()
+            r2 = requests.delete(f"{NEW_URL}/rest/v1/heroes?name=eq.{q}", headers=NEW_H, timeout=30)
+            r2.raise_for_status()
+        new_heroes.pop(old_name, None)
+        healed.append(f"{old_name}→{target}")
+    if healed:
+        print(f"🩹 合併重複英雄：{healed}")
+    return healed
+
+
 def strip_ts(row):
     # 保留原始 created_at / updated_at (批次寫入時每筆欄位必須一致，所以不刪任何欄位)
     return row
@@ -132,17 +180,23 @@ def main():
     old_acts = old_read("activities", "id")
     new_heroes = {h["name"]: h for h in new_read("heroes", "name")}
     new_act_ids = {a["id"] for a in new_read("activities", "id")}
+    aliases = load_aliases()
+    if aliases:
+        print(f"   改名對照：{aliases}")
+    healed = heal_duplicates(aliases, new_heroes)
     print(f"   舊庫：英雄 {len(old_heroes)}、運動紀錄 {len(old_acts)}")
     print(f"   新庫：英雄 {len(new_heroes)}、運動紀錄 {len(new_act_ids)}")
 
     # ---- 英雄 ----
+    # 舊庫英雄若在 2.0 改過名，一律換成新名 (避免產生重複英雄)
     if MODE == "full":
         hero_rows = old_heroes
     else:
-        hero_rows = [h for h in old_heroes if h["name"] not in new_heroes]
+        hero_rows = [h for h in old_heroes if resolve_name(h["name"], aliases) not in new_heroes]
     out = []
     for h in hero_rows:
         h = strip_ts(dict(h))
+        h["name"] = resolve_name(h["name"], aliases)
         h["avatar"] = copy_avatar(h.get("avatar") or "")
         out.append(h)
     new_write("heroes", out, overwrite=(MODE == "full"))
@@ -173,6 +227,7 @@ def main():
     out = []
     for a in act_rows:
         a = strip_ts(dict(a))
+        a["hero"] = resolve_name(a.get("hero") or "", aliases)
         a["source"] = "manual" if a.get("is_manual") else (a.get("source") or "strava")
         out.append(a)
     new_write("activities", out, overwrite=(MODE == "full"))
