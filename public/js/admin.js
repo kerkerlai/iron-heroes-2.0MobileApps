@@ -335,6 +335,7 @@ function populateGlobalSettings() {
     if (f2El && gameState.faction.f2Name) f2El.value = gameState.faction.f2Name;
     if (fHpEl && gameState.faction.baseHp) fHpEl.value = gameState.faction.baseHp;
   }
+  renderFactionAssignEditor();
 
   if (gameState.survival) {
     const sMaxEl = document.getElementById('cfg-survival-maxhp');
@@ -550,7 +551,9 @@ async function syncAllSettingsToSupabase(customMsg) {
   const factionConfig = {
     f1Name: document.getElementById('cfg-faction1-name')?.value || gameState?.faction?.f1Name || '🟢 均衡聯盟',
     f2Name: document.getElementById('cfg-faction2-name')?.value || gameState?.faction?.f2Name || '🔴 狂怒部落',
-    baseHp: parseInt(document.getElementById('cfg-faction-basehp')?.value) || gameState?.faction?.baseHp || 500000
+    baseHp: parseInt(document.getElementById('cfg-faction-basehp')?.value) || gameState?.faction?.baseHp || 500000,
+    // 陣營分配：只保存 GM 明確指定的公會 (1 / 2)；「自動」不寫入
+    guildAssign: collectFactionAssign()
   };
 
   // Expansion 5: Survival Config (支援 0；中途調整每日扣血時以「分段排程」從明天起生效，不回溯)
@@ -2931,3 +2934,69 @@ window.addEventListener('gameStateSynced', () => {
     renderMobileModePanel(document.getElementById('cfg-active-mode')?.value || gameState?.activeMode);
   } catch (e) { console.error(e); }
 });
+
+// =====================================================================
+// ⚔️ 資料片四「雙城激戰」陣營分配編輯器
+// =====================================================================
+function collectFactionAssign() {
+  const box = document.getElementById('cfg-faction-assign');
+  const prev = (gameState?.faction?.guildAssign) || {};
+  if (!box || !box.querySelector('select')) return { ...prev };
+  const out = {};
+  // 保留目前名單中已不存在的公會設定 (例如暫時沒有成員的公會)，避免誤刪
+  const shown = new Set();
+  box.querySelectorAll('select[data-guild]').forEach(sel => {
+    const g = sel.dataset.guild; shown.add(g);
+    if (sel.value === '1' || sel.value === '2') out[g] = Number(sel.value);
+  });
+  Object.entries(prev).forEach(([g, v]) => { if (!shown.has(g) && (v === 1 || v === 2)) out[g] = v; });
+  return out;
+}
+
+function updateFactionAssignPreview() {
+  const box = document.getElementById('cfg-faction-assign');
+  if (!box) return;
+  const guilds = gameState?.guilds || [];
+  const split = window.computeFactionSplit(guilds.map(g => g.name), collectFactionAssign());
+  const count = side => split[side].reduce((s, n) => s + ((guilds.find(g => g.name === n)?.members || []).length), 0);
+  const f1 = document.getElementById('cfg-faction1-name')?.value || '🟢 均衡聯盟';
+  const f2 = document.getElementById('cfg-faction2-name')?.value || '🔴 狂怒部落';
+  const c1 = count(1), c2 = count(2);
+  const prev = document.getElementById('cfg-faction-assign-preview');
+  if (prev) {
+    prev.innerHTML = `<span class="text-emerald-300">${escapeHtmlLite(f1)}：${split[1].length} 公會 / ${c1} 人</span>　vs　<span class="text-rose-300">${escapeHtmlLite(f2)}：${split[2].length} 公會 / ${c2} 人</span>`
+      + (Math.abs(c1 - c2) >= 2 ? '　<span class="text-amber-300">⚠️ 人數差 ' + Math.abs(c1 - c2) + ' 人</span>' : '　<span class="text-emerald-400">✅ 人數均衡</span>');
+  }
+  box.querySelectorAll('select[data-guild]').forEach(sel => {
+    const side = split[1].includes(sel.dataset.guild) ? 1 : 2;
+    const tag = sel.parentElement.querySelector('.faction-auto-tag');
+    if (tag) tag.textContent = sel.value === 'auto' ? `→ 自動分到 ${side === 1 ? '🟢' : '🔴'}` : '';
+  });
+}
+
+function escapeHtmlLite(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderFactionAssignEditor() {
+  const box = document.getElementById('cfg-faction-assign');
+  if (!box || !window.computeFactionSplit) return;
+  const guilds = gameState?.guilds || [];
+  if (!guilds.length) { box.innerHTML = '<div class="text-slate-500">尚無公會資料</div>'; return; }
+  const assign = gameState?.faction?.guildAssign || {};
+  box.innerHTML = guilds.map(g => {
+    const v = assign[g.name] === 1 || assign[g.name] === 2 ? String(assign[g.name]) : 'auto';
+    const members = (g.members || []).map(m => typeof m === 'string' ? m : (m && m.name) || '').filter(Boolean);
+    return `<div class="flex flex-wrap items-center gap-2">
+      <span class="font-bold text-white min-w-[7rem]">${escapeHtmlLite(g.badge || '🛡️')} ${escapeHtmlLite(g.name)}</span>
+      <span class="text-[10px] text-slate-500 flex-1">${members.length} 人：${escapeHtmlLite(members.join('、'))}</span>
+      <select data-guild="${escapeHtmlLite(g.name)}" onchange="updateFactionAssignPreview()" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white">
+        <option value="auto" ${v === 'auto' ? 'selected' : ''}>自動</option>
+        <option value="1" ${v === '1' ? 'selected' : ''}>🟢 守護陣營</option>
+        <option value="2" ${v === '2' ? 'selected' : ''}>🔴 狂怒陣營</option>
+      </select>
+      <span class="faction-auto-tag text-[10px] text-slate-400 w-24"></span>
+    </div>`;
+  }).join('') + '<div id="cfg-faction-assign-preview" class="pt-2 border-t border-slate-800 text-[11px] font-bold"></div>';
+  updateFactionAssignPreview();
+}

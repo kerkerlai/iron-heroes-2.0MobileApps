@@ -3203,8 +3203,10 @@ function renderFactionWarView() {
   let faction1 = { name: gameState?.faction?.f1Name || "🟢 均衡聯盟", hp: gameState?.faction?.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
   let faction2 = { name: gameState?.faction?.f2Name || "🔴 狂怒部落", hp: gameState?.faction?.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
   
+  // 陣營分配：GM 後台可指定每個公會的陣營 (faction_config.guildAssign)；未指定者照舊依順序交錯分配
+  const factionSplit = window.computeFactionSplit ? window.computeFactionSplit(guildList.map(g => g.name), gameState?.faction?.guildAssign) : null;
   guildList.forEach((g, idx) => {
-      const isF1 = idx % 2 === 0;
+      const isF1 = factionSplit ? factionSplit[1].includes(g.name) : idx % 2 === 0;
       const targetF = isF1 ? faction1 : faction2;
       targetF.guilds.push(g.name);
       

@@ -3,6 +3,24 @@
  * 100% 擺脫 Google Sheet，直連 Supabase PostgreSQL 提供毫秒級跨裝置即時同步
  */
 
+/**
+ * ⚔️ 資料片四「雙城激戰」陣營分配 (前台與 GM 後台共用)
+ * guildAssign: { 公會名稱: 1 | 2 }，由 GM 後台指定；沒指定的公會照舊規則自動分：
+ *   依公會排列順序 (公會中最早註冊英雄的先後) 第 1、3、5… 個 → 陣營 1，第 2、4… 個 → 陣營 2
+ * 全部都沒指定時，結果與舊版完全相同。
+ */
+function computeFactionSplit(guildNames, guildAssign) {
+  const assign = guildAssign || {};
+  const out = { 1: [], 2: [] };
+  (guildNames || []).forEach((name, idx) => {
+    const a = Number(assign[name]);
+    const side = (a === 1 || a === 2) ? a : (idx % 2 === 0 ? 1 : 2);
+    out[side].push(name);
+  });
+  return out;
+}
+window.computeFactionSplit = computeFactionSplit;
+
 const SYNC_CONFIG = {
   pollIntervalSeconds: 30
 };
