@@ -451,10 +451,14 @@ function renderExpeditionView() {
   const container = document.getElementById('tab-content-expedition');
   if (!container) return;
   if (!isMobileSyncEnabled()) return renderMobileModeDisabledNotice(container, 'expedition');
-  const r = computeExpedition();
+  container.innerHTML = renderExpeditionHtml(computeExpedition());
+}
+
+/** 由 computeExpedition() 結果產生畫面 HTML (現場與「過往英雄史」快照共用) */
+function renderExpeditionHtml(r) {
   const c = r.cfg;
   const meta = MOBILE_MODE_META.expedition;
-  container.innerHTML = mmLore(meta, `全服英雄踏上「${mmEsc(c.routeName)}」！每天的步數、健身房訓練與騎乘游泳都會轉換成里程，一起在賽季結束前抵達終點 ${c.routeKm.toLocaleString()} km。抵達的每座城市都是全服共同的里程碑。`) + `
+  return mmLore(meta, `全服英雄踏上「${mmEsc(c.routeName)}」！每天的步數、健身房訓練與騎乘游泳都會轉換成里程，一起在賽季結束前抵達終點 ${c.routeKm.toLocaleString()} km。抵達的每座城市都是全服共同的里程碑。`) + `
     <div class="bg-slate-900/80 border border-amber-500/40 rounded-2xl p-5 space-y-3">
       <div class="flex flex-wrap items-end justify-between gap-2">
         <div><div class="text-xs text-slate-400">全服累計里程</div><div class="text-3xl font-black font-rpg text-amber-400">${r.totalKm.toLocaleString()} <span class="text-base text-slate-400">/ ${r.routeKm.toLocaleString()} km</span></div></div>
@@ -494,12 +498,16 @@ function renderDreamView() {
   const container = document.getElementById('tab-content-dream');
   if (!container) return;
   if (!isMobileSyncEnabled()) return renderMobileModeDisabledNotice(container, 'dream');
-  const r = computeDream();
+  container.innerHTML = renderDreamHtml(computeDream());
+}
+
+/** 由 computeDream() 結果產生畫面 HTML (現場與「過往英雄史」快照共用) */
+function renderDreamHtml(r) {
   const c = r.cfg;
-  const minDur = (window.gameState?.summary?.minDurationMinutes) || 30;
+  const minDur = r.minDur || (window.gameState?.summary?.minDurationMinutes) || 30;
   const hpPct = r.maxHp > 0 ? Math.max(0, Math.min(100, r.remainingHp / r.maxHp * 100)) : 0;
   const fmtSleep = (m) => m ? `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}m` : '—';
-  container.innerHTML = mmLore(MOBILE_MODE_META.dream, `夢魘每晚都在侵蝕英雄們的意志。<b>睡得飽、作息規律</b>的英雄能築起夢境結界，<b>白天運動</b>則化為攻擊力。只睡不動、或只動不睡都無法發揮全力——全服一起在賽季結束前擊倒夢魘！`) + `
+  return mmLore(MOBILE_MODE_META.dream, `夢魘每晚都在侵蝕英雄們的意志。<b>睡得飽、作息規律</b>的英雄能築起夢境結界，<b>白天運動</b>則化為攻擊力。只睡不動、或只動不睡都無法發揮全力——全服一起在賽季結束前擊倒夢魘！`) + `
     <div class="bg-slate-900/80 border border-amber-500/40 rounded-2xl p-5 space-y-2">
       <div class="flex flex-wrap items-end justify-between gap-2">
         <div><div class="text-xs text-slate-400">👹 夢魘剩餘血量</div><div class="text-3xl font-black font-rpg ${r.defeated ? 'text-emerald-400' : 'text-rose-400'}">${r.remainingHp.toLocaleString()} <span class="text-base text-slate-400">/ ${r.maxHp.toLocaleString()}</span></div></div>
@@ -546,10 +554,14 @@ function renderFlameView() {
   const container = document.getElementById('tab-content-flame');
   if (!container) return;
   if (!isMobileSyncEnabled()) return renderMobileModeDisabledNotice(container, 'flame');
-  const r = computeFlame();
+  container.innerHTML = renderFlameHtml(computeFlame());
+}
+
+/** 由 computeFlame() 結果產生畫面 HTML (現場與「過往英雄史」快照共用) */
+function renderFlameHtml(r) {
   const c = r.cfg;
   const dot = (s) => s === 'full' ? '🔥' : (s === 'zero' ? '🥶' : (s === 'partial' ? '🕯️' : '·'));
-  container.innerHTML = mmLore(MOBILE_MODE_META.flame, `每個公會守護一盞聖火。每位英雄每天點亮三道火焰：<b>動起來、走起來、睡飽飽</b>。全員都點火，聖火就升級；有人完全熄火，聖火會減弱。團隊一起把聖火守到賽季最後！`) + `
+  return mmLore(MOBILE_MODE_META.flame, `每個公會守護一盞聖火。每位英雄每天點亮三道火焰：<b>動起來、走起來、睡飽飽</b>。全員都點火，聖火就升級；有人完全熄火，聖火會減弱。團隊一起把聖火守到賽季最後！`) + `
     ${mmNoData(r)}
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       ${r.guilds.map((g, i) => `
@@ -582,9 +594,13 @@ function renderMonasteryView() {
   const container = document.getElementById('tab-content-monastery');
   if (!container) return;
   if (!isMobileSyncEnabled()) return renderMobileModeDisabledNotice(container, 'monastery');
-  const r = computeMonastery();
+  container.innerHTML = renderMonasteryHtml(computeMonastery());
+}
+
+/** 由 computeMonastery() 結果產生畫面 HTML (現場與「過往英雄史」快照共用) */
+function renderMonasteryHtml(r) {
   const c = r.cfg;
-  container.innerHTML = mmLore(MOBILE_MODE_META.monastery, `在鐵人修行院裡，<b>你的對手是昨天的自己</b>。規律訓練、好好睡覺、保持活動就能累積修為；靜止心率比入門時下降，代表心肺真正變強，額外獲得「靜心加成」。但連續爆練又不睡覺會<b>走火入魔</b>！`) + `
+  return mmLore(MOBILE_MODE_META.monastery, `在鐵人修行院裡，<b>你的對手是昨天的自己</b>。規律訓練、好好睡覺、保持活動就能累積修為；靜止心率比入門時下降，代表心肺真正變強，額外獲得「靜心加成」。但連續爆練又不睡覺會<b>走火入魔</b>！`) + `
     ${mmNoData(r)}
     <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
       <div class="flex flex-wrap gap-1.5 text-[11px]">${r.ranks.map(rk => `<span class="px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300">${mmEsc(rk.name)} ≥ ${rk.value.toLocaleString()}</span>`).join('')}</div>
@@ -610,6 +626,16 @@ function renderMonasteryView() {
       `<b>靜心加成</b> = max(0, 基準靜止心率 − 近 7 天中位數) × ${c.rhrPointsPerBpm}。基準 = 賽季開始後前 ${c.baselineDays} 天有資料日子的中位數；至少要有 ${c.baselineDays + 3} 天資料才開始計算。<span class="text-slate-500">原因：靜止心率下降是心肺進步最可靠的長期指標；跟自己比，新手與老手都有機會。靜止心率由 App 從睡眠期間最低 30 分鐘平均心率推算，各品牌一致。</span>`,
       `<b>勝利條件</b>：依總修為晉級境界（門檻可調）；公會依人均修為排名。`
     ])}`;
+}
+
+/** 手機資料片畫面 HTML (快照用：直接吃凍結的 compute 結果) */
+function renderMobileModeHtml(mode, r) {
+  if (!r) return '';
+  if (mode === 'expedition') return renderExpeditionHtml(r);
+  if (mode === 'dream') return renderDreamHtml(r);
+  if (mode === 'flame') return renderFlameHtml(r);
+  if (mode === 'monastery') return renderMonasteryHtml(r);
+  return '';
 }
 
 function renderMobileModeView(mode) {
@@ -663,6 +689,7 @@ window.computeFlame = computeFlame;
 window.computeMonastery = computeMonastery;
 window.getMobileHeroScore = getMobileHeroScore;
 window.renderMobileModeView = renderMobileModeView;
+window.renderMobileModeHtml = renderMobileModeHtml;
 window.renderMobileModeKpiHtml = renderMobileModeKpiHtml;
 window.getMobileModeActivityLabel = getMobileModeActivityLabel;
 window.renderMobileModeDisabledNotice = renderMobileModeDisabledNotice;

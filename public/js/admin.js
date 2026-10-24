@@ -656,6 +656,11 @@ async function saveGlobalGameSettings() {
 // SNAPSHOTS CRUD MANAGEMENT (100% 完整賽季快照封存)
 // -------------------------------------------------------------
 
+// 快照標題 / ID 顯示跳脫
+function adminSnapEsc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function getSnapshotsList() {
   if (gameState?.snapshots && Array.isArray(gameState.snapshots)) {
     return gameState.snapshots;
@@ -685,6 +690,12 @@ function renderSnapshotTable() {
       typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">⚔️ 職業天賦</span>';
     } else if (snap.type === 'survival') {
       typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">☠️ 飢餓法則</span>';
+    } else if (snap.type === 'faction_war') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🏰 雙城激戰</span>';
+    } else if (snap.type === 'base_builder') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">🏗️ 鋼鐵要塞</span>';
+    } else if (snap.type === 'bingo') {
+      typeLabel = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30">🧩 戰神拼圖</span>';
     } else if (window.isMobileMode && window.isMobileMode(snap.type)) {
       const mm = window.MOBILE_MODE_META[snap.type];
       typeLabel = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">${mm.icon} ${mm.name}</span>`;
@@ -698,8 +709,8 @@ function renderSnapshotTable() {
 
     tr.innerHTML = `
       <td class="p-3">
-        <div class="font-bold text-white">${snap.seasonTitle || snap.id}</div>
-        <div class="text-[10px] text-slate-400 font-mono">ID: ${snap.id}</div>
+        <div class="font-bold text-white">${adminSnapEsc(snap.seasonTitle || snap.id)}</div>
+        <div class="text-[10px] text-slate-400 font-mono">ID: ${adminSnapEsc(snap.id)}</div>
       </td>
       <td class="p-3">${typeLabel}</td>
       <td class="p-3 font-mono text-slate-300">${snap.seasonPeriod || '—'}</td>
@@ -791,6 +802,9 @@ async function archiveCurrentSeason() {
   let defaultTitle = '2026 S2 • 經典競技模式 (封存快照)';
   if (activeMode === 'rpg_talent' || activeMode === 'rpg') defaultTitle = '2026 S2 • RPG 職業天賦爭霸 (封存快照)';
   if (activeMode === 'survival') defaultTitle = '資料片五 • 飢餓法則 (結算快照)';
+  if (activeMode === 'faction_war') defaultTitle = '資料片四 • 雙城激戰 (結算快照)';
+  if (activeMode === 'base_builder') defaultTitle = '資料片六 • 鋼鐵要塞 (結算快照)';
+  if (activeMode === 'bingo') defaultTitle = '資料片七 • 戰神拼圖 (結算快照)';
   if (window.isMobileMode && window.isMobileMode(activeMode)) { const mm = window.MOBILE_MODE_META[activeMode]; defaultTitle = `資料片${mm.num} • ${mm.name} (結算快照)`; }
   else if (activeMode === 'world_boss' || activeMode === 'boss') defaultTitle = `${boss.name || '世界 Boss 討伐戰'} (結算快照)`;
 
@@ -807,134 +821,16 @@ async function archiveCurrentSeason() {
     const now = new Date();
     const timeStampStr = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-    let newArchive = null;
-
-    // 1. CLASSIC MODE SNAPSHOT (直接克隆當前已運算好的經典競技完整狀態)
-    if (activeMode === 'classic') {
-      const classicStats = (window.calculateLiveClassicStats ? window.calculateLiveClassicStats(gameState) : null) || gameState?.classic || {};
-      newArchive = {
-        id: `snapshot_classic_${Date.now()}`,
-        type: 'classic',
-        seasonTitle: snapshotTitle,
-        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
-        archivedAt: timeStampStr,
-        status: 'completed',
-        statusLabel: '🏁 本賽季已圓滿結算 (歷史數據已凍結)',
-        isVisible: true,
-        classicData: classicStats,
-        champions: classicStats.champions || {},
-        teamMetrics: classicStats.teamMetrics || [],
-        guildList: classicStats.guildList || [],
-        heroList: classicStats.heroList || []
-      };
-    }
-
-    // 2. RPG CLASS & TALENT SNAPSHOT (直接克隆當前已運算好的 RPG 完整狀態)
-    else if (activeMode === 'rpg_talent' || activeMode === 'rpg') {
-      const rpgStats = (window.calculateLiveRPGStats ? window.calculateLiveRPGStats(gameState) : null) || gameState?.rpg || {};
-      newArchive = {
-        id: `snapshot_rpg_${Date.now()}`,
-        type: 'rpg',
-        seasonTitle: snapshotTitle,
-        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
-        archivedAt: timeStampStr,
-        status: 'completed',
-        statusLabel: '🏁 本賽季職業爭霸已圓滿結算封存',
-        isVisible: true,
-        classMasters: rpgStats.classMasters || {},
-        guildSynergyList: rpgStats.guildSynergyList || [],
-        heroRpgList: rpgStats.heroRpgList || []
-      };
-    }
-
-    // 3. SURVIVAL SNAPSHOT (資料片五：飢餓法則，凍結結算當下的生存值與存活/淘汰名單)
-    else if (activeMode === 'survival') {
-      const svState = window.computeSurvivalState({ ...gameState, seasonStart: activeStartStr, seasonEnd: activeEndStr });
-      const heroSurvival = (gameState?.heroStats || window.heroStatsList || []).map(h => {
-        const hp = window.computeSurvivalHeroHp(h, svState);
-        return { name: h.name, guild: h.guild, avatar: h.avatar, currentHp: hp.currentHp, isDead: hp.isDead, food: hp.food, scavenge: hp.scavenge, validWorkouts: h.validWorkouts || 0 };
-      }).sort((a, b) => b.currentHp - a.currentHp);
-      newArchive = {
-        id: `snapshot_survival_${Date.now()}`,
-        type: 'survival',
-        seasonTitle: snapshotTitle,
-        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
-        archivedAt: timeStampStr,
-        status: 'completed',
-        statusLabel: '🏁 飢餓法則已結算封存 (生存榜已凍結)',
-        isVisible: true,
-        survival: { maxHp: svState.maxHp, decayPerDay: svState.decayPerDay, decaySchedule: svState.schedule, days: svState.days, penalty: svState.penalty },
-        heroSurvival
-      };
-    }
-
-    // 3b. 📱 手機同步資料片快照 (萬步遠征 / 夢境守護者 / 不滅之火 / 鐵人修行院)
-    else if (window.isMobileMode && window.isMobileMode(activeMode)) {
-      const r = window.computeMobileMode(activeMode, { ...gameState, seasonStart: activeStartStr, seasonEnd: activeEndStr });
-      let leaderboard = [], guilds = [], summaryText = '';
-      if (activeMode === 'expedition') {
-        leaderboard = r.heroes.map(h => ({ name: h.name, value: `${h.km} km`, detail: `步數 ${h.stepKm} / 訓練 ${h.workoutKm} km` }));
-        guilds = r.guilds.map(g => ({ name: g.name, value: `${g.km} km` }));
-        summaryText = `${r.cfg.routeName}：全服累計 ${r.totalKm} / ${r.routeKm} km ${r.completed ? '🏆 遠征成功' : '(未抵達終點)'}`;
-      } else if (activeMode === 'dream') {
-        leaderboard = r.heroes.map(h => ({ name: h.name, value: h.damage.toLocaleString(), detail: `睡眠 ${h.sleepPts} / 規律 ${h.regPts} / 攻擊 ${h.atkPts}` }));
-        guilds = r.guilds.map(g => ({ name: g.name, value: `人均 ${g.perMember.toLocaleString()}` }));
-        summaryText = `夢魘血量 ${r.maxHp.toLocaleString()}，全服傷害 ${r.totalDamage.toLocaleString()} ${r.defeated ? '🏆 夢魘已擊倒' : '(夢魘倖存)'}`;
-      } else if (activeMode === 'flame') {
-        leaderboard = r.heroes.map(h => ({ name: h.name, value: `火種 ${h.embers}`, detail: `三火全亮 ${h.perfectDays} 天` }));
-        guilds = r.guilds.map(g => ({ name: g.name, value: `聖火 Lv.${g.level}` }));
-        summaryText = `冠軍公會：${r.guilds[0] ? r.guilds[0].name + ' (聖火 Lv.' + r.guilds[0].level + ')' : '—'}`;
-      } else if (activeMode === 'monastery') {
-        leaderboard = r.heroes.map(h => ({ name: h.name, value: `${h.total.toLocaleString()} 修為`, detail: `${h.rank}${h.rhrDrop !== null ? `，靜止心率 ${h.rhrDrop > 0 ? '−' : '+'}${Math.abs(h.rhrDrop)}` : ''}` }));
-        guilds = r.guilds.map(g => ({ name: g.name, value: `人均 ${g.perMember.toLocaleString()}` }));
-        summaryText = `最高境界：${r.heroes[0] ? r.heroes[0].name + '（' + r.heroes[0].rank + '）' : '—'}`;
-      }
-      newArchive = {
-        id: `snapshot_${activeMode}_${Date.now()}`,
-        type: activeMode,
-        seasonTitle: snapshotTitle,
-        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
-        archivedAt: timeStampStr,
-        status: 'completed',
-        statusLabel: '🏁 手機同步資料片已結算封存',
-        isVisible: true,
-        config: r.cfg,
-        summaryText,
-        leaderboard,
-        guilds
-      };
-    }
-
-    // 4. WORLD BOSS SNAPSHOT (100% 絕對零誤差：直接克隆當前 live gameState 中的全部實時輸出與排行榜)
-    else {
-      const currentHeroStats = JSON.parse(JSON.stringify(gameState?.heroStats || window.heroStatsList || []));
-      currentHeroStats.sort((a, b) => (b.totalDamage || b.score || 0) - (a.totalDamage || a.score || 0));
-      const currentGuilds = JSON.parse(JSON.stringify(gameState?.guilds || []));
-      currentGuilds.sort((a, b) => (b.totalDamage || b.score || 0) - (a.totalDamage || a.score || 0));
-      const currentSummary = JSON.parse(JSON.stringify(gameState?.summary || {}));
-      const currentBoss = JSON.parse(JSON.stringify(gameState?.boss || {}));
-
-      newArchive = {
-        id: `snapshot_boss_${Date.now()}`,
-        type: 'world_boss',
-        seasonTitle: snapshotTitle,
-        seasonPeriod: `${activeStartStr} ~ ${activeEndStr}`,
-        archivedAt: timeStampStr,
-        status: "completed",
-        statusLabel: "🏁 本賽季討伐戰已圓滿結算封存",
-        isVisible: true,
-        boss: {
-          ...currentBoss,
-          seasonStart: activeStartStr,
-          seasonEnd: activeEndStr,
-          currentHp: currentBoss.currentHp !== undefined ? currentBoss.currentHp : Math.max(0, (currentBoss.maxHp || 350000) - (currentSummary.totalDamage || 0))
-        },
-        summary: currentSummary,
-        heroStats: currentHeroStats,
-        guildContributions: currentGuilds,
-        activities: (gameState?.activities || []).filter(a => a.isValidAttack).slice(0, 30)
-      };
-    }
+    // 所有 11 個資料片共用 seasonSnapshot.js 的快照建構器：
+    //  - view：與前台現場畫面同一份 view model (前台用同一支 render 函式重現，版面 1:1)
+    //  - heroInfo / guildInfo：凍結當下的大頭貼網址、公會、徽章數 (已解鎖 / 總數)、GM 稱號特效、出征狀態
+    //  修正：過去 faction_war / base_builder / bingo 會落入 world_boss 分支被存成 Boss 資料
+    if (typeof window.buildSeasonSnapshot !== 'function') throw new Error('快照模組 seasonSnapshot.js 未載入');
+    const newArchive = window.buildSeasonSnapshot(
+      { ...gameState, seasonStart: activeStartStr, seasonEnd: activeEndStr },
+      { mode: activeMode, title: snapshotTitle, seasonStart: activeStartStr, seasonEnd: activeEndStr, archivedAt: timeStampStr }
+    );
+    if (!newArchive.view) throw new Error(`資料片 ${activeMode} 無法產生快照資料`);
 
     const snapshots = getSnapshotsList();
     snapshots.unshift(newArchive);
