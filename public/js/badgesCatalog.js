@@ -281,6 +281,8 @@ window.getHeroActiveFx = getHeroActiveFx;
  *   1) renderHeroAvatarHtml(heroObj, sizeClass, roundedClass)
  *   2) renderHeroAvatarHtml(heroName, avatarUrl, sizeClass, roundedClass)
  */
+function bcEsc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
 function renderHeroAvatarHtml(heroOrName, avatarUrlOrSize, sizeClass = 'w-10 h-10', roundedClass = 'rounded-xl') {
   let heroName = '';
   let avatarUrl = '';
@@ -311,9 +313,9 @@ function renderHeroAvatarHtml(heroOrName, avatarUrlOrSize, sizeClass = 'w-10 h-1
 
   return `
     <div class="relative inline-flex flex-shrink-0 ${finalSize} ${finalRounded} ${hasFx ? fxInfo.preset.ringClass : 'border border-slate-700'} bg-slate-800 select-none">
-      <img src="${fallbackUrl}" alt="${heroName}" class="w-full h-full object-cover ${finalRounded}">
+      <img src="${bcEsc(fallbackUrl)}" alt="${bcEsc(heroName)}" class="w-full h-full object-cover ${finalRounded}">
       ${hasFx ? `<span class="avatar-fx-overlay avatar-fx-overlay-${fxInfo.fx} ${finalRounded}"></span>` : ''}
-      ${hasFx && fxInfo.preset.icon ? `<span class="avatar-fx-corner-badge" title="${fxInfo.customTitle || fxInfo.preset.label}">${fxInfo.preset.icon}</span>` : ''}
+      ${hasFx && fxInfo.preset.icon ? `<span class="avatar-fx-corner-badge" title="${bcEsc(fxInfo.customTitle || fxInfo.preset.label)}">${fxInfo.preset.icon}</span>` : ''}
     </div>
   `;
 }
@@ -328,7 +330,7 @@ function renderHeroCustomTitleHtml(heroName) {
   if (!fxInfo.customTitle && (!fxInfo.fx || fxInfo.fx === 'none')) return '';
   const displayTitle = fxInfo.customTitle || fxInfo.preset.defaultTitle;
   if (!displayTitle) return '';
-  return `<span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-black border ${fxInfo.preset.pillClass} ml-1 whitespace-nowrap">${displayTitle}</span>`;
+  return `<span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-black border ${fxInfo.preset.pillClass} ml-1 whitespace-nowrap">${bcEsc(displayTitle)}</span>`;
 }
 
 window.renderHeroCustomTitleHtml = renderHeroCustomTitleHtml;
@@ -603,6 +605,65 @@ window.registerCustomBadges = function(newBadgesArray) {
   });
 };
 
+/**
+ * 擴充接口 (外掛式徽章模組)：例如 mobileBadges.js 的「📱 手機健康徽章 #101~#300」。
+ * - 外掛徽章「不會」被推入 BADGE_CATALOG：經典 100 枚的結果、編號與「大滿貫收藏家」計數完全不受影響。
+ * - plugin 介面：
+ *     id: 'mobile'
+ *     getCatalog(state) → 目前「生效中」的額外徽章陣列 (未啟用時回傳 [])
+ *     getAllBadges()    → 全部額外徽章 (不論是否啟用，供 findBadgeById / GM 圖鑑查詢)
+ *     evaluate(ctx)     → 於經典徽章計算完成後呼叫，直接把解鎖紀錄寫入 ctx.resultByHero[hero][badgeId]
+ */
+const BADGE_PLUGINS = [];
+window.registerBadgePlugin = function(plugin) {
+  if (!plugin || !plugin.id) return;
+  const idx = BADGE_PLUGINS.findIndex(p => p.id === plugin.id);
+  if (idx >= 0) BADGE_PLUGINS.splice(idx, 1, plugin); else BADGE_PLUGINS.push(plugin);
+  __activeCatalogCache = { key: '', list: BADGE_CATALOG };
+};
+
+let __activeCatalogCache = { key: '', list: BADGE_CATALOG };
+/**
+ * 取得目前生效的徽章圖鑑：經典 BADGE_CATALOG + 已啟用外掛的徽章 (如 GM 開啟手機同步時的 200 枚健康徽章)
+ */
+window.getActiveBadgeCatalog = function(state) {
+  const st = state || window.gameState || {};
+  const extras = [];
+  BADGE_PLUGINS.forEach(p => {
+    try {
+      const list = typeof p.getCatalog === 'function' ? p.getCatalog(st) : [];
+      if (Array.isArray(list) && list.length) extras.push(...list);
+    } catch (e) { console.warn('[Badges] plugin getCatalog 失敗', p.id, e); }
+  });
+  if (extras.length === 0) return BADGE_CATALOG;
+  const key = `${BADGE_CATALOG.length}|${extras.length}|${extras[0].id}|${extras[extras.length - 1].id}`;
+  if (__activeCatalogCache.key !== key) __activeCatalogCache = { key, list: BADGE_CATALOG.concat(extras) };
+  return __activeCatalogCache.list;
+};
+
+/**
+ * 徽章總數：{ total, classicTotal, mobileTotal } (mobileTotal 為目前生效中的外掛徽章數，未啟用時為 0)
+ */
+window.getBadgeTotals = function(state) {
+  const classicTotal = BADGE_CATALOG.length;
+  const total = window.getActiveBadgeCatalog(state).length;
+  return { total, classicTotal, mobileTotal: total - classicTotal };
+};
+
+/**
+ * 依 ID 查詢徽章 (經典 + 所有外掛徽章，不論是否啟用；供 GM 手動授勳 / 顯示歷史紀錄)
+ */
+window.findBadgeById = function(badgeId) {
+  const hit = BADGE_CATALOG.find(b => b.id === badgeId);
+  if (hit) return hit;
+  for (const p of BADGE_PLUGINS) {
+    const list = typeof p.getAllBadges === 'function' ? (p.getAllBadges() || []) : [];
+    const found = list.find(b => b.id === badgeId);
+    if (found) return found;
+  }
+  return null;
+};
+
 // ============================================================================
 // 4. SINGLE-PASS O(N) CHRONOLOGICAL BADGE EVALUATION ENGINE
 // ============================================================================
@@ -653,6 +714,7 @@ function evaluateAllHeroesBadges(state) {
   });
 
   const resultByHero = {};
+  const classicBadgeIds = new Set(BADGE_CATALOG.map(b => b.id));
 
   heroes.forEach(h => {
     const heroName = h.name;
@@ -938,13 +1000,15 @@ function evaluateAllHeroesBadges(state) {
     });
 
     // 4. 檢查「大滿貫收藏家」類型徽章 (如解鎖滿 50 枚徽章)
-    const currentUnlockedCount = Object.keys(unlockedMap).length;
+    //    只計算經典圖鑑 (BADGE_CATALOG) 內的徽章，外掛徽章 (如 GM 手動授勳的手機健康徽章) 不影響此計數
+    const classicUnlocked = Object.keys(unlockedMap).filter(bId => classicBadgeIds.has(bId));
+    const currentUnlockedCount = classicUnlocked.length;
     BADGE_CATALOG.forEach(badge => {
       if (!unlockedMap[badge.id] && badge.rule?.type === 'badge_collector') {
         if (currentUnlockedCount >= (badge.rule.min || 50)) {
           const colLabel = `累積解鎖達 ${currentUnlockedCount} 枚徽章`;
           // 以「第 N 枚徽章」的解鎖日期作為達成日期 (固定不變，不會每天跳成今天)
-          const sortedDates = Object.values(unlockedMap).map(u => normalizeDateYMD(u.unlockedAt)).filter(Boolean).sort();
+          const sortedDates = classicUnlocked.map(bId => normalizeDateYMD(unlockedMap[bId].unlockedAt)).filter(Boolean).sort();
           const nthDate = sortedDates[(badge.rule.min || 50) - 1] || sortedDates[sortedDates.length - 1] || getTodayYMD();
           unlockedMap[badge.id] = {
             unlockedAt: nthDate,
@@ -956,6 +1020,16 @@ function evaluateAllHeroesBadges(state) {
     });
 
     resultByHero[heroName] = unlockedMap;
+  });
+
+  // 5. 外掛徽章模組 (如 📱 手機健康徽章)：在經典徽章全部算完後才執行，不會影響經典徽章結果
+  BADGE_PLUGINS.forEach(p => {
+    if (typeof p.evaluate !== 'function') return;
+    try {
+      p.evaluate({ state: targetState, heroes, resultByHero, validCareerActs, minDur, badgeStartYMD });
+    } catch (e) {
+      console.warn('[Badges] plugin evaluate 失敗', p.id, e);
+    }
   });
 
   if (targetState && typeof targetState === 'object') {

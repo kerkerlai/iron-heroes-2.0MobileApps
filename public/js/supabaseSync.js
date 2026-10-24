@@ -21,6 +21,33 @@ function computeFactionSplit(guildNames, guildAssign) {
 }
 window.computeFactionSplit = computeFactionSplit;
 
+/**
+ * 🛡️ XSS 防護：把資料庫來的自由文字中的 HTML 特殊字元換成全形 (畫面看起來一樣，但瀏覽器不會當成程式碼)
+ * 網址類欄位 (avatar、url、link…) 與日期/數字不處理。
+ */
+const SAFE_TEXT_MAP = { '<': '＜', '>': '＞', '"': '＂', "'": '＇', '`': '｀' };
+function safeDisplayText(v) {
+  return typeof v === 'string' ? v.replace(/[<>"'`]/g, c => SAFE_TEXT_MAP[c]) : v;
+}
+const SAFE_SKIP_KEY = /(avatar|url|link|href|src|image|img)$/i;
+function deepSafe(v, keyName) {
+  if (typeof v === 'string') return SAFE_SKIP_KEY.test(keyName || '') ? v : safeDisplayText(v);
+  if (Array.isArray(v)) return v.map(x => deepSafe(x, keyName));
+  if (v && typeof v === 'object') {
+    const out = {};
+    Object.keys(v).forEach(k => { out[safeDisplayText(k)] = deepSafe(v[k], k); });
+    return out;
+  }
+  return v;
+}
+function sanitizeDbRows(heroes, acts, config) {
+  (heroes || []).forEach(h => { ['name', 'guild', 'rpg_class', 'strava_id'].forEach(k => { if (h[k] != null) h[k] = safeDisplayText(String(h[k])); }); });
+  (acts || []).forEach(a => { ['hero', 'name', 'type', 'device_name', 'origin_app', 'source', 'id'].forEach(k => { if (typeof a[k] === 'string') a[k] = safeDisplayText(a[k]); }); });
+  (config || []).forEach(c => { if (c && c.value != null) c.value = deepSafe(c.value, c.key); });
+}
+window.safeDisplayText = safeDisplayText;
+window.sanitizeDbRows = sanitizeDbRows;
+
 const SYNC_CONFIG = {
   pollIntervalSeconds: 30
 };
@@ -488,6 +515,10 @@ async function syncFromDatabaseCore() {
       window.supabase.fetch('game_config', 'select=*')
     ]);
 
+    // 🛡️ 安全防護：資料庫裡的自由文字 (英雄名、公會、運動名稱、GM 稱號/活動標題、各種設定文字) 在進入畫面前，
+    //    把 < > " ' ` 換成外觀相同的全形字，避免有人在 Strava 運動名稱或英雄名稱藏程式碼 (XSS)。網址欄位不處理。
+    window.sanitizeDbRows && window.sanitizeDbRows(heroesData, activitiesData, configData);
+
     // Fallback to local game_state if Supabase is completely empty
     if ((!heroesData || heroesData.length === 0) && (!activitiesData || activitiesData.length === 0)) {
       console.warn('[Supabase] 資料庫為空，嘗試載入本地快取...');
@@ -524,6 +555,8 @@ async function syncFromDatabaseCore() {
         window.supabase.fetchAll('daily_health', `select=*&date=gte.${sinceDate}&order=date.asc`).catch(e => { console.warn('[MobileSync] daily_health 讀取失敗 (是否已執行資料庫擴充 SQL？)', e.message); return []; }),
         window.supabase.fetch('devices_public', 'select=*').catch(() => [])
       ]);
+      (dailyHealthRows || []).forEach(r => { if (r && typeof r.hero === 'string') r.hero = safeDisplayText(r.hero); ['bed_time', 'wake_time', 'source'].forEach(k => { if (typeof r[k] === 'string') r[k] = safeDisplayText(r[k]); }); });
+      (deviceRows || []).forEach(r => { ['hero', 'platform', 'device_model', 'app_version'].forEach(k => { if (r && typeof r[k] === 'string') r[k] = safeDisplayText(r[k]); }); });
     }
 
     // Parse Active Season Dates

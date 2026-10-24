@@ -35,9 +35,12 @@ Strava ─► 舊爬蟲(舊repo) ─► 舊 Supabase              Strava ─► 
 | `.github/workflows/mirror_from_old.yml` | 新增 | 平行期把舊庫新資料複製到新庫 |
 | `scripts/sync_old_to_new.py` | 新增 | 鏡像/搬家程式（舊庫只讀） |
 | `scripts/supabase_full_setup_v2.sql` | 新增 | 新專案一鍵建庫（資料表 + App 預備表 + 頭像 bucket） |
+| `public/js/supabaseSync.js`、`game.js`、`admin.js`、`admin.html` | 資料片四「雙城激戰」新增 GM「⚔️ 陣營分配」：每個公會可選 自動 / 🟢 / 🔴，即時顯示兩隊人數；存在 `faction_config.guildAssign`，全選自動 = 與舊版相同 | 舊版依註冊順序交錯分隊，GM 無法控制、人數易失衡 |
+| `public/index.html`、`public/js/game.js` | App 內嵌模式：`?app=1` 隱藏網頁頂部導覽、`?hero=名稱` 預選英雄、`window.IronApp.show()/refresh()` 給 App 原生分頁呼叫 | 手機 App「⚔️ 戰績」分頁直接嵌入網站，分數與網站 100% 一致 |
+| r5：`mobileBadges.js`、`badgesCatalog.js`、`game.js`、`mobileModes.js`、`css/heroCard.css`、`img/bosses/`、`admin.*` | 200 枚手機徽章、統一大頭貼英雄卡、Boss 形象圖庫、資料片重新編號、夢境規則白話化 | 見 README.md 第 4-4 節 |
 | `scripts/migrate_to_supabase.py` | 移除 | 舊的 Google Sheet 搬家工具，2.0 用不到且寫死舊庫 |
 
-遊戲邏輯、7 個經典資料片、手機資料片 八/九/十一/十三、GM 後台、限時加成、重複上傳偵測……全部與 BugFixed13 相同。
+遊戲邏輯、7 個經典資料片、手機資料片 八/九/十/十一、GM 後台、限時加成、重複上傳偵測……全部與 BugFixed13 相同。
 
 ## 2. 架設步驟（Windows 全程用瀏覽器即可）
 

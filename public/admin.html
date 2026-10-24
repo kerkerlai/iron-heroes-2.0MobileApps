@@ -36,7 +36,7 @@
         </div>
         <div>
           <h1 class="text-sm sm:text-lg font-black text-white font-title tracking-tight">遊戲大師控制台 (GM Control Panel)</h1>
-          <p class="hidden sm:block text-xs font-medium text-slate-400">舒服雷 Strava Project • 陽光運動風賽事管理、限時活動與百大徽章中心</p>
+          <p class="hidden sm:block text-xs font-medium text-slate-400">Kerker's 20% project • 陽光運動風賽事管理、限時活動與百大徽章中心</p>
         </div>
       </div>
 
@@ -100,8 +100,8 @@
             <optgroup label="📱 手機同步資料片 (需先開啟手機同步 App)">
               <option value="expedition" data-mobile="1">🗺️ 資料片八：萬步遠征 (步數+訓練里程)</option>
               <option value="dream" data-mobile="1">🌙 資料片九：夢境守護者 (睡眠+作息+運動)</option>
-              <option value="flame" data-mobile="1">🕯️ 資料片十一：不滅之火 (每日三道火)</option>
-              <option value="monastery" data-mobile="1">🧘 資料片十三：鐵人修行院 (跟自己比)</option>
+              <option value="flame" data-mobile="1">🕯️ 資料片十：不滅之火 (每日三道火)</option>
+              <option value="monastery" data-mobile="1">🧘 資料片十一：鐵人修行院 (跟自己比)</option>
             </optgroup>
           </select>
         </div>
@@ -672,6 +672,14 @@
               <input type="text" id="cfg-boss-name" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none">
             </div>
 
+            <div>
+              <label class="font-bold text-slate-300 block mb-1">🖼️ Boss 形象 (由可愛 → 兇悍，點選套用)</label>
+              <div id="cfg-boss-gallery" class="grid grid-cols-5 gap-2"></div>
+              <label class="flex items-center gap-2 mt-2 text-[11px] text-slate-400"><input type="checkbox" id="cfg-boss-gallery-apply-name" checked class="accent-amber-500"> 點選圖片時，同時把 Boss 名稱換成該圖的名字</label>
+              <input type="hidden" id="cfg-boss-avatar">
+              <p id="cfg-boss-gallery-note" class="text-[11px] text-slate-500 mt-1"></p>
+            </div>
+
             <div class="grid grid-cols-2 gap-2">
               <div>
                 <label class="font-bold text-slate-300 block mb-1">總血量 (Max HP)</label>
@@ -773,7 +781,7 @@
         </div>
 
         <!-- ============================================== -->
-        <!-- 📱 手機同步資料片 (八/九/十一/十三) 參數面板        -->
+        <!-- 📱 手機同步資料片 (八/九/十/十一) 參數面板        -->
         <!-- 由 admin.js renderMobileModePanel() 依目前選擇的資料片動態產生 -->
         <!-- ============================================== -->
         <div id="panel-settings-mobile-mode" class="hidden lg:col-span-2 bg-slate-900/80 border border-emerald-500/40 rounded-3xl p-6 shadow-xl space-y-4"></div>
@@ -976,6 +984,7 @@
   <script src="/js/env.js"></script>
   <script src="/js/supabaseClient.js"></script>
   <script src="/js/badgesCatalog.js"></script>
+  <script src="/js/mobileBadges.js"></script>
   <script src="/js/mobileModes.js"></script>
   <script src="/js/supabaseSync.js"></script>
   <script src="/js/dataSource.js"></script>

@@ -15,7 +15,7 @@
 | GM 後台「📱 手機同步 App 管理中心」 | 啟用開關、下載連結、邀請碼、裝置連線健康度、Strava × 手機來源對帳 |
 | 前台戰情室 | 顯示資料來源（🍎 Apple 健康／🤖 Health Connect＋手錶品牌），以及「近 7 天身體狀態」卡片（步數、睡眠、靜止心率、HRV、VO₂max） |
 | 疑似重複判定 | 分數與時長都相同時，優先保留手機 App 的資料（Strava 和手機並行期間使用） |
-| `public/js/mobileModes.js` | 📱 手機同步資料片：八 萬步遠征 / 九 夢境守護者 / 十一 不滅之火 / 十三 鐵人修行院（計算引擎＋前台畫面）。開啟手機同步後，才能在 GM 後台的資料片選單中選用；參數存在 `game_config.mobile_modes_config`。玩法與公式見根目錄 `README.md` 第 4 節 |
+| `public/js/mobileModes.js` | 📱 手機同步資料片：八 萬步遠征 / 九 夢境守護者 / 十 不滅之火 / 十一 鐵人修行院（計算引擎＋前台畫面）。開啟手機同步後，才能在 GM 後台的資料片選單中選用；參數存在 `game_config.mobile_modes_config`。玩法與公式見根目錄 `README.md` 第 4 節 |
 
 手機 App 原始碼在另一個資料夾 `Iron-heroes-2.0MobileApps`（Flutter），裡面有自己的 README。
 

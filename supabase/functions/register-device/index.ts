@@ -16,6 +16,7 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_body", message: "invite_code、hero_name、platform(ios/android) 為必填" }, 400);
   }
   if (heroName.length > 30) return json({ error: "invalid_body", message: "英雄名稱過長" }, 400);
+  if (/[<>"'`\\]/.test(heroName)) return json({ error: "invalid_body", message: "英雄名稱不能包含 < > \" ' ` \\ 等符號" }, 400);
 
   const db = serviceClient();
 

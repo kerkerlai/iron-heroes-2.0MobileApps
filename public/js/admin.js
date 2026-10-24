@@ -336,6 +336,7 @@ function populateGlobalSettings() {
     if (fHpEl && gameState.faction.baseHp) fHpEl.value = gameState.faction.baseHp;
   }
   renderFactionAssignEditor();
+  renderBossGallery();
 
   if (gameState.survival) {
     const sMaxEl = document.getElementById('cfg-survival-maxhp');
@@ -527,6 +528,8 @@ async function syncAllSettingsToSupabase(customMsg) {
   const bossMaxHp = parseInt(document.getElementById('cfg-boss-maxhp')?.value);
   const magMult = parseFloat(document.getElementById('cfg-mag-mult')?.value) || 15.0;
   if (bossName) bossConfig.name = bossName;
+  const bossAvatarSel = document.getElementById('cfg-boss-avatar')?.value;
+  if (bossAvatarSel) bossConfig.avatar = bossAvatarSel;
   if (bossMaxHp > 0) bossConfig.maxHp = bossMaxHp;
   delete bossConfig.currentHp;
   bossConfig.seasonStart = seasonStart;
@@ -1097,6 +1100,10 @@ async function saveHeroFromModal() {
 
   if (!name) {
     alert('請填寫英雄姓名');
+    return;
+  }
+  if (/[<>"'`\\]/.test(name) || /[<>"'`\\]/.test(guild)) {
+    alert('⚠️ 英雄名稱與公會名稱不能包含 < > " \' ` \\ 等符號（避免網頁安全問題）');
     return;
   }
   if (!assertCloudReady()) return;
@@ -2457,7 +2464,7 @@ function renderGMBadgeEncyclopedia() {
     }
   }
 
-  const catalog = window.BADGE_CATALOG || [];
+  const catalog = (window.getActiveBadgeCatalog ? window.getActiveBadgeCatalog(gameState) : window.BADGE_CATALOG) || [];
   const totalCountEl = document.getElementById('gm-badge-total-count');
   if (totalCountEl) totalCountEl.innerText = catalog.length;
 
@@ -2467,7 +2474,9 @@ function renderGMBadgeEncyclopedia() {
 
   // Populate category filter if needed
   const catSelect = document.getElementById('gm-badge-cat-filter');
-  if (catSelect && catSelect.options.length <= 1 && catalog.length > 0) {
+  if (catSelect && catalog.length > 0 && catSelect.dataset.n !== String(catalog.length)) {
+    catSelect.dataset.n = String(catalog.length);
+    while (catSelect.options.length > 1) catSelect.remove(1);
     const cats = Array.from(new Set(catalog.map(b => b.cat)));
     cats.forEach(c => {
       const opt = document.createElement('option');
@@ -2585,7 +2594,7 @@ async function grantManualBadgeToHero() {
     actTitle: `🏅 ${reason}`
   };
 
-  const badgeObj = (window.BADGE_CATALOG || []).find(b => b.id === badgeId);
+  const badgeObj = (window.findBadgeById ? window.findBadgeById(badgeId) : (window.BADGE_CATALOG || []).find(b => b.id === badgeId));
   await persistGMOpsToSupabase(`🏅 已手動頒發徽章【${badgeObj?.name || badgeId}】予 ${heroName}！`);
 }
 
@@ -2780,7 +2789,7 @@ document.addEventListener('input', (e) => { if (e.target?.id?.startsWith('mobile
 document.addEventListener('change', (e) => { if (e.target?.id?.startsWith('mobile-sync-')) e.target.dataset.dirty = '1'; });
 
 // =====================================================================
-// 9. 📱 手機同步資料片 (八/九/十一/十三) — GM 參數面板
+// 9. 📱 手機同步資料片 (八/九/十/十一) — GM 參數面板
 //    參數存於 game_config.mobile_modes_config，由 syncAllSettingsToSupabase 一併儲存
 // =====================================================================
 const MM_FIELD_META = {
@@ -2798,13 +2807,13 @@ const MM_FIELD_META = {
     ]
   },
   dream: {
-    intro: '每天 (以起床日計) 最高 100 分：<b>睡眠分 + 規律分 + 攻擊分</b>，乘上當日限時加成倍率 = 對夢魘的傷害。全服打倒夢魘即勝利，公會依人均傷害排名。',
+    intro: '每天最多 100 分 ＝ <b>😴 睡得夠 (睡滿目標時數拿滿) ＋ ⏰ 準時睡 (跟自己平常的上床時間比，差越多分數越少) ＋ ⚔️ 白天有運動 (有效運動累計滿目標分鐘拿滿)</b>。每天的分數 × 限時加成倍率 = 對夢魘的傷害。全服把夢魘血量打完即勝利，公會看平均每人傷害排名。',
     fields: [
       ['sleepTargetMin', '睡眠目標 (分鐘)', '睡滿此時長拿滿睡眠分；睡更久不再加分 (420 = 7 小時)', 'number', 10],
       ['sleepPts', '睡眠分上限', '', 'number', 1],
       ['regularityPts', '規律分上限', '', 'number', 1],
-      ['regularityToleranceMin', '入睡時間容許偏差 (分鐘)', '與個人前 N 晚入睡中位數相差此分鐘數 → 規律分歸零', 'number', 5],
-      ['regularityWindowDays', '規律度參考天數', '取前幾晚的入睡時間中位數作為個人習慣', 'number', 1],
+      ['regularityToleranceMin', '「準時睡」容許差距 (分鐘)', '比平常的上床時間早/晚超過這麼多分鐘 → 準時睡拿 0 分；差一半拿一半', 'number', 5],
+      ['regularityWindowDays', '「平常上床時間」參考天數', '用最近幾晚的上床時間 (取中間值) 當作你的「平常」', 'number', 1],
       ['workoutPts', '攻擊分上限 (白天運動)', '只睡不動最多拿 睡眠分+規律分', 'number', 1],
       ['workoutFullMin', '攻擊分滿分所需運動分鐘', '當天有效運動累計達此分鐘數拿滿攻擊分', 'number', 5],
       ['nightmareHpPerHeroDay', '👹 夢魘血量係數【勝利條件】', '夢魘總血量 = 英雄數 × 賽季天數 × 此係數。60 = 大家平均每天拿 60 分剛好打完', 'number', 1]
@@ -2999,4 +3008,60 @@ function renderFactionAssignEditor() {
     </div>`;
   }).join('') + '<div id="cfg-faction-assign-preview" class="pt-2 border-t border-slate-800 text-[11px] font-bold"></div>';
   updateFactionAssignPreview();
+}
+
+// =====================================================================
+// 🐉 資料片三「世界 Boss」形象圖庫 (10 種，由可愛 → 兇悍)
+// 圖片放在 public/img/bosses/；選擇結果存在 boss_config.avatar
+// =====================================================================
+const BOSS_GALLERY = [
+  { file: 'boss01.webp', name: '🍮 胖嘟嘟布丁史萊姆', level: 1 },
+  { file: 'boss02.webp', name: '🐹 貪吃倉鼠大王', level: 2 },
+  { file: 'boss03.webp', name: '🐼 懶惰沙發熊貓', level: 3 },
+  { file: 'boss04.webp', name: '🍗 炸雞魔像', level: 4 },
+  { file: 'boss05.webp', name: '🧋 手搖飲章魚怪', level: 5 },
+  { file: 'boss06.webp', name: '🦉 熬夜貓頭鷹巫師', level: 6 },
+  { file: 'boss07.webp', name: '🦍 鋼鐵機械巨猿', level: 7 },
+  { file: 'boss08.webp', name: '🐕‍🔥 熔岩地獄犬', level: 8 },
+  { file: 'boss09.webp', name: '🐉 深淵骨龍', level: 9 },
+  { file: 'boss10.webp', name: '🌩️ 墮落雷神・索爾', level: 10 }
+];
+window.BOSS_GALLERY = BOSS_GALLERY;
+
+function bossGallerySrc(item) { return '/img/bosses/' + item.file; }
+
+function renderBossGallery() {
+  const box = document.getElementById('cfg-boss-gallery');
+  if (!box) return;
+  const hidden = document.getElementById('cfg-boss-avatar');
+  const current = (hidden && hidden.value) || gameState?.boss?.avatar || '';
+  if (hidden && !hidden.value) hidden.value = '';
+  const fierce = ['可愛', '可愛', '呆萌', '搞笑', '調皮', '詭異', '兇猛', '兇暴', '恐怖', '毀滅'];
+  box.innerHTML = BOSS_GALLERY.map((b, i) => {
+    const src = bossGallerySrc(b);
+    const on = current && (current === src || current.endsWith(src));
+    return `<button type="button" onclick="selectBossGallery(${i})" title="${escapeHtmlLite(b.name)}"
+      class="relative rounded-xl overflow-hidden border-2 ${on ? 'border-amber-400 ring-2 ring-amber-400/50' : 'border-slate-700 hover:border-slate-500'} bg-slate-950 aspect-square">
+      <img src="${src}" alt="" class="w-full h-full object-cover" loading="lazy">
+      <span class="absolute top-1 left-1 text-[9px] font-black px-1.5 rounded bg-black/70 ${i < 3 ? 'text-pink-300' : i < 6 ? 'text-amber-300' : 'text-rose-400'}">Lv${b.level} ${fierce[i]}</span>
+      ${on ? '<span class="absolute bottom-1 right-1 text-xs bg-amber-500 text-black font-black rounded px-1">✓</span>' : ''}
+    </button>`;
+  }).join('');
+  const note = document.getElementById('cfg-boss-gallery-note');
+  if (note) {
+    const hit = BOSS_GALLERY.find(b => current && current.endsWith(bossGallerySrc(b)));
+    note.textContent = hit ? `目前形象：${hit.name}（記得按「儲存 Boss 參數」才會生效）` : (current ? '目前使用自訂圖片網址；點選上方任一張即可替換。' : '尚未選擇，前台會顯示預設圖片。');
+  }
+}
+
+function selectBossGallery(i) {
+  const b = BOSS_GALLERY[i];
+  if (!b) return;
+  const hidden = document.getElementById('cfg-boss-avatar');
+  if (hidden) hidden.value = bossGallerySrc(b);
+  if (document.getElementById('cfg-boss-gallery-apply-name')?.checked) {
+    const nameEl = document.getElementById('cfg-boss-name');
+    if (nameEl) nameEl.value = b.name;
+  }
+  renderBossGallery();
 }

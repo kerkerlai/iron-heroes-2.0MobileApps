@@ -1,0 +1,220 @@
+/* ==========================================================================
+ * 鋼鐵英雄紀元 2.0 — 統一英雄卡 (Unified Hero Card, 大頭貼優先)
+ * 11 大資料片 (經典 / RPG / Boss / 雙城 / 飢餓 / 要塞 / 拼圖 / 萬步 / 夢境 / 聖火 / 修行院)
+ * 共用同一套英雄呈現：大頭貼 + 名字 + 公會 + 狀態 + 徽章數，再接資料片專屬指標。
+ * 由 game.js 的 renderUnifiedHeroCard() 產生 HTML；配色延續全站深石板 + 琥珀主題。
+ * ========================================================================== */
+
+/* ---------- 版面容器 ---------- */
+.uhc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .uhc-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .uhc-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+}
+.uhc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ---------- 卡片本體 ---------- */
+.uhc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.72), rgba(2, 6, 23, 0.92));
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  cursor: pointer;
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.uhc:hover { border-color: rgba(245, 158, 11, 0.65); transform: translateY(-1px); }
+.uhc:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }
+.uhc:active { transform: scale(0.995); }
+.uhc-top1 {
+  border-color: rgba(245, 158, 11, 0.75);
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.45), rgba(15, 23, 42, 0.95) 60%);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2), 0 10px 28px -14px rgba(245, 158, 11, 0.65);
+}
+.uhc-dead { filter: grayscale(1); opacity: 0.62; }
+.uhc-dead:hover { opacity: 0.85; }
+
+/* ---------- 頭部：大頭貼 + 基本資料 + 主指標 ---------- */
+.uhc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.uhc-avatar-wrap { position: relative; flex-shrink: 0; line-height: 0; }
+.uhc-avatar { width: 64px; height: 64px; }
+.uhc-compact .uhc-avatar { width: 56px; height: 56px; }
+@media (min-width: 768px) {
+  .uhc-avatar { width: 88px; height: 88px; }
+  .uhc-compact .uhc-avatar { width: 72px; height: 72px; }
+}
+.uhc-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.uhc-avatar.uhc-avatar-plain { border: 2px solid rgba(71, 85, 105, 0.9); }
+.uhc-top1 .uhc-avatar.uhc-avatar-plain { border-color: rgba(245, 158, 11, 0.85); }
+/* GM 頭像特效角標在大頭貼上放大一點 */
+.uhc-avatar .avatar-fx-corner-badge { font-size: 15px; top: -7px; right: -7px; padding: 2px 4px; }
+
+.uhc-rank {
+  position: absolute;
+  left: -5px;
+  bottom: -5px;
+  z-index: 12;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  color: #cbd5e1;
+  background: #0f172a;
+  border: 1px solid rgba(100, 116, 139, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+.uhc-rank-1 { color: #1c1917; background: linear-gradient(135deg, #fde68a, #f59e0b); border-color: #fbbf24; font-size: 13px; }
+.uhc-rank-2 { color: #0f172a; background: linear-gradient(135deg, #f1f5f9, #94a3b8); border-color: #cbd5e1; }
+.uhc-rank-3 { color: #1c1917; background: linear-gradient(135deg, #fdba74, #b45309); border-color: #f59e0b; }
+
+.uhc-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.uhc-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.uhc-name {
+  font-weight: 900;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 768px) { .uhc-name { font-size: 16px; } }
+.uhc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* ---------- 標籤 (公會 / 徽章 / 狀態) ---------- */
+.uhc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.5;
+  border: 1px solid rgba(71, 85, 105, 0.9);
+  background: rgba(15, 23, 42, 0.85);
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uhc-guild-dot { width: 7px; height: 7px; border-radius: 9999px; flex-shrink: 0; }
+.uhc-badges { color: #fcd34d; border-color: rgba(217, 119, 6, 0.6); background: rgba(69, 26, 3, 0.65); }
+.uhc-tone-ok     { color: #6ee7b7; border-color: rgba(16, 185, 129, 0.55); background: rgba(2, 44, 34, 0.7); }
+.uhc-tone-bad    { color: #fda4af; border-color: rgba(244, 63, 94, 0.55); background: rgba(76, 5, 25, 0.7); }
+.uhc-tone-warn   { color: #fcd34d; border-color: rgba(245, 158, 11, 0.55); background: rgba(69, 26, 3, 0.7); }
+.uhc-tone-info   { color: #67e8f9; border-color: rgba(6, 182, 212, 0.55); background: rgba(8, 51, 68, 0.7); }
+.uhc-tone-gold   { color: #1c1917; border-color: #fbbf24; background: linear-gradient(135deg, #fde68a, #f59e0b); }
+.uhc-tone-purple { color: #d8b4fe; border-color: rgba(168, 85, 247, 0.55); background: rgba(59, 7, 100, 0.6); }
+.uhc-tone-muted  { color: #94a3b8; border-color: rgba(51, 65, 85, 0.9); background: rgba(15, 23, 42, 0.85); }
+
+/* ---------- 主指標 (卡片右上) ---------- */
+.uhc-primary {
+  flex-shrink: 0;
+  max-width: 42%;
+  text-align: right;
+  min-width: 0;
+}
+.uhc-primary-label { display: block; font-size: 10px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uhc-primary-value {
+  display: block;
+  font-family: var(--font-display, ui-monospace), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  font-size: 17px;
+  line-height: 1.15;
+  color: #fbbf24;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 768px) { .uhc-primary-value { font-size: 20px; } }
+
+/* ---------- 次要指標格 ---------- */
+.uhc-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.uhc-metric {
+  min-width: 0;
+  padding: 5px 7px;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(30, 41, 59, 0.95);
+}
+.uhc-metric-label { display: block; font-size: 10px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uhc-metric-value {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+.uhc-foot { font-size: 10.5px; color: #94a3b8; line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- 精簡版 (排行榜小清單) ---------- */
+.uhc-compact { padding: 10px; gap: 8px; border-radius: 16px; }
+.uhc-compact .uhc-head { gap: 10px; }
+.uhc-compact .uhc-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ---------- 王座版 (直式置中，給窄欄的職業大師 / 冠軍) ---------- */
+.uhc-podium .uhc-head { flex-direction: column; text-align: center; gap: 8px; }
+.uhc-podium .uhc-info { align-items: center; width: 100%; }
+.uhc-podium .uhc-name-row, .uhc-podium .uhc-tags { justify-content: center; }
+.uhc-podium .uhc-primary { max-width: 100%; text-align: center; }
+.uhc-podium .uhc-avatar { width: 72px; height: 72px; }
+@media (min-width: 768px) { .uhc-podium .uhc-avatar { width: 88px; height: 88px; } }
+
+/* ---------- 公會成員頭像疊 ---------- */
+.uhc-stack { display: inline-flex; align-items: center; padding-left: 8px; flex-wrap: wrap; row-gap: 4px; }
+.uhc-stack > .uhc-stack-item { margin-left: -8px; border-radius: 9999px; box-shadow: 0 0 0 2px #0f172a; cursor: pointer; line-height: 0; }
+.uhc-stack > .uhc-stack-item:hover { transform: translateY(-2px); z-index: 2; }

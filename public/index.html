@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>舒服雷 Strava Project | 鋼鐵英雄紀元 (Iron Heroes Era)</title>
+  <title>Kerker's 20% project | 鋼鐵英雄紀元 (Iron Heroes Era)</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="/css/rpg-theme.css">
+  <link rel="stylesheet" href="/css/heroCard.css">
   <script>
     tailwind.config = {
       theme: {
@@ -26,6 +27,9 @@
       }
     }
   </script>
+  <!-- 📱 App 內嵌模式 (?app=1)：由鋼鐵英雄同步器 App 的「戰績」分頁開啟，隱藏網頁頂部導覽，改用 App 原生分頁 -->
+  <script>(function(){try{if(new URLSearchParams(location.search).get("app")==="1"){document.documentElement.classList.add("in-app");}}catch(e){}})();</script>
+  <style>html.in-app body > header, html.in-app body > footer{display:none !important;} html.in-app body{padding-top:0 !important;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;}</style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-orange-500 selection:text-white lightning-bg relative">
 
@@ -48,7 +52,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>Strava 連動中
             </span>
           </div>
-          <p class="text-[11px] sm:text-xs font-medium text-slate-400 truncate">舒服雷 Strava Project • 陽光運動競技戰情系統</p>
+          <p class="text-[11px] sm:text-xs font-medium text-slate-400 truncate">Kerker's 20% project</p>
         </div>
       </div>
 
@@ -155,6 +159,18 @@
       </div>
       <div id="classic-guild-table-container" class="overflow-x-auto">
       </div>
+    </div>
+
+    <!-- 全服英雄卡名冊 (統一英雄卡：大頭貼 / 公會 / 狀態 / 徽章數 + 經典指標) -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+          <span>👥 全服英雄名冊</span>
+        </h3>
+        <span class="text-xs text-slate-400">依有氧名次排列 • 點擊英雄查看個人戰力卡</span>
+      </div>
+      <div id="classic-hero-roster-container"></div>
     </div>
 
   </main>
@@ -434,7 +450,7 @@
 
   <!-- ============================================================== -->
   <!-- 📱 手機同步資料片 (需 GM 開啟手機同步 App 才會啟用)            -->
-  <!-- 資料片八：萬步遠征 / 九：夢境守護者 / 十一：不滅之火 / 十三：鐵人修行院 -->
+  <!-- 資料片八：萬步遠征 / 九：夢境守護者 / 十：不滅之火 / 十一：鐵人修行院 -->
   <!-- ============================================================== -->
   <main id="tab-content-expedition" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
   <main id="tab-content-dream" class="hidden max-w-7xl w-full mx-auto px-4 py-6 space-y-6"></main>
@@ -586,6 +602,7 @@
   <script src="/js/env.js"></script>
   <script src="/js/supabaseClient.js"></script>
   <script src="/js/badgesCatalog.js"></script>
+  <script src="/js/mobileBadges.js"></script>
   <script src="/js/mobileModes.js"></script>
   <script src="/js/supabaseSync.js"></script>
   <script src="/js/game.js"></script>

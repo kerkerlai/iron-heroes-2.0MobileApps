@@ -3,8 +3,8 @@
  * -------------------------------------------------------------------------
  * 資料片八：🗺️ 萬步遠征 (expedition)
  * 資料片九：🌙 夢境守護者 (dream)
- * 資料片十一：🕯️ 不滅之火 (flame)
- * 資料片十三：🧘 鐵人修行院 (monastery)
+ * 資料片十：🕯️ 不滅之火 (flame)
+ * 資料片十一：🧘 鐵人修行院 (monastery)
  *
  * 設計原則：
  * 1. 只在 GM 開啟「手機同步 App」(gmOps.mobileSync.enabled) 時才能被選用；關閉時前台顯示提示、不計算。
@@ -21,8 +21,8 @@ const MOBILE_MODE_KEYS = ['expedition', 'dream', 'flame', 'monastery'];
 const MOBILE_MODE_META = {
   expedition: { num: '八', icon: '🗺️', name: '萬步遠征', en: 'Step Expedition', lucide: 'map', short: '資料片八•遠征' },
   dream: { num: '九', icon: '🌙', name: '夢境守護者', en: 'Dream Guardians', lucide: 'moon', short: '資料片九•夢境' },
-  flame: { num: '十一', icon: '🕯️', name: '不滅之火', en: 'Eternal Flame', lucide: 'flame', short: '資料片十一•聖火' },
-  monastery: { num: '十三', icon: '🧘', name: '鐵人修行院', en: 'Iron Monastery', lucide: 'mountain', short: '資料片十三•修行' }
+  flame: { num: '十', icon: '🕯️', name: '不滅之火', en: 'Eternal Flame', lucide: 'flame', short: '資料片十•聖火' },
+  monastery: { num: '十一', icon: '🧘', name: '鐵人修行院', en: 'Iron Monastery', lucide: 'mountain', short: '資料片十一•修行' }
 };
 
 const MOBILE_MODE_DEFAULTS = {
@@ -269,7 +269,7 @@ function computeDream(state) {
 }
 
 // ---------------------------------------------------------------------------
-// 資料片十一：🕯️ 不滅之火
+// 資料片十：🕯️ 不滅之火
 // 每人每日三道火：① 活動分鐘 ≥ 目標 或 完成一次有效運動　② 步數 ≥ 目標　③ 睡眠 ≥ 目標
 // 公會每日：所有「有資料」的成員都點亮 ≥ N 道火 → 聖火熱度 + 1 × 限時加成倍率；
 //          有成員 (有資料) 0 道火 → 熱度 − 衰減值 (最低 0)。沒有資料的成員當天不列入判定 (缺資料不倒扣)。
@@ -318,7 +318,7 @@ function computeFlame(state) {
 }
 
 // ---------------------------------------------------------------------------
-// 資料片十三：🧘 鐵人修行院 (跟自己比)
+// 資料片十一：🧘 鐵人修行院 (跟自己比)
 // 每日修為 = [ min(當日 TRIMP, 上限)/上限 × 修煉分 + min(睡眠, 目標)/目標 × 恢復分 + min(活動分鐘, 目標)/目標 × 活動分 ] × 限時加成倍率
 // 走火入魔：急性負荷 (近 7 天 TRIMP 合計) ÷ 慢性負荷 (近 28 天 TRIMP 合計 ÷ 4) > 上限 且 近 3 晚平均睡眠 < 門檻 → 當日修為 × 懲罰倍率
 // 靜心加成 = max(0, 基準靜止心率 − 近 7 天靜止心率中位數) × 每 bpm 修為 (需至少「基準天數 + 3」天資料)
@@ -404,6 +404,16 @@ function mmHeroLink(name) {
   const arg = typeof jsArg === 'function' ? jsArg(name) : JSON.stringify(String(name));
   return `<span class="cursor-pointer hover:text-amber-300 font-bold text-white" onclick="openHeroDetailModal(${arg})">${mmEsc(name)}</span>`;
 }
+// 統一英雄卡 (game.js 的 renderUnifiedHeroCard；大頭貼 / 名字 / 公會 / 狀態 / 徽章數 + 資料片指標)
+function mmHeroCards(cards, emptyText) {
+  return typeof window.renderUnifiedHeroGrid === 'function' ? window.renderUnifiedHeroGrid(cards, emptyText || '目前尚無英雄資料') : cards.join('');
+}
+function mmCard(name, opts) {
+  return typeof window.renderUnifiedHeroCard === 'function' ? window.renderUnifiedHeroCard(name, opts) : `<div class="p-2">${mmHeroLink(name)}</div>`;
+}
+function mmStack(members) {
+  return typeof window.renderGuildAvatarStack === 'function' && (members || []).length ? `<div class="pt-1.5">${window.renderGuildAvatarStack(members)}</div>` : '';
+}
 function mmLore(meta, desc) {
   return `
     <div class="bg-slate-900 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-lg">
@@ -454,16 +464,23 @@ function renderExpeditionView() {
       <div class="flex flex-wrap gap-1.5 text-[11px]">${r.checkpoints.map(cp => `<span class="px-2 py-0.5 rounded-full border ${r.totalKm >= cp.value ? 'bg-amber-500/20 border-amber-500/50 text-amber-200' : 'bg-slate-950 border-slate-800 text-slate-500'}">${r.totalKm >= cp.value ? '🚩' : '⬜'} ${mmEsc(cp.name)} ${cp.value}km</span>`).join('')}</div>
     </div>
     ${mmNoData(r)}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🛡️ 公會遠征貢獻</h3>
-        ${r.guilds.map((g, i) => `<div class="flex justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><span class="font-bold text-white">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人，人均 ${g.perMember} km)</span></span><span class="font-rpg font-bold text-amber-400">${g.km.toLocaleString()} km</span></div>`).join('')}
+        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人，人均 ${g.perMember} km)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.km.toLocaleString()} km</span></div>${mmStack(g.members)}</div>`).join('')}
       </div>
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
+      <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
         <h3 class="text-sm font-bold text-amber-400">🥾 英雄里程榜</h3>
-        <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="p-2 text-left">英雄</th><th class="p-2">步數里程</th><th class="p-2">訓練里程</th><th class="p-2">騎/游</th><th class="p-2">總里程</th></tr></thead><tbody>
-        ${r.heroes.map(h => `<tr><td class="p-2">${mmHeroLink(h.name)}</td><td class="p-2 text-center font-mono">${h.stepKm}</td><td class="p-2 text-center font-mono">${h.workoutKm}</td><td class="p-2 text-center font-mono">${h.distKm}</td><td class="p-2 text-center font-mono font-bold text-amber-400">${h.km}</td></tr>`).join('')}
-        </tbody></table></div>
+        ${mmHeroCards(r.heroes.map((h, i) => mmCard(h.name, {
+          rank: i + 1, guild: h.guild,
+          status: [i === 0 && h.km > 0 ? { text: '👑 遠征先鋒', tone: 'gold' } : null, { text: `📅 貢獻 ${h.activeDays} 天`, tone: h.activeDays > 0 ? 'ok' : 'muted' }].filter(Boolean),
+          primary: { label: '總里程', value: `${h.km} km`, accent: 'text-amber-400' },
+          metrics: [
+            { label: '👣 步數里程', value: `${h.stepKm} km`, accent: 'text-cyan-300' },
+            { label: '🏋️ 訓練里程', value: `${h.workoutKm} km`, accent: 'text-rose-300' },
+            { label: '🚴 騎/游', value: `${h.distKm} km`, accent: 'text-emerald-300' }
+          ]
+        })))}
       </div>
     </div>
     ${mmRulesBox([
@@ -479,6 +496,7 @@ function renderDreamView() {
   if (!isMobileSyncEnabled()) return renderMobileModeDisabledNotice(container, 'dream');
   const r = computeDream();
   const c = r.cfg;
+  const minDur = (window.gameState?.summary?.minDurationMinutes) || 30;
   const hpPct = r.maxHp > 0 ? Math.max(0, Math.min(100, r.remainingHp / r.maxHp * 100)) : 0;
   const fmtSleep = (m) => m ? `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, '0')}m` : '—';
   container.innerHTML = mmLore(MOBILE_MODE_META.dream, `夢魘每晚都在侵蝕英雄們的意志。<b>睡得飽、作息規律</b>的英雄能築起夢境結界，<b>白天運動</b>則化為攻擊力。只睡不動、或只動不睡都無法發揮全力——全服一起在賽季結束前擊倒夢魘！`) + `
@@ -493,20 +511,34 @@ function renderDreamView() {
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🛡️ 公會守護力 (人均傷害)</h3>
-        ${r.guilds.map((g, i) => `<div class="flex justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><span class="font-bold text-white">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)}</span><span class="font-rpg font-bold text-amber-400">${g.perMember.toLocaleString()}</span></div>`).join('')}
+        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.perMember.toLocaleString()}</span></div>${mmStack(g.members)}</div>`).join('')}
       </div>
       <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🌙 守護者榜</h3>
-        <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="p-2 text-left">英雄</th><th class="p-2">平均睡眠</th><th class="p-2">慣常入睡</th><th class="p-2">睡眠分</th><th class="p-2">規律分</th><th class="p-2">攻擊分</th><th class="p-2">總傷害</th></tr></thead><tbody>
-        ${r.heroes.map(h => `<tr><td class="p-2">${mmHeroLink(h.name)}${h.bestStreak >= 3 ? ` <span class="text-[10px] text-cyan-300">💤連睡飽 ${h.bestStreak} 晚</span>` : ''}</td><td class="p-2 text-center font-mono">${fmtSleep(h.avgSleepMin)}</td><td class="p-2 text-center font-mono">${mmMinToClock(h.medianBed)}</td><td class="p-2 text-center font-mono">${h.sleepPts}</td><td class="p-2 text-center font-mono">${h.regPts}</td><td class="p-2 text-center font-mono">${h.atkPts}</td><td class="p-2 text-center font-mono font-bold text-amber-400">${h.damage.toLocaleString()}</td></tr>`).join('')}
-        </tbody></table></div>
+        ${mmHeroCards(r.heroes.map((h, i) => mmCard(h.name, {
+          rank: i + 1, guild: h.guild,
+          status: [
+            i === 0 && h.damage > 0 ? { text: '👑 首席守護者', tone: 'gold' } : null,
+            h.bestStreak >= 3 ? { text: `💤 連睡飽 ${h.bestStreak} 晚`, tone: 'info' } : (h.nights > 0 ? { text: `🌙 已記錄 ${h.nights} 晚`, tone: 'muted' } : { text: '📭 尚無睡眠資料', tone: 'muted' })
+          ].filter(Boolean),
+          primary: { label: '總傷害', value: h.damage.toLocaleString(), accent: 'text-amber-400' },
+          metrics: [
+            { label: '😴 平均睡眠', value: fmtSleep(h.avgSleepMin), accent: 'text-cyan-300' },
+            { label: '🛏️ 慣常入睡', value: mmMinToClock(h.medianBed), accent: 'text-purple-300' },
+            { label: '😴 睡眠分', value: h.sleepPts },
+            { label: '⏰ 規律分', value: h.regPts },
+            { label: '⚔️ 攻擊分', value: h.atkPts, accent: 'text-rose-300' }
+          ]
+        })))}
       </div>
     </div>
     ${mmRulesBox([
-      `<b>睡眠分</b> = min(睡眠分鐘, ${c.sleepTargetMin}) ÷ ${c.sleepTargetMin} × ${c.sleepPts}。<span class="text-slate-500">原因：睡滿 ${Math.round(c.sleepTargetMin / 60 * 10) / 10} 小時即滿分，睡更久不再加分，避免鼓勵賴床。睡眠歸屬於「起床那一天」。</span>`,
-      `<b>規律分</b> = max(0, 1 − |今晚入睡時間 − 你前 ${c.regularityWindowDays} 晚的中位數| ÷ ${c.regularityToleranceMin} 分鐘) × ${c.regularityPts}。<span class="text-slate-500">原因：規律作息比單晚睡很多更重要；跟「自己的習慣」比，所以夜貓子只要規律也能拿滿。前 3 晚資料不足時規律分直接給滿。</span>`,
-      `<b>攻擊分</b> = min(當天有效運動分鐘, ${c.workoutFullMin}) ÷ ${c.workoutFullMin} × ${c.workoutPts}。<span class="text-slate-500">原因：只睡不動最多 ${c.sleepPts + c.regularityPts} 分，運動才能補滿 100 分。</span>`,
-      `<b>勝利條件</b>：夢魘血量 = 英雄數 × 賽季天數 × ${c.nightmareHpPerHeroDay}；全服傷害總和在賽季結束前打完即勝利。公會依「人均傷害」排名，人數少的公會也公平。<br><span class="text-slate-500">不使用深眠/REM 等睡眠分期，因為各品牌手錶判定差異大，會造成不公平。</span>`
+      `<b>一句話：每天最多拿 100 分 ＝ 😴 睡得夠 ${c.sleepPts} 分 ＋ ⏰ 準時睡 ${c.regularityPts} 分 ＋ ⚔️ 白天有運動 ${c.workoutPts} 分。</b>每天的分數就是你對夢魘造成的傷害（遇到 GM 限時加成會再乘上倍率）。`,
+      `<b>😴 睡得夠（最多 ${c.sleepPts} 分）</b>：睡滿 <b>${Math.round(c.sleepTargetMin / 60 * 10) / 10} 小時</b>拿滿分，睡不到就照比例給。<br><span class="text-slate-400">例：睡 ${Math.round(c.sleepTargetMin / 2 / 60 * 10) / 10} 小時 → ${Math.round(c.sleepPts / 2)} 分。睡超過 ${Math.round(c.sleepTargetMin / 60 * 10) / 10} 小時不會再加分（不鼓勵賴床）。昨晚的睡眠算在「今天早上起床」那一天。</span>`,
+      `<b>⏰ 準時睡（最多 ${c.regularityPts} 分）</b>：跟<b>你自己平常的上床時間</b>比，不是跟別人比。平常幾點睡，今晚也差不多那時候睡就拿滿分；早睡或晚睡超過 ${c.regularityToleranceMin} 分鐘就拿 0 分，中間照比例。<br><span class="text-slate-400">例：你平常 00:30 睡 → 今晚 00:30 睡拿 ${c.regularityPts} 分、01:00 睡拿 ${Math.round(c.regularityPts * Math.max(0, 1 - 30 / Math.max(1, c.regularityToleranceMin)))} 分、${c.regularityToleranceMin >= 60 ? '01:30' : '更晚'} 以後睡拿 0 分。所以夜貓子只要每天固定時間睡，也能拿滿。「平常」= 你最近 ${c.regularityWindowDays} 晚上床時間的中間值；剛開始不到 3 晚的資料時，這項直接給滿分。</span>`,
+      `<b>⚔️ 白天有運動（最多 ${c.workoutPts} 分）</b>：當天<b>有效運動</b>（單次滿 ${minDur} 分鐘才算）累計滿 <b>${c.workoutFullMin} 分鐘</b>拿滿分，不到就照比例給。<br><span class="text-slate-400">例：運動 ${Math.round(c.workoutFullMin / 2)} 分鐘 → ${Math.round(c.workoutPts / 2)} 分。只睡不動最多拿 ${c.sleepPts + c.regularityPts} 分，要運動才能拿到 100 分。</span>`,
+      `<b>🧮 完整例子</b>：睡 6 小時（${Math.round(Math.min(360, c.sleepTargetMin) / Math.max(1, c.sleepTargetMin) * c.sleepPts)} 分）＋ 比平常晚 30 分鐘睡（${Math.round(c.regularityPts * Math.max(0, 1 - 30 / Math.max(1, c.regularityToleranceMin)))} 分）＋ 運動 45 分鐘（${Math.round(Math.min(45, c.workoutFullMin) / Math.max(1, c.workoutFullMin) * c.workoutPts)} 分）＝ 當天傷害 <b class="text-amber-400">${Math.round(Math.min(360, c.sleepTargetMin) / Math.max(1, c.sleepTargetMin) * c.sleepPts) + Math.round(c.regularityPts * Math.max(0, 1 - 30 / Math.max(1, c.regularityToleranceMin))) + Math.round(Math.min(45, c.workoutFullMin) / Math.max(1, c.workoutFullMin) * c.workoutPts)}</b>。`,
+      `<b>🏆 怎麼贏</b>：夢魘總血量 = 英雄人數 × 賽季天數 × ${c.nightmareHpPerHeroDay}（也就是大家平均每天拿 ${c.nightmareHpPerHeroDay} 分，剛好在賽季最後一天打倒）。全服傷害加總在賽季結束前打完血量就勝利。公會排名看「平均每人傷害」，人少的公會也公平。<br><span class="text-slate-500">不看深眠 / REM 等睡眠階段，因為每個品牌的手錶判斷標準差很多，比了不公平。</span>`
     ])}`;
 }
 
@@ -525,11 +557,17 @@ function renderFlameView() {
           <div class="flex items-center justify-between"><span class="font-black text-white">${i === 0 ? '👑 ' : ''}${mmEsc(g.name)}</span><span class="font-rpg text-2xl font-black text-amber-400">Lv.${g.level}</span></div>
           <div class="text-[11px] text-slate-400">熱度 ${g.heat} • 全員點火 ${g.fullDays} 天 • 連續 ${g.currentStreak} 天 (最佳 ${g.bestStreak}) • 火種 ${g.embers}</div>
           <div class="font-mono text-base tracking-widest">${g.history.map(h => `<span title="${h.ymd} ${h.status}">${dot(h.status)}</span>`).join('')}</div>
-          <div class="space-y-1">${r.heroes.filter(h => g.members.includes(h.name)).map(h => `
-            <div class="flex items-center justify-between text-xs bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
-              ${mmHeroLink(h.name)}
-              <span title="今日三道火：活動 / 步數 / 睡眠">${h.today.hasData ? `${h.today.r1 ? '🔥' : '▫️'}${h.today.r2 ? '🔥' : '▫️'}${h.today.r3 ? '🔥' : '▫️'}` : '<span class="text-slate-600">今日尚無資料</span>'}</span>
-            </div>`).join('')}</div>
+          <div class="uhc-list">${r.heroes.filter(h => g.members.includes(h.name)).map(h => mmCard(h.name, {
+            compact: true, guild: h.guild, highlight: false,
+            status: [h.today.hasData
+              ? { text: `今日 ${h.today.r1 ? '🔥' : '▫️'}${h.today.r2 ? '🔥' : '▫️'}${h.today.r3 ? '🔥' : '▫️'} ${h.today.count}/3`, tone: h.today.count === 3 ? 'gold' : (h.today.count > 0 ? 'warn' : 'bad'), title: '今日三道火：活動 / 步數 / 睡眠' }
+              : { text: '今日尚無資料', tone: 'muted' }],
+            primary: { label: '個人火種', value: h.embers, accent: 'text-amber-400' },
+            metrics: [
+              { label: '🌟 三火全亮', value: `${h.perfectDays} 天`, accent: 'text-cyan-300' },
+              { label: '⛓️ 連續 / 最佳', value: `${h.currentStreak} / ${h.bestStreak} 天`, accent: 'text-rose-300' }
+            ]
+          })).join('')}</div>
         </div>`).join('')}
     </div>
     ${mmRulesBox([
@@ -550,18 +588,21 @@ function renderMonasteryView() {
     ${mmNoData(r)}
     <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
       <div class="flex flex-wrap gap-1.5 text-[11px]">${r.ranks.map(rk => `<span class="px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300">${mmEsc(rk.name)} ≥ ${rk.value.toLocaleString()}</span>`).join('')}</div>
-      <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="p-2 text-left">英雄</th><th class="p-2">境界</th><th class="p-2">總修為</th><th class="p-2">每日修煉</th><th class="p-2">靜心加成</th><th class="p-2">靜止心率 (基準→現在)</th><th class="p-2">負荷比 ACWR</th><th class="p-2">走火入魔</th></tr></thead><tbody>
-      ${r.heroes.map(h => `<tr>
-        <td class="p-2">${mmHeroLink(h.name)}</td>
-        <td class="p-2 text-center font-bold text-amber-300">${mmEsc(h.rank)}${h.nextRank ? `<div class="text-[10px] text-slate-500 font-normal">距 ${mmEsc(h.nextRank.name)} ${Math.max(0, h.nextRank.value - h.total).toLocaleString()}</div>` : ''}</td>
-        <td class="p-2 text-center font-mono font-bold text-amber-400">${h.total.toLocaleString()}</td>
-        <td class="p-2 text-center font-mono">${h.daily.toLocaleString()}</td>
-        <td class="p-2 text-center font-mono text-emerald-300">${h.calmBonus ? '+' + h.calmBonus.toLocaleString() : '—'}</td>
-        <td class="p-2 text-center font-mono">${h.baselineRhr !== null ? Math.round(h.baselineRhr) : '—'} → ${h.currentRhr !== null ? Math.round(h.currentRhr) : '—'}${h.rhrDrop !== null ? ` <span class="${h.rhrDrop > 0 ? 'text-emerald-400' : 'text-slate-500'}">(${h.rhrDrop > 0 ? '−' : '+'}${Math.abs(h.rhrDrop)})</span>` : ''}</td>
-        <td class="p-2 text-center font-mono ${h.acwr !== null && h.acwr > c.acwrLimit ? 'text-rose-400 font-bold' : ''}">${h.acwr !== null ? h.acwr : '—'}</td>
-        <td class="p-2 text-center font-mono ${h.overtrainDays ? 'text-rose-400' : 'text-slate-500'}">${h.overtrainDays} 天</td>
-      </tr>`).join('')}
-      </tbody></table></div>
+      ${mmHeroCards(r.heroes.map((h, i) => mmCard(h.name, {
+        rank: i + 1, guild: h.guild,
+        status: [
+          { text: `🏯 ${h.rank}`, tone: 'gold' },
+          h.overtrainDays ? { text: `⚠️ 走火入魔 ${h.overtrainDays} 天`, tone: 'bad' } : { text: '🧘 心境平穩', tone: 'ok' }
+        ],
+        primary: { label: '總修為', value: h.total.toLocaleString(), accent: 'text-amber-400' },
+        metrics: [
+          { label: '📿 每日修煉', value: h.daily.toLocaleString() },
+          { label: '🍃 靜心加成', value: h.calmBonus ? '+' + h.calmBonus.toLocaleString() : '—', accent: 'text-emerald-300' },
+          { label: '🫀 靜止心率', value: `${h.baselineRhr !== null ? Math.round(h.baselineRhr) : '—'}→${h.currentRhr !== null ? Math.round(h.currentRhr) : '—'}${h.rhrDrop !== null ? ` (${h.rhrDrop > 0 ? '−' : '+'}${Math.abs(h.rhrDrop)})` : ''}`, accent: h.rhrDrop !== null && h.rhrDrop > 0 ? 'text-emerald-300' : '' },
+          { label: '📈 負荷比 ACWR', value: h.acwr !== null ? h.acwr : '—', accent: h.acwr !== null && h.acwr > c.acwrLimit ? 'text-rose-400' : '' },
+          { label: '⏭️ 下一境界', value: h.nextRank ? `${h.nextRank.name} 差 ${Math.max(0, h.nextRank.value - h.total).toLocaleString()}` : '已達巔峰', accent: 'text-purple-300' }
+        ]
+      })))}
     </div>
     ${mmRulesBox([
       `<b>每日修為</b> = min(當日 TRIMP, ${c.trimpCap}) ÷ ${c.trimpCap} × ${c.trainPts} ＋ min(睡眠, ${c.sleepTargetMin}) ÷ ${c.sleepTargetMin} × ${c.recoveryPts} ＋ min(活動分鐘, ${c.activeMinGoal}) ÷ ${c.activeMinGoal} × ${c.activePts}。<span class="text-slate-500">原因：訓練、恢復、日常活動三者平衡；每項都有上限，練越多不代表分越高。</span>`,

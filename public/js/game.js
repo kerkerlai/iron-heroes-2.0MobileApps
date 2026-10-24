@@ -27,6 +27,193 @@ function renderHeroTag(name, extraClasses = "px-2 py-1 rounded-lg bg-slate-900 b
           </span>`;
 }
 
+// -------------------------------------------------------------
+// 🎴 統一英雄卡 (Unified Hero Card) — 11 大資料片共用的「大頭貼優先」英雄呈現
+//   基本資訊永不缺席：大頭貼 (含 GM 頭像特效) / 名字 / 公會 / 狀態 / 徽章數 (已解鎖 / 總數)
+//   之後才接各資料片專屬指標 (分數、傷害、HP、里程、火種…)。樣式見 /css/heroCard.css
+// -------------------------------------------------------------
+
+/** 目前生效中的徽章目錄 (手機徽章由 getActiveBadgeCatalog 依 GM 設定決定是否納入) */
+function getActiveBadgeCatalogList() {
+  const st = window.gameState || gameState;
+  const cat = window.getActiveBadgeCatalog ? window.getActiveBadgeCatalog(st) : (window.BADGE_CATALOG || []);
+  return Array.isArray(cat) ? cat : [];
+}
+/** 徽章總數 (分母)：統一來源，取代過去寫死的 100 */
+function getActiveBadgeTotal() {
+  return getActiveBadgeCatalogList().length;
+}
+/** 某英雄已解鎖徽章數 / 總數 (只計算目前目錄內的徽章，避免分子大於分母) */
+function getHeroBadgeProgress(heroName) {
+  const st = window.gameState || gameState;
+  const catalog = getActiveBadgeCatalogList();
+  const unlockedMap = st?.heroBadges?.[heroName] || {};
+  const ids = new Set(catalog.map(b => b.id));
+  const unlocked = catalog.length ? Object.keys(unlockedMap).filter(id => ids.has(id)).length : Object.keys(unlockedMap).length;
+  return { unlocked, total: catalog.length };
+}
+window.getActiveBadgeTotal = getActiveBadgeTotal;
+window.getHeroBadgeProgress = getHeroBadgeProgress;
+
+function uhcSafeColor(c, fallback = '#f59e0b') {
+  return /^#[0-9a-fA-F]{3,8}$/.test(String(c || '').trim()) ? String(c).trim() : fallback;
+}
+function uhcFindHero(heroName) {
+  const st = window.gameState || gameState;
+  return (st?.heroes || []).find(h => h.name === heroName) || null;
+}
+function uhcFindGuild(guildName) {
+  const st = window.gameState || gameState;
+  return (st?.guilds || []).find(g => g.name === guildName) || null;
+}
+
+/**
+ * 大頭貼 (沿用 badgesCatalog.js 的 GM 頭像特效外框 / 動態疊層 / 角標)，名字與網址全部跳脫，
+ * 名字含引號、空白、中日韓文字都不會破壞 HTML。
+ */
+function renderUnifiedAvatarHtml(heroName, sizeClass = 'uhc-avatar', roundedClass = 'rounded-2xl', avatarUrl = '') {
+  const hero = uhcFindHero(heroName);
+  const url = avatarUrl || hero?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(heroName)}`;
+  const fxInfo = typeof window.getHeroActiveFx === 'function' ? window.getHeroActiveFx(heroName) : null;
+  const hasFx = Boolean(fxInfo && fxInfo.fx && fxInfo.fx !== 'none');
+  const ring = hasFx ? (fxInfo.preset?.ringClass || '') : 'uhc-avatar-plain';
+  return `<div class="relative inline-flex flex-shrink-0 ${sizeClass} ${roundedClass} ${ring} bg-slate-800 select-none">
+      <img src="${escapeHtml(url)}" alt="${escapeHtml(heroName)}" loading="lazy" class="w-full h-full object-cover ${roundedClass}">
+      ${hasFx ? `<span class="avatar-fx-overlay avatar-fx-overlay-${escapeHtml(fxInfo.fx)} ${roundedClass}"></span>` : ''}
+      ${hasFx && fxInfo.preset?.icon ? `<span class="avatar-fx-corner-badge" title="${escapeHtml(fxInfo.customTitle || fxInfo.preset.label || '')}">${fxInfo.preset.icon}</span>` : ''}
+    </div>`;
+}
+
+/** GM 自訂稱號 / 特效稱號小標籤 (跳脫版) */
+function renderUnifiedTitlePill(heroName) {
+  const fxInfo = typeof window.getHeroActiveFx === 'function' ? window.getHeroActiveFx(heroName) : null;
+  if (!fxInfo) return '';
+  if (!fxInfo.customTitle && (!fxInfo.fx || fxInfo.fx === 'none')) return '';
+  const title = fxInfo.customTitle || fxInfo.preset?.defaultTitle;
+  if (!title) return '';
+  return `<span class="uhc-pill ${fxInfo.preset?.pillClass || ''}">${escapeHtml(title)}</span>`;
+}
+
+/** 公會標籤 (公會徽記 + 公會色) */
+function renderUnifiedGuildPill(guildName) {
+  if (!guildName) return `<span class="uhc-pill uhc-tone-muted">🛡️ 無公會</span>`;
+  const g = uhcFindGuild(guildName);
+  const color = uhcSafeColor(g?.color, '#64748b');
+  return `<span class="uhc-pill" style="border-color:${color}99;" title="公會：${escapeHtml(guildName)}"><span class="uhc-guild-dot" style="background:${color}"></span>${escapeHtml(g?.badge || '🛡️')} ${escapeHtml(guildName)}</span>`;
+}
+
+/**
+ * 統一英雄卡
+ * @param {string} heroName 英雄名稱 (gameState.heroes[].name)
+ * @param {object} opts
+ *   rank      {number}   名次 (1 = 👑 金框)
+ *   primary   {object}   主指標 { label, value, accent } — 顯示於卡片右上，大字
+ *   metrics   {Array}    次要指標 [{ label, value, accent }]
+ *   status    {Array|string} 狀態標籤 [{ text, tone: ok|bad|warn|info|gold|purple|muted }]
+ *   guild     {string}   公會 (預設取 gameState.heroes 的 guild)
+ *   compact   {boolean}  精簡版 (排行榜小清單)
+ *   podium    {boolean}  直式置中王座版 (窄欄冠軍)
+ *   dead      {boolean}  灰階 (飢餓法則淘汰)
+ *   highlight {boolean}  金框強調 (預設 rank === 1)
+ *   footHtml  {string}   卡片底部附加 HTML (呼叫端自行跳脫，例如血條)
+ */
+function renderUnifiedHeroCard(heroName, opts = {}) {
+  const name = String(heroName ?? '');
+  const hero = uhcFindHero(name);
+  const guild = opts.guild ?? hero?.guild ?? '';
+  const badge = getHeroBadgeProgress(name);
+  const rank = Number(opts.rank) || 0;
+  const highlight = opts.highlight ?? rank === 1;
+  const esc = (v) => escapeHtml(v ?? '');
+  const accentCls = (a) => /^[\w\s:\-\/\[\]#.]+$/.test(String(a || '')) ? String(a) : '';
+
+  const statusList = (Array.isArray(opts.status) ? opts.status : (opts.status ? [{ text: opts.status }] : [])).filter(s => s && (s.text || s.text === 0));
+  if (!statusList.length && opts.autoStatus !== false) statusList.push(uhcActivityStatus(name));
+  const statusHtml = statusList.map(s => `<span class="uhc-pill uhc-tone-${['ok', 'bad', 'warn', 'info', 'gold', 'purple', 'muted'].includes(s.tone) ? s.tone : 'muted'}"${s.title ? ` title="${esc(s.title)}"` : ''}>${esc(s.text)}</span>`).join('');
+
+  const rankHtml = rank > 0
+    ? `<span class="uhc-rank ${rank <= 3 ? `uhc-rank-${rank}` : ''}">${rank === 1 ? '👑' : `#${rank}`}</span>`
+    : '';
+  const primaryHtml = opts.primary
+    ? `<div class="uhc-primary"><span class="uhc-primary-label">${esc(opts.primary.label)}</span><span class="uhc-primary-value ${accentCls(opts.primary.accent)}">${esc(opts.primary.value)}</span></div>`
+    : '';
+  const metrics = (opts.metrics || []).filter(Boolean);
+  const metricsHtml = metrics.length
+    ? `<div class="uhc-metrics">${metrics.map(m => `<div class="uhc-metric"${m.title ? ` title="${esc(m.title)}"` : ''}><span class="uhc-metric-label">${esc(m.label)}</span><span class="uhc-metric-value ${accentCls(m.accent)}">${esc(m.value)}</span></div>`).join('')}</div>`
+    : '';
+
+  const cls = ['uhc', opts.compact ? 'uhc-compact' : '', opts.podium ? 'uhc-podium' : '', highlight ? 'uhc-top1' : '', opts.dead ? 'uhc-dead' : ''].filter(Boolean).join(' ');
+  return `
+    <div class="${cls}" role="button" tabindex="0" data-hero="${esc(name)}" aria-label="${esc(name)} 英雄卡"
+         onclick="openHeroDetailModal(${jsArg(name)})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openHeroDetailModal(${jsArg(name)});}">
+      <div class="uhc-head">
+        <div class="uhc-avatar-wrap">
+          ${renderUnifiedAvatarHtml(name, 'uhc-avatar', opts.podium ? 'rounded-full' : 'rounded-2xl')}
+          ${rankHtml}
+        </div>
+        <div class="uhc-info">
+          <div class="uhc-name-row"><span class="uhc-name" title="${esc(name)}">${esc(name)}</span>${renderUnifiedTitlePill(name)}</div>
+          <div class="uhc-tags">
+            ${renderUnifiedGuildPill(guild)}
+            <span class="uhc-pill uhc-badges" title="已解鎖徽章 / 徽章總數">🎖️ ${badge.unlocked} / ${badge.total}</span>
+          </div>
+          ${statusHtml ? `<div class="uhc-tags">${statusHtml}</div>` : ''}
+        </div>
+        ${opts.podium ? '' : primaryHtml}
+      </div>
+      ${opts.podium ? primaryHtml : ''}
+      ${metricsHtml}
+      ${opts.footHtml ? `<div class="uhc-foot">${opts.footHtml}</div>` : ''}
+    </div>`;
+}
+
+/** 預設狀態：近 7 日是否有有效運動 (呼叫端沒給資料片專屬狀態時使用，確保「狀態」永不缺席) */
+let uhcActivityCache = { ref: null, map: {} };
+function uhcActivityStatus(heroName) {
+  const st = window.gameState || gameState;
+  const acts = st?.activities || [];
+  if (uhcActivityCache.ref !== acts) {
+    const map = {};
+    acts.forEach(a => {
+      if (!a?.isValidAttack || !a.hero) return;
+      const ymd = typeof window.normalizeDateYMD === 'function' ? window.normalizeDateYMD(a.date) : String(a.date || '').slice(0, 10).replace(/-/g, '/');
+      if (ymd && (!map[a.hero] || ymd > map[a.hero])) map[a.hero] = ymd;
+    });
+    uhcActivityCache = { ref: acts, map };
+  }
+  const last = uhcActivityCache.map[heroName];
+  if (!last) return { text: '💤 尚未出征', tone: 'muted' };
+  const today = typeof window.getTodayYMD === 'function' ? window.getTodayYMD() : '';
+  const diff = (today && typeof window.diffDaysYMD === 'function') ? window.diffDaysYMD(last, today) : null;
+  if (diff !== null && diff <= 7) return { text: diff <= 0 ? '🔥 今日出征' : `🟢 ${diff} 天前出征`, tone: 'ok' };
+  return { text: `💤 最近出征 ${last.slice(5)}`, tone: 'muted' };
+}
+
+/** 英雄卡網格 (手機 1 欄、平板以上自動填滿) */
+function renderUnifiedHeroGrid(cards, emptyText = '目前尚無冒險者資料') {
+  const list = (cards || []).filter(Boolean);
+  if (!list.length) return `<div class="p-6 text-center text-slate-500 text-sm bg-slate-900/60 border border-slate-800 rounded-2xl">${escapeHtml(emptyText)}</div>`;
+  return `<div class="uhc-grid">${list.join('')}</div>`;
+}
+/** 精簡英雄卡直列清單 (排行榜 Top N) */
+function renderUnifiedHeroList(cards, emptyText = '尚無資料') {
+  const list = (cards || []).filter(Boolean);
+  if (!list.length) return `<div class="p-3 text-center text-slate-500 text-xs">${escapeHtml(emptyText)}</div>`;
+  return `<div class="uhc-list">${list.join('')}</div>`;
+}
+/** 公會成員頭像疊 (公會榜一眼看到成員是誰) */
+function renderGuildAvatarStack(members, max = 12) {
+  const arr = (members || []).filter(Boolean);
+  const shown = arr.slice(0, max);
+  const more = arr.length - shown.length;
+  return `<span class="uhc-stack">${shown.map(n => `<span class="uhc-stack-item" title="${escapeHtml(n)}" onclick="event.stopPropagation();openHeroDetailModal(${jsArg(n)})">${renderUnifiedAvatarHtml(n, 'w-8 h-8', 'rounded-full')}</span>`).join('')}${more > 0 ? `<span class="uhc-stack-item inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-[10px] font-bold text-slate-300" style="line-height:1">+${more}</span>` : ''}</span>`;
+}
+window.renderUnifiedHeroCard = renderUnifiedHeroCard;
+window.renderUnifiedHeroGrid = renderUnifiedHeroGrid;
+window.renderUnifiedHeroList = renderUnifiedHeroList;
+window.renderUnifiedAvatarHtml = renderUnifiedAvatarHtml;
+window.renderGuildAvatarStack = renderGuildAvatarStack;
+
 let badgeWallShowOnlyUnlocked = false;
 
 let gameState = null;
@@ -248,6 +435,9 @@ window.frozenClassic0717 = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
+  // 📱 App 內嵌模式：?hero=名稱 → 戰情室預設選這位英雄
+  const reqHero = urlParams.get('hero');
+  if (reqHero) { try { selectedViewerHero = reqHero; } catch (e) {} }
   if (typeof window.syncFromDatabase === 'function') {
     await window.syncFromDatabase();
   }
@@ -801,6 +991,19 @@ function renderClassicModeView() {
   const metrics = classicData.teamMetrics;
   const guildList = classicData.guildList;
 
+  // 英雄卡共用資料：有氧 / 無氧名次 (純呈現，不影響計分)
+  const aeroByName = {}, anaeroByName = {}, rawByName = {};
+  (champs.heroAerobic || []).forEach(h => { aeroByName[h.name] = h; });
+  (champs.heroAnaerobic || []).forEach(h => { anaeroByName[h.name] = h; });
+  (classicData.heroList || []).forEach(h => { rawByName[h.name] = h; });
+  const classicHeroCard = (name, extra = {}) => {
+    const a = aeroByName[name], an = anaeroByName[name];
+    const status = [];
+    if (a) status.push({ text: `🟢 有氧 #${a.rank}`, tone: a.rank === 1 ? 'gold' : 'ok' });
+    if (an) status.push({ text: `🔴 無氧 #${an.rank}`, tone: an.rank === 1 ? 'gold' : 'bad' });
+    return renderUnifiedHeroCard(name, { status, ...extra });
+  };
+
   // 4 Podiums
   champContainer.innerHTML = `
     <div class="bg-slate-900/80 border border-emerald-500/40 rounded-2xl p-4 space-y-3 shadow-lg">
@@ -824,12 +1027,7 @@ function renderClassicModeView() {
         <span class="text-[10px] text-slate-400">個人綜合加權高標法</span>
       </div>
       <div class="space-y-1.5">
-        ${(champs.heroAerobic || []).slice(0, 5).map(h => `
-          <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs cursor-pointer hover:border-emerald-500/50 transition">
-            <span class="font-bold text-white">${h.badge || ''} ${h.name} <span class="text-[10px] text-slate-400 font-normal">(${h.guild})</span></span>
-            <span class="font-rpg font-bold text-emerald-400">${h.score} 分</span>
-          </div>
-        `).join('')}
+        ${renderUnifiedHeroList((champs.heroAerobic || []).slice(0, 5).map(h => classicHeroCard(h.name, { rank: h.rank, compact: true, primary: { label: '有氧總分', value: `${h.score} 分`, accent: 'text-emerald-400' } })))}
       </div>
     </div>
 
@@ -854,12 +1052,7 @@ function renderClassicModeView() {
         <span class="text-[10px] text-slate-400">落差40% + 密度30% + MaxHR15% + 出勤15%</span>
       </div>
       <div class="space-y-1.5">
-        ${(champs.heroAnaerobic || []).slice(0, 5).map(h => `
-          <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs cursor-pointer hover:border-rose-500/50 transition">
-            <span class="font-bold text-white">${h.badge || ''} ${h.name} <span class="text-[10px] text-slate-400 font-normal">(${h.guild})</span></span>
-            <span class="font-rpg font-bold text-rose-400">${h.score} 分</span>
-          </div>
-        `).join('')}
+        ${renderUnifiedHeroList((champs.heroAnaerobic || []).slice(0, 5).map(h => classicHeroCard(h.name, { rank: h.rank, compact: true, primary: { label: '無氧總分', value: `${h.score} 分`, accent: 'text-rose-400' } })))}
       </div>
     </div>
   `;
@@ -918,6 +1111,27 @@ function renderClassicModeView() {
         </tbody>
       </table>
     `;
+  }
+
+  // 全服英雄卡名冊 (依有氧名次排列；每位英雄都有大頭貼 + 公會 + 狀態 + 徽章數)
+  const rosterContainer = document.getElementById('classic-hero-roster-container');
+  if (rosterContainer) {
+    const r1 = (n) => Math.round((n || 0) * 10) / 10;
+    rosterContainer.innerHTML = renderUnifiedHeroGrid((champs.heroAerobic || []).map(h => {
+      const raw = rawByName[h.name] || {};
+      const an = anaeroByName[h.name];
+      return classicHeroCard(h.name, {
+        primary: { label: '有氧 / 無氧', value: `${h.score} / ${an ? an.score : 0}`, accent: 'text-amber-400' },
+        metrics: [
+          { label: '🏋️ 出勤', value: `${r1(raw.workouts)} 次` },
+          { label: '🔋 熱量', value: `${Math.round(raw.calories || 0).toLocaleString()}`, accent: 'text-rose-300' },
+          { label: '🚀 TRIMP', value: `${Math.round(raw.trimp || 0).toLocaleString()}`, accent: 'text-cyan-300' },
+          { label: '🟢 Zone2', value: `${r1(raw.zone2)} 次`, accent: 'text-emerald-300' },
+          { label: '🦍 最大落差', value: `${r1(raw.maxGap)} bpm`, accent: 'text-purple-300' },
+          { label: '⏱️ 時長', value: `${Math.round(raw.duration || 0).toLocaleString()} 分` }
+        ]
+      });
+    }));
   }
 }
 
@@ -1069,21 +1283,11 @@ function renderRPGClassTalentView() {
           </span>
           <span class="text-[10px] opacity-80">${cls.enName}</span>
         </div>
-        ${master ? `
-          <div class="flex items-center space-x-2.5 pt-1 cursor-pointer hover:opacity-80" onclick="openHeroDetailModal(${jsArg(master.name)})">
-            <div class="w-9 h-9 rounded-xl bg-slate-800 overflow-hidden border border-slate-700 flex-shrink-0">
-              <img src="${master.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${master.name}`}" class="w-full h-full object-cover">
-            </div>
-            <div class="min-w-0">
-              <span class="font-bold text-white text-xs truncate block">${master.name}</span>
-              <span class="text-[10px] text-slate-400">${master.guild}</span>
-            </div>
-          </div>
-          <div class="text-right pt-1 border-t border-slate-800/80">
-            <span class="text-[10px] text-slate-400 block">職業戰力</span>
-            <span class="font-rpg font-bold text-sm text-amber-400">${master.combatPower.toLocaleString()}</span>
-          </div>
-        ` : `
+        ${master ? renderUnifiedHeroCard(master.name, {
+          podium: true, highlight: true,
+          status: [{ text: `${cls.badge} ${cls.name}之王`, tone: 'gold' }],
+          primary: { label: '職業戰力 (CP)', value: master.combatPower.toLocaleString(), accent: 'text-amber-400' }
+        }) : `
           <div class="text-center py-4 text-slate-500 text-xs">(尚無冒險者)</div>
         `}
       </div>
@@ -1113,51 +1317,25 @@ function renderRPGClassTalentView() {
         <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
           <div class="h-full rounded-full transition-all duration-500" style="width: ${pct}%; background-color: ${g.color};"></div>
         </div>
+        ${(g.members || []).length ? `<div class="pt-0.5">${renderGuildAvatarStack(g.members)}</div>` : ''}
       </div>
     `;
   }).join('');
 
-  // 3. Hero Class Roster Table
+  // 3. Hero Class Roster (統一英雄卡：職業 / 天賦被動 / 出勤燃脂 / TRIMP 落差 / RPG 戰力)
   if (rosterContainer) {
-    rosterContainer.innerHTML = `
-      <table class="w-full text-left text-xs">
-        <thead class="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
-          <tr>
-            <th class="p-3">👤 冒險者</th>
-            <th class="p-3">🛡️ 公會</th>
-            <th class="p-3">⚔️ 職業專精</th>
-            <th class="p-3">✨ 專屬天賦被動</th>
-            <th class="p-3">🏋️ 出勤 / 燃脂</th>
-            <th class="p-3">🚀 TRIMP / 落差</th>
-            <th class="p-3 text-right">⚡ RPG 戰鬥評分 (CP)</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-800/60 text-slate-300">
-          ${heroList.map(h => `
-            <tr class="hover:bg-slate-950/40 transition cursor-pointer" onclick="openHeroDetailModal(${jsArg(h.name)})">
-              <td class="p-3 font-bold text-white flex items-center space-x-2">
-                <div class="w-7 h-7 rounded-lg bg-slate-800 overflow-hidden border border-slate-700 flex-shrink-0">
-                  <img src="${h.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${h.name}`}" class="w-full h-full object-cover">
-                </div>
-                <span>${h.name}</span>
-              </td>
-              <td class="p-3"><span class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[10px]">${h.guild}</span></td>
-              <td class="p-3">
-                <span class="px-2 py-0.5 rounded text-[11px] font-bold ${h.classMeta.bg}">
-                  ${h.classMeta.badge} ${h.rpgClass}
-                </span>
-              </td>
-              <td class="p-3 text-[11px] text-slate-400">
-                <span class="font-bold text-slate-200">${h.classMeta.passiveName}</span>：${h.classMeta.passiveDesc}
-              </td>
-              <td class="p-3 font-mono">${Math.round(h.workouts * 10) / 10}次 • ${Math.round(h.zone2 * 10) / 10}次燃脂</td>
-              <td class="p-3 font-mono text-cyan-300">${Math.round(h.trimp * 10) / 10} • 落差 ${Math.round(h.maxGap * 10) / 10}</td>
-              <td class="p-3 text-right font-mono font-bold text-amber-400 text-sm">${h.combatPower.toLocaleString()}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    rosterContainer.classList.remove('overflow-x-auto');
+    rosterContainer.innerHTML = renderUnifiedHeroGrid(heroList.map((h, idx) => renderUnifiedHeroCard(h.name, {
+      rank: idx + 1,
+      status: [{ text: `${h.classMeta.badge} ${h.rpgClass}`, tone: 'purple', title: h.classMeta.enName }],
+      primary: { label: '⚡ RPG 戰力 (CP)', value: h.combatPower.toLocaleString(), accent: 'text-amber-400' },
+      metrics: [
+        { label: '🏋️ 出勤', value: `${Math.round(h.workouts * 10) / 10} 次` },
+        { label: '🟢 燃脂', value: `${Math.round(h.zone2 * 10) / 10} 次`, accent: 'text-emerald-300' },
+        { label: '🚀 TRIMP / 落差', value: `${Math.round(h.trimp * 10) / 10} / ${Math.round(h.maxGap * 10) / 10}`, accent: 'text-cyan-300' }
+      ],
+      footHtml: `<span class="font-bold text-slate-200">✨ ${escapeHtml(h.classMeta.passiveName)}</span>：${escapeHtml(h.classMeta.passiveDesc)}`
+    })));
   }
 }
 
@@ -1214,49 +1392,24 @@ function renderWorldBossView() {
   if (statMag) statMag.innerText = totalMag.toLocaleString();
   if (statCri) statCri.innerText = totalCrit.toLocaleString();
 
-  // MVP List
+  // MVP List (統一英雄卡：大頭貼 / 公會 / 稱號 / 徽章數 + 總輸出與傷害拆解)
   const mvpContainer = document.getElementById('mvp-hero-list');
   if (mvpContainer && heroStatsList) {
-    mvpContainer.innerHTML = '';
     const sorted = [...heroStatsList].sort((a, b) => (b.totalDamage || 0) - (a.totalDamage || 0));
-    sorted.forEach((hero, index) => {
-      const card = document.createElement('div');
-      const isTop1 = index === 0;
-      const isTop3 = index < 3;
-      card.className = `p-3.5 rounded-2xl border transition flex items-center justify-between space-x-3 cursor-pointer hover:border-amber-500/60 ${
-        isTop1 ? 'bg-amber-950/20 border-amber-500/50 glow-border-gold' : (isTop3 ? 'bg-slate-950/60 border-slate-700' : 'bg-slate-950/40 border-slate-800/80')
-      }`;
-      card.onclick = () => openHeroDetailModal(hero.name);
-      const bossHeroAvatar = typeof window.renderHeroAvatarHtml === 'function'
-        ? window.renderHeroAvatarHtml(hero, 'w-10 h-10', 'rounded-xl')
-        : `<div class="w-10 h-10 rounded-xl bg-slate-800 overflow-hidden border border-slate-700 flex-shrink-0"><img src="${hero.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${hero.name}`}" class="w-full h-full object-cover"></div>`;
-      const bossHeroTitle = typeof window.renderHeroCustomTitleHtml === 'function'
-        ? window.renderHeroCustomTitleHtml(hero.name)
-        : '';
-      card.innerHTML = `
-        <div class="flex items-center space-x-3 flex-1 min-w-0">
-          <div class="w-7 text-center font-black font-rpg text-sm ${isTop1 ? 'text-amber-400 text-base' : (isTop3 ? 'text-cyan-400' : 'text-slate-500')}">
-            ${isTop1 ? '👑' : `#${index + 1}`}
-          </div>
-          ${bossHeroAvatar}
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <h4 class="text-sm font-black text-white truncate">${hero.name}</h4>
-              ${bossHeroTitle}
-              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">${hero.guild}</span>
-            </div>
-            <p class="text-[11px] text-slate-400 mt-0.5">
-              出勤 ${hero.validWorkouts || 0} 次 • 普攻 ${(hero.physDmg || 0).toLocaleString()} • 魔攻 ${(hero.magDmg || 0).toLocaleString()} • 💥 爆擊 ${(hero.critDmg || 0).toLocaleString()}
-            </p>
-          </div>
-        </div>
-        <div class="text-right">
-          <span class="text-[10px] text-slate-400 block">總輸出</span>
-          <span class="text-base font-black font-rpg text-amber-400">${(hero.totalDamage || 0).toLocaleString()}</span>
-        </div>
-      `;
-      mvpContainer.appendChild(card);
-    });
+    mvpContainer.innerHTML = renderUnifiedHeroGrid(sorted.map((hero, index) => renderUnifiedHeroCard(hero.name, {
+      rank: index + 1,
+      guild: hero.guild,
+      status: [
+        index === 0 ? { text: '👑 討伐軍 MVP', tone: 'gold' } : null,
+        { text: `⚔️ 出勤 ${hero.validWorkouts || 0} 次`, tone: (hero.validWorkouts || 0) > 0 ? 'ok' : 'muted' }
+      ].filter(Boolean),
+      primary: { label: '總輸出', value: (hero.totalDamage || 0).toLocaleString(), accent: 'text-amber-400' },
+      metrics: [
+        { label: '🗡️ 普攻', value: (hero.physDmg || 0).toLocaleString(), accent: 'text-amber-300' },
+        { label: '🔮 魔攻', value: (hero.magDmg || 0).toLocaleString(), accent: 'text-cyan-300' },
+        { label: '💥 爆擊', value: (hero.critDmg || 0).toLocaleString(), accent: 'text-rose-300' }
+      ]
+    })), '尚無討伐軍資料');
   }
 
   // Guild Contributions
@@ -1283,6 +1436,7 @@ function renderWorldBossView() {
         <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
           <div class="h-full rounded-full transition-all duration-500" style="width: ${pct}%; background-color: ${g.color || '#f59e0b'};"></div>
         </div>
+        ${(g.members || []).length ? `<div class="pt-0.5">${renderGuildAvatarStack(g.members)}</div>` : ''}
       `;
       guildContainer.appendChild(div);
     });
@@ -1302,11 +1456,11 @@ function renderWorldBossView() {
         : `<span class="text-[10px] text-amber-400 font-mono">手動</span>`;
       div.innerHTML = `
         <div class="flex items-center space-x-2 min-w-0 flex-1">
-          <span class="text-xs">⚔️</span>
+          <span class="cursor-pointer" onclick="openHeroDetailModal(${jsArg(a.hero)})">${renderUnifiedAvatarHtml(a.hero, 'w-9 h-9', 'rounded-xl')}</span>
           <div class="min-w-0">
             <div class="flex items-center space-x-1.5">
-              <span class="font-bold text-slate-200 truncate cursor-pointer hover:underline" onclick="openHeroDetailModal(${jsArg(a.hero)})">${a.hero}</span>
-              <span class="text-[10px] text-slate-400">(${a.guild})</span>
+              <span class="font-bold text-slate-200 truncate cursor-pointer hover:underline" onclick="openHeroDetailModal(${jsArg(a.hero)})">${escapeHtml(a.hero)}</span>
+              <span class="text-[10px] text-slate-400">(${escapeHtml(a.guild)})</span>
               ${idBadge}
             </div>
             <span class="text-slate-500 text-[10px] truncate block">${escapeHtml(a.title || '自主訓練')} (${a.duration}分 • 心率 ${a.avgHr}/${a.maxHr})</span>
@@ -1386,8 +1540,7 @@ function loadHeroViewerData() {
     const customTitleHtml = typeof window.renderHeroCustomTitleHtml === 'function'
       ? window.renderHeroCustomTitleHtml(hero.name)
       : '';
-    const unlockedCount = Object.keys(gameState?.heroBadges?.[hero.name] || {}).length;
-    const totalBadges = (window.BADGE_CATALOG || []).length || 100;
+    const { unlocked: unlockedCount, total: totalBadges } = getHeroBadgeProgress(hero.name);
 
     hudContainer.innerHTML = `
       <div class="bg-gradient-to-r from-cyan-950/40 via-slate-900 to-slate-950 p-4 rounded-2xl border border-cyan-500/30 flex flex-wrap items-center justify-between gap-4">
@@ -1659,11 +1812,11 @@ function setBadgeCategoryFilter(cat) {
 }
 
 function buildBadgeInspectorHtml(heroName, badgeId) {
-  const catalog = window.BADGE_CATALOG || [];
+  const catalog = getActiveBadgeCatalogList();
   const unlockedMap = gameState?.heroBadges?.[heroName] || {};
   const rarityMeta = window.BADGE_RARITY_META || {};
 
-  let targetBadge = catalog.find(b => b.id === badgeId);
+  let targetBadge = catalog.find(b => b.id === badgeId) || (window.findBadgeById ? window.findBadgeById(badgeId) : (window.BADGE_CATALOG || []).find(b => b.id === badgeId));
   if (!targetBadge) {
     // Default to first unlocked badge of this hero, or first badge in catalog
     targetBadge = catalog.find(b => unlockedMap[b.id]) || catalog[0];
@@ -1741,7 +1894,7 @@ function renderHeroBadgesWall(heroName) {
   const wallCard = document.getElementById('hero-badges-wall-card');
   if (!wallCard) return;
 
-  const catalog = window.BADGE_CATALOG || [];
+  const catalog = getActiveBadgeCatalogList();
   if (catalog.length === 0) {
     wallCard.innerHTML = '';
     return;
@@ -1752,7 +1905,7 @@ function renderHeroBadgesWall(heroName) {
   }
 
   const unlockedMap = gameState?.heroBadges?.[heroName] || {};
-  const unlockedCount = Object.keys(unlockedMap).length;
+  const unlockedCount = catalog.filter(b => unlockedMap[b.id]).length;
   const totalCount = catalog.length;
   const pct = totalCount > 0 ? ((unlockedCount / totalCount) * 100).toFixed(1) : '0.0';
 
@@ -2068,6 +2221,7 @@ function sortViewerTable(col) {
 // -------------------------------------------------------------
 
 function openHeroDetailModal(heroName) {
+  if (typeof heroName === 'string' && window.safeDisplayText) heroName = window.safeDisplayText(heroName); // 🛡️ 與資料庫清洗後的名字一致，也避免直接把參數當 HTML 輸出
   const modal = document.getElementById('modal-hero-profile');
   const title = document.getElementById('modal-hero-profile-title');
   const content = document.getElementById('modal-hero-profile-content');
@@ -2278,7 +2432,7 @@ function openHeroDetailModal(heroName) {
   }
 
   // Build unlocked badges mini-showcase inside Hero Detail Modal
-  const catalog = window.BADGE_CATALOG || [];
+  const catalog = getActiveBadgeCatalogList();
   const rarityMeta = window.BADGE_RARITY_META || {};
   const unlockedMap = gameState?.heroBadges?.[hero.name] || {};
   const unlockedBadgesList = catalog.filter(b => unlockedMap[b.id]);
@@ -2287,10 +2441,10 @@ function openHeroDetailModal(heroName) {
     <div class="bg-slate-950/90 p-3 rounded-2xl border border-amber-500/30 space-y-2">
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
         <span class="font-bold text-amber-300 text-xs flex items-center space-x-1.5">
-          <span>🎖️ 已解鎖榮譽徽章 (${unlockedBadgesList.length} / ${catalog.length || 100})</span>
+          <span>🎖️ 已解鎖榮譽徽章 (${unlockedBadgesList.length} / ${catalog.length})</span>
         </span>
         <button onclick="jumpToHeroBadgesWall(${jsArg(hero.name)})" class="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-950/50 border border-cyan-800/60 px-2 py-0.5 rounded-lg transition">
-          前往戰情室 100 格徽章牆 ➔
+          前往戰情室徽章牆 ➔
         </button>
       </div>
       ${unlockedBadgesList.length === 0 ? `
@@ -3224,6 +3378,10 @@ function renderFactionWarView() {
   const f2CurrentHp = Math.max(0, faction2.hp - faction1.dmg + faction2.repair);
   const f1Pct = Math.min(100, Math.max(0, (f1CurrentHp / faction1.hp) * 100));
   const f2Pct = Math.min(100, Math.max(0, (f2CurrentHp / faction2.hp) * 100));
+  // 英雄卡狀態：所屬陣營 (純呈現)
+  const factionStatusOf = (guildName) => faction1.guilds.includes(guildName)
+    ? { text: `🛡️ ${faction1.name}`, tone: 'ok' }
+    : (faction2.guilds.includes(guildName) ? { text: `⚔️ ${faction2.name}`, tone: 'bad' } : { text: '未編入陣營', tone: 'muted' });
 
   container.innerHTML = `
     <!-- Lore / Story -->
@@ -3248,7 +3406,8 @@ function renderFactionWarView() {
       <div class="bg-slate-900/80 rounded-3xl p-6 border border-emerald-500/30 relative overflow-hidden text-center glow-border-green">
         <div class="text-xs text-emerald-500 font-bold mb-2">守護陣營</div>
         <h3 class="text-3xl font-black text-white font-title mb-4">${faction1.name}</h3>
-        <p class="text-xs text-slate-400 mb-4">所屬公會：${faction1.guilds.join(', ') || '無'}</p>
+        <p class="text-xs text-slate-400 mb-2">所屬公會：${faction1.guilds.join(', ') || '無'}</p>
+        <div class="mb-4 flex justify-center">${renderGuildAvatarStack((gameState?.heroes || []).filter(h => faction1.guilds.includes(h.guild)).map(h => h.name), 16)}</div>
         <div class="mb-2">
             <span class="text-sm font-bold text-slate-400">主城血量</span>
             <div class="text-4xl font-rpg font-black text-emerald-400">${f1CurrentHp.toLocaleString()}</div>
@@ -3266,7 +3425,8 @@ function renderFactionWarView() {
       <div class="bg-slate-900/80 rounded-3xl p-6 border border-rose-500/30 relative overflow-hidden text-center glow-border-red">
         <div class="text-xs text-rose-500 font-bold mb-2">狂怒陣營</div>
         <h3 class="text-3xl font-black text-white font-title mb-4">${faction2.name}</h3>
-        <p class="text-xs text-slate-400 mb-4">所屬公會：${faction2.guilds.join(', ') || '無'}</p>
+        <p class="text-xs text-slate-400 mb-2">所屬公會：${faction2.guilds.join(', ') || '無'}</p>
+        <div class="mb-4 flex justify-center">${renderGuildAvatarStack((gameState?.heroes || []).filter(h => faction2.guilds.includes(h.guild)).map(h => h.name), 16)}</div>
         <div class="mb-2">
             <span class="text-sm font-bold text-slate-400">主城血量</span>
             <div class="text-4xl font-rpg font-black text-rose-400">${f2CurrentHp.toLocaleString()}</div>
@@ -3294,35 +3454,31 @@ function renderFactionWarView() {
         <div>
            <h4 class="text-xs font-bold text-rose-400 mb-2">🔥 攻城毀滅者 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">TRIMP×10 + MaxGap×100</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, dmg: (h.totalTrimp || 0) * 10 + (h.scoreMaxGap ?? h.maxGap ?? 0) * 100
-             })).sort((a,b)=>b.dmg-a.dmg).slice(0, 10).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs cursor-pointer hover:border-rose-500/50 transition">
-                  <div class="flex items-center space-x-2">
-                      <span class="font-bold text-slate-500 w-4">${i+1}.</span>
-                      <span class="font-bold text-white">${h.avatar ? `<img src="${h.avatar}" class="inline-block w-4 h-4 rounded-full mr-1 object-cover">` : ''}${h.name}</span>
-                      <span class="text-[9px] text-slate-500">${h.guild}</span>
-                  </div>
-                  <span class="font-rpg font-bold text-rose-400">${h.dmg.toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.dmg-a.dmg).slice(0, 10).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: [factionStatusOf(h.guild)],
+                primary: { label: '攻城傷害', value: h.dmg.toLocaleString(), accent: 'text-rose-400' },
+                metrics: [
+                  { label: '🚀 TRIMP', value: Math.round(h.totalTrimp || 0).toLocaleString(), accent: 'text-cyan-300' },
+                  { label: '🦍 MaxGap', value: `${Math.round(h.scoreMaxGap ?? h.maxGap ?? 0)}`, accent: 'text-purple-300' }
+                ]
+             })))}
            </div>
         </div>
         <div>
            <h4 class="text-xs font-bold text-cyan-400 mb-2">🛠️ 城牆守護者 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">Cal. + Zone2×5000</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, rep: (h.scoreZone2 ?? h.zone2Count ?? 0) * 5000 + (h.totalCalories || 0)
-             })).sort((a,b)=>b.rep-a.rep).slice(0, 10).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs cursor-pointer hover:border-cyan-500/50 transition">
-                  <div class="flex items-center space-x-2">
-                      <span class="font-bold text-slate-500 w-4">${i+1}.</span>
-                      <span class="font-bold text-white">${h.avatar ? `<img src="${h.avatar}" class="inline-block w-4 h-4 rounded-full mr-1 object-cover">` : ''}${h.name}</span>
-                      <span class="text-[9px] text-slate-500">${h.guild}</span>
-                  </div>
-                  <span class="font-rpg font-bold text-cyan-400">+${h.rep.toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.rep-a.rep).slice(0, 10).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: [factionStatusOf(h.guild)],
+                primary: { label: '城牆修復', value: `+${h.rep.toLocaleString()}`, accent: 'text-cyan-400' },
+                metrics: [
+                  { label: '🔋 熱量', value: Math.round(h.totalCalories || 0).toLocaleString(), accent: 'text-rose-300' },
+                  { label: '🟢 Zone2', value: `${Math.round((h.scoreZone2 ?? h.zone2Count ?? 0) * 10) / 10} 次`, accent: 'text-emerald-300' }
+                ]
+             })))}
            </div>
         </div>
       </div>
@@ -3367,45 +3523,25 @@ function renderSurvivalView() {
       </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      ${survivingHeroes.length === 0 ? `<div class="col-span-full p-6 text-center text-slate-500 text-sm bg-slate-900/60 border border-slate-800 rounded-2xl">目前尚無冒險者資料，請稍候同步或由 GM 於後台新增英雄。</div>` : ''}
-      ${survivingHeroes.map((h, i) => {
-        const survAvatarHtml = typeof window.renderHeroAvatarHtml === 'function'
-          ? window.renderHeroAvatarHtml(h, 'w-10 h-10', 'rounded-xl')
-          : `<div class="w-10 h-10 rounded-xl bg-slate-800 overflow-hidden border border-slate-700"><img src="${h.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${h.name}`}" class="w-full h-full object-cover"></div>`;
-        const survTitleHtml = typeof window.renderHeroCustomTitleHtml === 'function'
-          ? window.renderHeroCustomTitleHtml(h.name)
-          : '';
-        const badgeCnt = Object.keys(gameState?.heroBadges?.[h.name] || {}).length;
-        return `
-        <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-900/80 p-4 border rounded-2xl cursor-pointer transition ${h.isDead ? 'border-slate-800 opacity-50 grayscale' : 'border-amber-500/40 relative overflow-hidden hover:border-amber-400'}">
-            <div class="flex items-center space-x-3 mb-3">
-               ${survAvatarHtml}
-               <div>
-                  <div class="flex flex-wrap items-center gap-1">
-                    <h4 class="font-bold text-white">${h.name} <span class="text-[10px] text-slate-500">(${h.guild})</span></h4>
-                    ${survTitleHtml}
-                  </div>
-                  <p class="text-[10px] ${h.isDead ? 'text-red-500' : 'text-emerald-400'} font-bold">
-                    ${h.isDead ? '☠️ 已被荒野吞噬（去運動補血即可復活）' : '🟢 存活中'} • <span class="text-amber-300">🎖️ ${badgeCnt} 徽章</span>
-                  </p>
-               </div>
-               ${i === 0 && !h.isDead ? '<span class="absolute top-2 right-2 text-2xl">👑</span>' : ''}
-            </div>
-            <div class="text-[10px] text-slate-400 flex justify-between mb-1">
-               <span>生存值HP <span class="text-[8px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded ml-1">= 初始 - 毒圈 + 熱量 + 衝力</span></span>
-               <span class="text-amber-400 font-mono text-sm font-bold">${Math.max(0, h.currentHp).toLocaleString()}</span>
-            </div>
-            <div class="w-full h-1.5 ${h.isDead ? 'bg-slate-800' : 'bg-slate-900'} rounded-full overflow-hidden">
-               <div class="h-full bg-amber-500" style="width: ${h.isDead ? 0 : Math.min(100, Math.max(0, (h.currentHp/maxHp)*100))}%"></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-slate-800 flex justify-between text-[9px] text-slate-500">
-               <span>狩獵熱量: +${Math.floor(h.food).toLocaleString()}</span>
-               <span>搜刮物資: +${Math.floor(h.scavenge).toLocaleString()}</span>
-            </div>
-        </div>
-      `}).join('')}
-    </div>
+    ${renderUnifiedHeroGrid(survivingHeroes.map((h, i) => {
+      const hpPct = h.isDead ? 0 : Math.min(100, Math.max(0, (h.currentHp / maxHp) * 100));
+      return renderUnifiedHeroCard(h.name, {
+        rank: i + 1,
+        guild: h.guild,
+        dead: h.isDead,
+        highlight: i === 0 && !h.isDead,
+        status: [h.isDead
+          ? { text: '☠️ 已被荒野吞噬', tone: 'bad', title: '去運動補血即可復活' }
+          : { text: i === 0 ? '👑 荒野之王' : '🟢 存活中', tone: i === 0 ? 'gold' : 'ok' }],
+        primary: { label: '生存值 HP', value: Math.max(0, h.currentHp).toLocaleString(), accent: h.isDead ? 'text-rose-400' : 'text-amber-400' },
+        metrics: [
+          { label: '🍖 狩獵熱量', value: `+${Math.floor(h.food).toLocaleString()}`, accent: 'text-emerald-300' },
+          { label: '🎒 搜刮物資', value: `+${Math.floor(h.scavenge).toLocaleString()}`, accent: 'text-amber-300' },
+          { label: '☣️ 毒圈流失', value: `-${currentPenalty.toLocaleString()}`, accent: 'text-rose-300' }
+        ],
+        footHtml: `<div class="w-full h-2 ${h.isDead ? 'bg-slate-800' : 'bg-slate-900'} rounded-full overflow-hidden" title="HP = 初始 - 毒圈 + 熱量 + 衝力"><div class="h-full bg-gradient-to-r from-amber-500 to-orange-500" style="width:${hpPct}%"></div></div>${h.isDead ? '<span class="block mt-1 text-rose-400">去運動補血即可復活</span>' : ''}`
+      });
+    }), '目前尚無冒險者資料，請稍候同步或由 GM 於後台新增英雄。')}
   `;
 }
 
@@ -3499,48 +3635,75 @@ function renderBaseBuilderView() {
         <div>
            <h4 class="text-xs font-bold text-emerald-400 mb-2">🌳 頂級伐木工 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">總卡路里</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.totalCalories || 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-emerald-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-emerald-400 font-bold">${h.res.toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🌳 頂級伐木工', tone: 'gold' }] : [],
+                primary: { label: '🌳 木材產量', value: `${h.res.toLocaleString()}`, accent: 'text-emerald-400' }
+             })))}
            </div>
         </div>
         <div>
            <h4 class="text-xs font-bold text-blue-400 mb-2">⚙️ 鋼鐵礦工 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">總TRIMP</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.totalTrimp || 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex items-center justify-between cursor-pointer hover:border-blue-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden">
-                     <span class="text-slate-500 font-bold mr-1">${i+1}.</span>
-                     ${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-xs w-full justify-start truncate")}
-                  </div>
-                  <span class="text-blue-400 font-bold font-mono pl-3 shrink-0">${Math.round(h.res).toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 ⚙️ 首席礦工', tone: 'gold' }] : [],
+                primary: { label: '⚙️ 鋼鐵產量', value: `${Math.round(h.res).toLocaleString()}`, accent: 'text-blue-400' }
+             })))}
            </div>
         </div>
         <div>
            <h4 class="text-xs font-bold text-purple-400 mb-2">🔮 魔法煉金術師 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">Gap×10+Z2×50</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: ((h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50)
-             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-purple-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-purple-400 font-bold">${h.res.toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🔮 大煉金術師', tone: 'gold' }] : [],
+                primary: { label: '🔮 神石產量', value: `${h.res.toLocaleString()}`, accent: 'text-purple-400' }
+             })))}
            </div>
         </div>
       </div>
     </div>
   `;
+
+  // 全員工程隊名冊 (統一英雄卡；主力資源 = 個人佔全服比例最高的資源，純呈現)
+  const baseRoster = heroList.map(h => ({
+    ...h,
+    wood: (h.totalCalories || 0),
+    steel: (h.totalTrimp || 0),
+    mana: (h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50,
+    workouts: (h.scoreWorkouts ?? h.validWorkouts ?? 0)
+  })).sort((a, b) => b.workouts - a.workouts);
+  const baseRosterHtml = renderUnifiedHeroGrid(baseRoster.map(h => {
+    const shares = [
+      { k: '🌳 主力伐木工', v: totalWood > 0 ? h.wood / totalWood : 0 },
+      { k: '⚙️ 主力礦工', v: totalSteel > 0 ? h.steel / totalSteel : 0 },
+      { k: '🔮 主力煉金師', v: totalMana > 0 ? h.mana / totalMana : 0 }
+    ].sort((a, b) => b.v - a.v);
+    return renderUnifiedHeroCard(h.name, {
+      guild: h.guild,
+      status: [shares[0].v > 0 ? { text: `${shares[0].k} (${Math.round(shares[0].v * 1000) / 10}%)`, tone: 'info' } : { text: '🧱 待命中', tone: 'muted' }],
+      primary: { label: '出勤次數', value: `${Math.round(h.workouts * 10) / 10} 次`, accent: 'text-amber-400' },
+      metrics: [
+        { label: '🌳 木材', value: Math.round(h.wood).toLocaleString(), accent: 'text-emerald-300' },
+        { label: '⚙️ 鋼鐵', value: Math.round(h.steel).toLocaleString(), accent: 'text-blue-300' },
+        { label: '🔮 神石', value: Math.round(h.mana).toLocaleString(), accent: 'text-purple-300' }
+      ]
+    });
+  }));
+
+  container.insertAdjacentHTML('beforeend', `
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 sm:p-5 mt-6 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2"><i data-lucide="users" class="w-4 h-4 text-blue-400"></i><span>🏗️ 全員工程隊名冊</span></h3>
+        <span class="text-xs text-slate-400">每位英雄的資源貢獻 • 點擊查看個人戰力卡</span>
+      </div>
+      ${baseRosterHtml}
+    </div>
+  `);
 }
 
 // -------------------------------------------------------------
@@ -3616,14 +3779,12 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-rose-400 mb-2">🔥 脂肪燃燒者 <span class="text-[9px] text-slate-500 ml-1">總卡路里</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.totalCalories || 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-rose-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-rose-400 font-bold font-mono">${Math.round(h.res).toLocaleString()} kcal</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🔥 脂肪燃燒者', tone: 'gold' }] : [],
+                primary: { label: '總卡路里', value: `${Math.round(h.res).toLocaleString()} kcal`, accent: 'text-rose-400' }
+             })))}
            </div>
         </div>
 
@@ -3631,14 +3792,12 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-amber-400 mb-2">⌚ 紀律部隊 <span class="text-[9px] text-slate-500 ml-1">總出勤次數</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.scoreWorkouts ?? h.validWorkouts ?? 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-amber-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-amber-400 font-bold font-mono">${Math.round(h.res).toLocaleString()} 次</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 ⌚ 紀律部隊', tone: 'gold' }] : [],
+                primary: { label: '總出勤次數', value: `${Math.round(h.res).toLocaleString()} 次`, accent: 'text-amber-400' }
+             })))}
            </div>
         </div>
 
@@ -3646,14 +3805,12 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-emerald-400 mb-2">🟢 燃脂大師 <span class="text-[9px] text-slate-500 ml-1">Zone 2 次數</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.scoreZone2 ?? h.zone2Count ?? 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-emerald-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-emerald-400 font-bold font-mono">${Math.round(h.res).toLocaleString()} 次</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🟢 燃脂大師', tone: 'gold' }] : [],
+                primary: { label: 'Zone 2 次數', value: `${Math.round(h.res).toLocaleString()} 次`, accent: 'text-emerald-400' }
+             })))}
            </div>
         </div>
 
@@ -3661,14 +3818,12 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-blue-400 mb-2">⚙️ 心跳超載 <span class="text-[9px] text-slate-500 ml-1">累積衝力 TRIMP</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.totalTrimp || 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-blue-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-blue-400 font-bold font-mono">${Math.round(h.res).toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 ⚙️ 心跳超載', tone: 'gold' }] : [],
+                primary: { label: '累積衝力 TRIMP', value: `${Math.round(h.res).toLocaleString()}`, accent: 'text-blue-400' }
+             })))}
            </div>
         </div>
 
@@ -3677,14 +3832,12 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-teal-400 mb-2">🏔️ 征服巔峰 <span class="text-[9px] text-slate-500 ml-1">累積爬升 (Elevation)</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.scoreElevation ?? h.totalElevation ?? 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-teal-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-teal-400 font-bold font-mono">${Math.round(h.res).toLocaleString()} m</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🏔️ 征服巔峰', tone: 'gold' }] : [],
+                primary: { label: '累積爬升 (Elevation)', value: `${Math.round(h.res).toLocaleString()} m`, accent: 'text-teal-400' }
+             })))}
            </div>
         </div>
 
@@ -3692,20 +3845,54 @@ function renderBingoView() {
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
            <h4 class="text-xs font-bold text-purple-400 mb-2">限界突破 <span class="text-[9px] text-slate-500 ml-1">最高落差 MaxGap</span></h4>
            <div class="space-y-2">
-             ${(gameState?.heroStats || []).map(h => ({
+             ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
                 ...h, res: (h.scoreMaxGap ?? h.maxGap ?? 0)
-             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => `
-               <div onclick="openHeroDetailModal(${jsArg(h.name)})" class="bg-slate-950 p-2 text-xs rounded-xl border border-slate-800 flex justify-between cursor-pointer hover:border-purple-500/50 transition">
-                  <div class="flex items-center space-x-1.5 w-full overflow-hidden"><span class="text-slate-500 font-bold mr-1">${i+1}.</span>${renderHeroTag(h.name, "bg-transparent border-0 p-0 text-[11px] font-bold w-full justify-start truncate")}</div>
-                  <span class="text-purple-400 font-bold font-mono">${Math.round(h.res).toLocaleString()}</span>
-               </div>
-             `).join('')}
+             })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 💥 限界突破', tone: 'gold' }] : [],
+                primary: { label: '最高落差 MaxGap', value: `${Math.round(h.res).toLocaleString()}`, accent: 'text-purple-400' }
+             })))}
            </div>
         </div>
 
       </div>
     </div>
   `;
+
+  // 全員拼圖名冊 (統一英雄卡；狀態 = 領跑幾塊板塊，純呈現)
+  const bStats = (gameState?.heroStats || []);
+  const boardGetters = [
+    h => (h.totalCalories || 0), h => (h.scoreWorkouts ?? h.validWorkouts ?? 0), h => (h.scoreZone2 ?? h.zone2Count ?? 0),
+    h => (h.totalTrimp || 0), h => (h.scoreElevation ?? h.totalElevation ?? 0), h => (h.scoreMaxGap ?? h.maxGap ?? 0)
+  ];
+  const boardLeaders = boardGetters.map(fn => {
+    const top = [...bStats].sort((a, b) => fn(b) - fn(a))[0];
+    return top && fn(top) > 0 ? top.name : null;
+  });
+  const bingoRosterHtml = renderUnifiedHeroGrid([...bStats].sort((a, b) => (b.scoreWorkouts ?? b.validWorkouts ?? 0) - (a.scoreWorkouts ?? a.validWorkouts ?? 0)).map(h => {
+    const leads = boardLeaders.filter(n => n === h.name).length;
+    return renderUnifiedHeroCard(h.name, {
+      guild: h.guild,
+      status: [leads > 0 ? { text: `🧩 領跑 ${leads} 塊板塊`, tone: 'purple' } : { text: '🧩 拼圖探索中', tone: 'muted' }],
+      primary: { label: '出勤次數', value: `${Math.round((h.scoreWorkouts ?? h.validWorkouts ?? 0) * 10) / 10} 次`, accent: 'text-amber-400' },
+      metrics: [
+        { label: '🔥 熱量', value: `${Math.round(h.totalCalories || 0).toLocaleString()}`, accent: 'text-rose-300' },
+        { label: '🟢 Zone2', value: `${Math.round(h.scoreZone2 ?? h.zone2Count ?? 0)} 次`, accent: 'text-emerald-300' },
+        { label: '⚙️ TRIMP', value: Math.round(h.totalTrimp || 0).toLocaleString(), accent: 'text-blue-300' },
+        { label: '🏔️ 爬升', value: `${Math.round(h.scoreElevation ?? h.totalElevation ?? 0).toLocaleString()} m`, accent: 'text-teal-300' },
+        { label: '💥 MaxGap', value: `${Math.round(h.scoreMaxGap ?? h.maxGap ?? 0)}`, accent: 'text-purple-300' }
+      ]
+    });
+  }));
+
+  container.insertAdjacentHTML('beforeend', `
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 sm:p-5 mt-6 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2"><i data-lucide="users" class="w-4 h-4 text-fuchsia-400"></i><span>🧩 全員拼圖名冊</span></h3>
+        <span class="text-xs text-slate-400">每位英雄的板塊貢獻 • 點擊查看個人戰力卡</span>
+      </div>
+      ${bingoRosterHtml}
+    </div>
+  `);
 }
 
 // -------------------------------------------------------------
@@ -3778,3 +3965,24 @@ window.handleAvatarUpload = function(heroName, inputElement) {
   }
   reader.readAsDataURL(file);
 }
+
+// =====================================================================
+// 📱 給「鋼鐵英雄同步器」App 戰績分頁呼叫的介面 (App 原生分頁 → 切換網頁分頁)
+// =====================================================================
+window.IronApp = {
+  show(tab) {
+    try {
+      document.querySelectorAll('[id^=modal-]').forEach(m => m.classList.add('hidden'));
+      if (tab === 'expansion') goToActiveExpansion(); else switchMainTab(tab);
+      window.scrollTo(0, 0);
+      return true;
+    } catch (e) { console.error('[IronApp]', e); return false; }
+  },
+  async refresh() {
+    try {
+      if (typeof window.syncFromDatabase === 'function') await window.syncFromDatabase();
+      if (typeof renderAllGameViews === 'function') renderAllGameViews();
+      return true;
+    } catch (e) { console.error('[IronApp]', e); return false; }
+  }
+};
