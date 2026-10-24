@@ -23,6 +23,7 @@ Deno.serve(async (req) => {
   const db = serviceClient();
   const action = String(body.action || "");
 
+  if (action === "ping") return json({ ok: true });
   if (action === "create_invite") {
     const season = String(body.season || "S");
     const code = genCode(season);

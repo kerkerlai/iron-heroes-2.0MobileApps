@@ -416,9 +416,16 @@ window.frozenClassic0717 = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
-  // 📱 App 內嵌模式：?hero=名稱 → 戰情室預設選這位英雄
+  // 📱 App 內嵌模式：?hero=名稱 → 戰情室預設選這位英雄 (先與資料庫清洗規則對齊，避免含引號名稱找不到人)
   const reqHero = urlParams.get('hero');
-  if (reqHero) { try { selectedViewerHero = reqHero; } catch (e) {} }
+  if (reqHero) { try { selectedViewerHero = typeof window.safeDisplayText === 'function' ? window.safeDisplayText(reqHero) : reqHero; } catch (e) {} }
+  // 彈出式英雄戰力卡支援點擊背景遮罩或按下 Esc 關閉
+  document.getElementById('modal-hero-profile')?.addEventListener('click', e => {
+    if (e.target && e.target.id === 'modal-hero-profile') closeHeroProfileModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeHeroProfileModal();
+  });
   if (typeof window.syncFromDatabase === 'function') {
     await window.syncFromDatabase();
   }
@@ -431,10 +438,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     initRealtimeSSE();
   }
   renderAllGameViews();
-  const reqTab = urlParams.get('tab');
-  if (reqTab) {
-    switchMainTab(reqTab);
-  }
   if (window.lucide) lucide.createIcons();
 });
 
@@ -525,12 +528,15 @@ function setupImmersiveNavigation(mode) {
   `;
 
   const reqTab = new URLSearchParams(window.location.search).get('tab');
-  // 重新渲染 (例如按下同步、上傳大頭貼) 時，保留玩家目前所在的分頁，不要強制跳回資料片頁；只有首次載入才採用網址 ?tab= 參數
+  const validInitialTab = ['viewer', 'chronicles', activeTabName].includes(reqTab) ? reqTab : activeTabName;
+  // 重新渲染 (例如按下同步、上傳大頭貼) 時，保留玩家目前所在的分頁，不要強制跳回資料片頁；只有首次載入才採用網址 ?tab= 或 App 預選分頁
   let targetTab;
   if (window.__navInitialized) {
     targetTab = (currentMainTab === 'viewer' || currentMainTab === 'chronicles') ? currentMainTab : activeTabName;
   } else {
-    targetTab = reqTab || activeTabName;
+    targetTab = (window.__appReqTab === 'viewer' || window.__appReqTab === 'chronicles')
+      ? window.__appReqTab
+      : validInitialTab;
     window.__navInitialized = true;
   }
   switchMainTab(targetTab);
@@ -584,6 +590,8 @@ function switchMainTab(tab) {
     if (window.isMobileMode && window.isMobileMode(tab)) window.renderMobileModeView(tab);
   }
   ensureSeasonInfoBars();
+  // 📱 通知 App 原生分頁列目前在哪一頁 (網頁內部切頁時，例如「在我的英雄查看完整資料」，讓 App 上方分頁高亮跟著變)
+  try { if (window.IronAppBridge && window.IronAppBridge.postMessage) window.IronAppBridge.postMessage(tab === 'viewer' || tab === 'chronicles' ? tab : 'expansion'); } catch (e) {}
 
   if (window.lucide) lucide.createIcons();
 }
@@ -621,6 +629,8 @@ function renderAllGameViews() {
 
   const activeMode = gameState?.activeMode || "classic";
   renderGMLiveBroadcastBanner();
+  populateViewerDropdowns();
+  populateChroniclesDropdown();
   setupImmersiveNavigation(activeMode);
   renderActiveExpansionBadge();
   if (activeMode === 'classic') renderClassicModeView();
@@ -631,8 +641,6 @@ function renderAllGameViews() {
   if (activeMode === 'base_builder') renderBaseBuilderView();
   if (activeMode === 'bingo') renderBingoView();
   if (window.isMobileMode && window.isMobileMode(activeMode)) window.renderMobileModeView(activeMode);
-  populateViewerDropdowns();
-  populateChroniclesDropdown();
   ensureSeasonInfoBars();
 
   if (window.lucide) lucide.createIcons();
@@ -1115,9 +1123,17 @@ function renderBossInto($, v, ctx = {}) {
 
   const seasonPeriodEl = $("boss-season-period");
   if (seasonPeriodEl) seasonPeriodEl.innerText = `討伐戰區間：${v?.seasonStart || "2026/08/12"} ~ ${v?.seasonEnd || "2026/08/31"}`;
-  if (ctx.frozen) {
-    const cd = $('countdown-text');
-    if (cd) cd.innerText = '已封存';
+  const cd = $('countdown-text');
+  if (cd) {
+    if (ctx.frozen) {
+      cd.innerText = '已封存';
+    } else {
+      const si = window.getSeasonInfo && window.getSeasonInfo();
+      cd.innerText = !si ? '進行中'
+        : si.phase === 'upcoming' ? `還有 ${si.left} 天開戰`
+        : si.phase === 'ended' ? '討伐戰已結束'
+        : (si.left === 0 ? '今天最後一天！' : `剩 ${si.left} 天`);
+    }
   }
 
   const statTot = $('stat-total-damage');
@@ -1228,12 +1244,26 @@ function populateViewerDropdowns() {
     if (h.name === selectedViewerHero) opt.selected = true;
     select.appendChild(opt);
   });
+  const sf = document.getElementById('viewer-sport-filter');
+  if (sf) {
+    const cur = sf.value;
+    const baseTypes = ['WeightTraining', 'Workout', 'Run', 'Ride', 'Swim'];
+    const actTypes = (gameState.activities || []).map(a => a.type).filter(Boolean);
+    const types = [...new Set([...baseTypes, ...actTypes])].sort();
+    sf.innerHTML = '<option value="">全部運動類型</option>' + types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    sf.value = types.includes(cur) ? cur : '';
+  }
   loadHeroViewerData();
 }
 
-function loadHeroViewerData() {
+function loadHeroViewerData(heroOverride) {
   const select = document.getElementById('viewer-hero-select');
-  if (select) selectedViewerHero = select.value;
+  if (typeof heroOverride === 'string' && heroOverride) {
+    selectedViewerHero = heroOverride;
+    if (select) select.value = heroOverride;
+  } else if (select && select.value) {
+    selectedViewerHero = select.value;
+  }
 
   const hero = gameState?.heroes?.find(h => h.name === selectedViewerHero) || { name: selectedViewerHero, guild: "自由英雄", age: 35, maxHr: 185, rpgClass: "狂戰士" };
   const heroActs = (gameState?.activities || []).filter(a => a.hero === selectedViewerHero);
@@ -1352,16 +1382,16 @@ function loadHeroViewerData() {
           <span class="text-lg font-black font-rpg text-amber-400">${totalDmg.toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
-          <span class="text-[11px] text-slate-400 block">🔥 魔法攻擊 (TRIMP)</span>
-          <span class="text-lg font-black font-rpg text-blue-400">${Math.round(heroStat.totalTrimp || 0).toLocaleString()}</span>
+          <span class="text-[11px] text-slate-400 block">🔮 魔法攻擊 (魔攻)</span>
+          <span class="text-lg font-black font-rpg text-blue-400">${Math.round(heroStat.magDmg || 0).toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
-          <span class="text-[11px] text-slate-400 block">🗡️ 物理普攻 (Calories)</span>
-          <span class="text-lg font-black font-rpg text-rose-400">${Math.round(heroStat.totalCalories || 0).toLocaleString()}</span>
+          <span class="text-[11px] text-slate-400 block">🗡️ 物理普攻 (普攻)</span>
+          <span class="text-lg font-black font-rpg text-rose-400">${Math.round(heroStat.physDmg ?? heroStat.totalCalories ?? 0).toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
-          <span class="text-[11px] text-slate-400 block">💥 物理狂化 (MaxGap)</span>
-          <span class="text-lg font-black font-rpg text-purple-400">${heroStat.maxGap || 0}</span>
+          <span class="text-[11px] text-slate-400 block">💥 物理狂化 (爆擊)</span>
+          <span class="text-lg font-black font-rpg text-purple-400">${Math.round(heroStat.critDmg || 0).toLocaleString()}</span>
         </div>
       `;
     } else if (activeMode === "faction_war") {
@@ -1395,11 +1425,11 @@ function loadHeroViewerData() {
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
           <span class="text-[11px] text-slate-400 block">🍖 狩獵總熱量 (基礎HP)</span>
-          <span class="text-lg font-black font-rpg text-rose-400">+${Math.round(heroStat.totalCalories || 0).toLocaleString()}</span>
+          <span class="text-lg font-black font-rpg text-rose-400">+${Math.floor(heroStat.totalCalories || 0).toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
           <span class="text-[11px] text-slate-400 block">🎒 搜刮總物資 (外加HP)</span>
-          <span class="text-lg font-black font-rpg text-blue-400">+${Math.round((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
+          <span class="text-lg font-black font-rpg text-blue-400">+${Math.floor((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
           <span class="text-[11px] text-slate-400 block">⏱️ 荒野堅持天數 (有運動的天數)</span>
@@ -1767,6 +1797,22 @@ function renderHeroBadgesWall(heroName) {
   `;
 }
 
+/**
+ * 單筆有效運動在目前資料片的得分 (戰情室運動紀錄「得分」欄與 App 運動紀錄 / 今日增加共用同一份公式)
+ * @returns {{ num: number|null, text: string, cls: string }}
+ */
+function getActivityModeScore(a, activeMode) {
+  if (activeMode === "classic") return { num: Math.round(a.calories || 0), text: `${Math.round(a.calories || 0)} kcal`, cls: 'text-amber-400' };
+  if (activeMode === "rpg_talent" || activeMode === "rpg") { const v = Math.round(a.combatPower || a.damage || 0); return { num: v, text: `${v.toLocaleString()} CP`, cls: 'text-purple-400' }; }
+  if (activeMode === "faction_war") { const v = Math.round((a.trimp || 0) * 10 + (a.gapScore ?? a.gapVal ?? 0) * 100); return { num: v, text: `🔥 ${v.toLocaleString()}`, cls: 'text-rose-400' }; }
+  if (activeMode === "survival") { const v = Math.round((a.calories || 0) + (a.trimp || 0) * 1.5); return { num: v, text: `❤️ +${v.toLocaleString()}`, cls: 'text-emerald-400' }; }
+  if (activeMode === "base_builder") { const v = Math.round(a.calories || 0); return { num: v, text: `🪵 ${v.toLocaleString()}`, cls: 'text-emerald-400' }; }
+  if (window.isMobileMode && window.isMobileMode(activeMode)) return { num: null, text: window.getMobileModeActivityLabel(activeMode, a), cls: 'text-amber-400' };
+  if (activeMode === "bingo") { const v = Math.round(a.trimp || 0); return { num: v, text: `🧩 ${v.toLocaleString()}`, cls: 'text-blue-400' }; }
+  return { num: a.damage || 0, text: `⚔️ ${(a.damage || 0).toLocaleString()}`, cls: 'text-amber-400' };
+}
+window.getActivityModeScore = getActivityModeScore;
+
 function filterViewerActivities() {
   const tbody = document.getElementById('viewer-activities-tbody');
   const mobileList = document.getElementById('viewer-activities-mobile-list');
@@ -1853,23 +1899,8 @@ function filterViewerActivities() {
     } else if (!a.isValidAttack) {
       scoreColHtml = `<span class="text-slate-500">${a.inSeason ? `未滿${gameState?.summary?.minDurationMinutes || 30}分` : "非本賽季"}</span>`;
     } else {
-      if (activeMode === "classic") {
-        scoreColHtml = `<span class="text-amber-400 font-bold">${Math.round(a.calories || 0)} kcal</span>${bonusTag}`;
-      } else if (activeMode === "rpg_talent" || activeMode === "rpg") {
-        scoreColHtml = `<span class="text-purple-400 font-bold">${Math.round(a.combatPower || a.damage || 0).toLocaleString()} CP</span>${bonusTag}`;
-      } else if (activeMode === "faction_war") {
-        scoreColHtml = `<span class="text-rose-400 font-bold">🔥 ${Math.round((a.trimp || 0)*10 + (a.gapScore ?? a.gapVal ?? 0)*100).toLocaleString()}</span>${bonusTag}`;
-      } else if (activeMode === "survival") {
-        scoreColHtml = `<span class="text-emerald-400 font-bold">❤️ +${Math.round((a.calories || 0) + (a.trimp || 0)*1.5).toLocaleString()}</span>${bonusTag}`;
-      } else if (activeMode === "base_builder") {
-        scoreColHtml = `<span class="text-emerald-400 font-bold">🪵 ${Math.round(a.calories || 0).toLocaleString()}</span>${bonusTag}`;
-      } else if (window.isMobileMode && window.isMobileMode(activeMode)) {
-        scoreColHtml = `<span class="text-amber-400 font-bold">${window.getMobileModeActivityLabel(activeMode, a)}</span>${bonusTag}`;
-      } else if (activeMode === "bingo") {
-        scoreColHtml = `<span class="text-blue-400 font-bold">🧩 ${Math.round(a.trimp || 0).toLocaleString()}</span>${bonusTag}`;
-      } else {
-        scoreColHtml = `<span class="text-amber-400 font-bold">⚔️ ${(a.damage || 0).toLocaleString()}</span>${bonusTag}`;
-      }
+      const sc = getActivityModeScore(a, activeMode);
+      scoreColHtml = `<span class="${sc.cls} font-bold">${sc.text}</span>${bonusTag}`;
     }
 
     tr.innerHTML = `
@@ -1956,6 +1987,17 @@ function openHeroDetailModal(heroName) {
   if (!modal || !content || !heroName) return;
 
   const cleanName = String(heroName).trim();
+  if (currentMainTab === 'chronicles') {
+    const snap = getAllSnapshots().find(s => s.id === selectedChronicle);
+    const cards = Array.from(document.querySelectorAll('#chronicles-dynamic-content .uhc')).filter(c => c.getAttribute('data-hero') === cleanName);
+    title.innerHTML = `<div class="flex items-center flex-wrap gap-2"><span class="font-bold text-white text-lg">${escapeHtml(cleanName)}</span><span class="uhc-pill uhc-tone-muted">🏛️ ${escapeHtml(snap?.seasonTitle || '')}</span></div>`;
+    content.innerHTML = cards.length
+      ? `<p class="text-[11px] text-slate-400">🔒 時間凍結：以下為該賽季封存時的戰績</p><div class="uhc-grid">${cards.map(c => c.outerHTML.replace(/\son(click|keydown)="[^"]*"/g, '')).join('')}</div>`
+      : '<p class="text-xs text-slate-400">此快照沒有該英雄的資料</p>';
+    modal.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
   const hero = gameState?.heroes?.find(h => (h.name || "").trim() === cleanName) || {
     name: cleanName,
     guild: (gameState?.activities || []).find(a => (a.hero || "").trim() === cleanName)?.guild || "自由英雄",
@@ -2067,12 +2109,12 @@ function openHeroDetailModal(heroName) {
         <span class="font-rpg font-bold text-cyan-400 text-sm">${Math.round(totalDur)} 分</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-        <span class="text-[10px] text-slate-400 block">魔法攻擊 (TRIMP)</span>
-        <span class="font-rpg font-bold text-blue-400 text-sm">${Math.round(heroStat.totalTrimp || 0).toLocaleString()}</span>
+        <span class="text-[10px] text-slate-400 block">魔法攻擊 (魔攻)</span>
+        <span class="font-rpg font-bold text-blue-400 text-sm">${Math.round(heroStat.magDmg || 0).toLocaleString()}</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-        <span class="text-[10px] text-slate-400 block">物理狂化 (MaxGap)</span>
-        <span class="font-rpg font-bold text-purple-400 text-sm">${heroStat.maxGap || 0}</span>
+        <span class="text-[10px] text-slate-400 block">物理狂化 (爆擊)</span>
+        <span class="font-rpg font-bold text-purple-400 text-sm">${Math.round(heroStat.critDmg || 0).toLocaleString()}</span>
       </div>
     `;
   } else if (activeMode === "faction_war") {
@@ -2106,11 +2148,11 @@ function openHeroDetailModal(heroName) {
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
         <span class="text-[10px] text-slate-400 block">狩獵熱量 (HP)</span>
-        <span class="font-rpg font-bold text-rose-400 text-sm">+${Math.round(heroStat.totalCalories || 0).toLocaleString()}</span>
+        <span class="font-rpg font-bold text-rose-400 text-sm">+${Math.floor(heroStat.totalCalories || 0).toLocaleString()}</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
         <span class="text-[10px] text-slate-400 block">搜刮物資 (TRIMP)</span>
-        <span class="font-rpg font-bold text-blue-400 text-sm">+${Math.round((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
+        <span class="font-rpg font-bold text-blue-400 text-sm">+${Math.floor((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
         <span class="text-[10px] text-slate-400 block">有運動的天數</span>
@@ -2141,8 +2183,8 @@ function openHeroDetailModal(heroName) {
   } else if (activeMode === "bingo") {
     modalCardsHtml = `
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-        <span class="text-[10px] text-slate-400 block">MVP 貢獻點數</span>
-        <span class="font-rpg font-bold text-amber-400 text-sm">${Math.round((heroStat.totalCalories || 0) + (heroStat.totalTrimp || 0) * 10 + (heroStat.scoreMaxGap ?? heroStat.maxGap ?? 0) * 50 + (heroStat.scoreZone2 ?? heroStat.zone2Count ?? 0) * 1000).toLocaleString()}</span>
+        <span class="text-[10px] text-slate-400 block">出勤次數</span>
+        <span class="font-rpg font-bold text-amber-400 text-sm">${Math.round((heroStat.scoreWorkouts ?? heroStat.validWorkouts ?? 0) * 10) / 10} 次</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
         <span class="text-[10px] text-slate-400 block">大熱量引擎</span>
@@ -2217,25 +2259,15 @@ function openHeroDetailModal(heroName) {
             : '';
           
           let actScoreTag = "";
-          if (activeMode === "classic") {
-            actScoreTag = `<span class="font-mono font-bold text-amber-400 text-xs">${Math.round(a.calories || 0)} kcal</span>`;
-          } else if (activeMode === "rpg_talent" || activeMode === "rpg") {
-            actScoreTag = `<span class="font-mono font-bold text-purple-400 text-xs">⚡ ${Math.round(a.combatPower || a.damage || 0).toLocaleString()} CP</span>`;
-          } else if (activeMode === "world_boss" || activeMode === "boss") {
-            actScoreTag = `<span class="font-rpg font-bold text-amber-400 text-xs">⚔️ ${(a.damage || 0).toLocaleString()}</span>`;
-          } else if (activeMode === "faction_war") {
-            actScoreTag = `<span class="font-rpg font-bold text-rose-400 text-xs">🔥 攻 ${Math.round((a.trimp || 0)*10 + (a.gapScore ?? a.gapVal ?? 0)*100).toLocaleString()}</span>`;
-          } else if (activeMode === "survival") {
-            actScoreTag = `<span class="font-rpg font-bold text-emerald-400 text-xs">❤️ +${Math.round((a.calories || 0) + (a.trimp || 0)*1.5).toLocaleString()}</span>`;
-          } else if (activeMode === "base_builder") {
-            actScoreTag = `<span class="font-rpg font-bold text-emerald-400 text-xs">🪵 ${Math.round(a.calories || 0).toLocaleString()}</span>`;
-          } else if (activeMode === "bingo") {
-            actScoreTag = `<span class="font-rpg font-bold text-blue-400 text-xs">🧩 ${Math.round(a.trimp || 0).toLocaleString()} TRIMP</span>`;
-          } else if (window.isMobileMode && window.isMobileMode(activeMode)) {
-            actScoreTag = `<span class="font-rpg font-bold text-amber-400 text-xs">${window.getMobileModeActivityLabel(activeMode, a)}</span>`;
-          }
-          if (a.isSuspectedDuplicate && !a.duplicateIncluded) {
+          if (a.isExcluded) {
+            actScoreTag = `<span class="text-rose-400 text-[10px] font-bold">GM作廢</span>`;
+          } else if (a.isSuspectedDuplicate && !a.duplicateIncluded) {
             actScoreTag = `<span class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-300 text-[10px] font-bold">⚠️ 疑似重複(不計分)</span>`;
+          } else if (!a.isValidAttack) {
+            actScoreTag = `<span class="text-slate-500 text-[10px]">${a.inSeason ? `未滿${gameState?.summary?.minDurationMinutes || 30}分` : '非本賽季'}</span>`;
+          } else {
+            const sc = getActivityModeScore(a, activeMode);
+            actScoreTag = `<span class="font-rpg font-bold ${sc.cls} text-xs">${sc.text}</span>`;
           }
 
           return `
@@ -2276,6 +2308,7 @@ function closeHeroProfileModal() {
   const modal = document.getElementById('modal-hero-profile');
   if (modal) modal.classList.add('hidden');
 }
+window.closeHeroDetailModal = closeHeroProfileModal;
 
 // -------------------------------------------------------------
 // 5. GLOBAL TOOL: 過往英雄史 (Chronicles of Past Heroes)
@@ -2370,6 +2403,8 @@ function cloneLiveTemplate(tabId) {
   wrap.className = 'space-y-6';
   if (!src) return { wrap, $: () => null };
   const clone = src.cloneNode(true);
+  // 現場的「📅 賽季期間 … 進行中」資訊列屬於目前賽季，歷史快照不可出現 (快照只顯示自己的凍結期間)
+  clone.querySelectorAll('.season-info-bar').forEach(el => el.remove());
   clone.querySelectorAll('[id]').forEach(el => { el.setAttribute('data-snap-id', el.id); el.removeAttribute('id'); });
   while (clone.firstChild) wrap.appendChild(clone.firstChild);
   const $ = (id) => wrap.querySelector(`[data-snap-id="${id}"]`);
@@ -2559,31 +2594,8 @@ function renderFactionWarHtml(view) {
   const summary = gameState?.summary || {};
   const guildList = gameState?.guilds || [];
   
-  // 假設兩大陣營：依據公會分兩組 (如果公會少於2，手動切半)
-  let faction1 = { name: gameState?.faction?.f1Name || "🟢 均衡聯盟", hp: gameState?.faction?.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
-  let faction2 = { name: gameState?.faction?.f2Name || "🔴 狂怒部落", hp: gameState?.faction?.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
-  
-  // 陣營分配：GM 後台可指定每個公會的陣營 (faction_config.guildAssign)；未指定者照舊依順序交錯分配
-  const factionSplit = window.computeFactionSplit ? window.computeFactionSplit(guildList.map(g => g.name), gameState?.faction?.guildAssign) : null;
-  guildList.forEach((g, idx) => {
-      const isF1 = factionSplit ? factionSplit[1].includes(g.name) : idx % 2 === 0;
-      const targetF = isF1 ? faction1 : faction2;
-      targetF.guilds.push(g.name);
-      
-      const gHeroes = (gameState?.heroStats || []).filter(h => h.guild === g.name);
-      const gTrimp = gHeroes.reduce((s, h) => s + (h.totalTrimp || 0), 0);
-      const gZone2 = gHeroes.reduce((s, h) => s + (h.scoreZone2 ?? h.zone2Count ?? 0), 0);
-      const gGap = gHeroes.reduce((s, h) => s + (h.scoreMaxGap ?? h.maxGap ?? 0), 0);
-      const gCal = gHeroes.reduce((s, h) => s + (h.totalCalories || 0), 0);
-      
-      targetF.dmg += (gTrimp * 10) + (gGap * 100);
-      targetF.repair += (gZone2 * 5000) + gCal;
-  });
-
-  const f1CurrentHp = Math.max(0, faction1.hp - faction2.dmg + faction1.repair);
-  const f2CurrentHp = Math.max(0, faction2.hp - faction1.dmg + faction2.repair);
-  const f1Pct = Math.min(100, Math.max(0, (f1CurrentHp / faction1.hp) * 100));
-  const f2Pct = Math.min(100, Math.max(0, (f2CurrentHp / faction2.hp) * 100));
+  // 陣營分配與主城血量：共用 seasonSnapshot.js 的 computeFactionState (App 排行也用同一份)
+  const { faction1, faction2, f1CurrentHp, f2CurrentHp, f1Pct, f2Pct } = window.computeFactionState(view);
   // 英雄卡狀態：所屬陣營 (純呈現)
   const factionStatusOf = (guildName) => faction1.guilds.includes(guildName)
     ? { text: `🛡️ ${faction1.name}`, tone: 'ok' }
@@ -2661,7 +2673,7 @@ function renderFactionWarHtml(view) {
            <h4 class="text-xs font-bold text-rose-400 mb-2">🔥 攻城毀滅者 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">TRIMP×10 + MaxGap×100</span></h4>
            <div class="space-y-2">
              ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
-                ...h, dmg: (h.totalTrimp || 0) * 10 + (h.scoreMaxGap ?? h.maxGap ?? 0) * 100
+                ...h, dmg: window.factionHeroScore(h).dmg
              })).sort((a,b)=>b.dmg-a.dmg).slice(0, 10).map((h, i) => renderUnifiedHeroCard(h.name, {
                 rank: i + 1, compact: true, guild: h.guild, status: [factionStatusOf(h.guild)],
                 primary: { label: '攻城傷害', value: h.dmg.toLocaleString(), accent: 'text-rose-400' },
@@ -2676,7 +2688,7 @@ function renderFactionWarHtml(view) {
            <h4 class="text-xs font-bold text-cyan-400 mb-2">🛠️ 城牆守護者 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">Cal. + Zone2×5000</span></h4>
            <div class="space-y-2">
              ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
-                ...h, rep: (h.scoreZone2 ?? h.zone2Count ?? 0) * 5000 + (h.totalCalories || 0)
+                ...h, rep: window.factionHeroScore(h).rep
              })).sort((a,b)=>b.rep-a.rep).slice(0, 10).map((h, i) => renderUnifiedHeroCard(h.name, {
                 rank: i + 1, compact: true, guild: h.guild, status: [factionStatusOf(h.guild)],
                 primary: { label: '城牆修復', value: `+${h.rep.toLocaleString()}`, accent: 'text-cyan-400' },
@@ -2690,6 +2702,27 @@ function renderFactionWarHtml(view) {
       </div>
     </div>
   `;
+  const factionRosterHtml = renderUnifiedHeroGrid((gameState?.heroStats || []).map(h => {
+    const s = window.factionHeroScore(h);
+    return renderUnifiedHeroCard(h.name, {
+      guild: h.guild,
+      status: [factionStatusOf(h.guild)],
+      primary: { label: '攻城 / 修復', value: `${Math.round(s.dmg).toLocaleString()} / +${Math.round(s.rep).toLocaleString()}`, accent: 'text-amber-400' },
+      metrics: [
+        { label: '🔥 攻城', value: Math.round(s.dmg).toLocaleString(), accent: 'text-rose-300' },
+        { label: '🛠️ 修復', value: `+${Math.round(s.rep).toLocaleString()}`, accent: 'text-cyan-300' }
+      ]
+    });
+  }));
+  container.insertAdjacentHTML('beforeend', `
+    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 sm:p-5 mt-6 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2"><i data-lucide="users" class="w-4 h-4 text-emerald-400"></i><span>⚔️ 全員陣營名冊</span></h3>
+        <span class="text-xs text-slate-400">全服英雄陣營歸屬與攻防貢獻 • 點擊查看個人戰力卡</span>
+      </div>
+      ${factionRosterHtml}
+    </div>
+  `);
   return container.html;
 }
 
@@ -2773,30 +2806,8 @@ function renderBaseBuilderHtml(view) {
   const container = { html: '', set innerHTML(v) { this.html = v; }, insertAdjacentHTML(_pos, v) { this.html += v; } };
 
   const heroList = gameState?.heroStats || [];
-  let totalWood = 0, totalSteel = 0, totalMana = 0;
-  heroList.forEach(h => {
-     totalWood += (h.totalCalories || 0); // Calories = Wood
-     totalSteel += (h.totalTrimp || 0);   // TRIMP = Steel
-     totalMana += (h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50; // Mana
-  });
-
-  // Level thresholds (configurable via GM panel or default 10k/500/500)
-  const getLevel = (wood, steel, mana) => {
-      let lvl = 1;
-      const baseW = Number(gameState?.base?.woodTarget) || 10000;
-      const baseS = Number(gameState?.base?.steelTarget) || 500;
-      const baseM = Number(gameState?.base?.manaTarget) || 500;
-      let wReq = baseW, sReq = baseS, mReq = baseM;
-      const wStep = Math.max(100, Math.round(baseW * 1.5));
-      const sStep = Math.max(50, Math.round(baseS * 1.5));
-      const mStep = Math.max(50, Math.round(baseM * 1.5));
-      while (wood >= wReq && steel >= sReq && mana >= mReq && lvl < 10) {
-          lvl++; wReq += wStep; sReq += sStep; mReq += mStep;
-      }
-      return { lvl, nW: wReq, nS: sReq, nM: mReq };
-  };
-
-  const status = getLevel(totalWood, totalSteel, totalMana);
+  // 全服資源總量與要塞等級：共用 seasonSnapshot.js 的 computeBaseStatus (App 摘要卡也用同一份)
+  const { totalWood, totalSteel, totalMana, status } = window.computeBaseStatus(view);
 
   container.innerHTML = `
     <!-- Lore / Story -->
@@ -2878,7 +2889,7 @@ function renderBaseBuilderHtml(view) {
            <h4 class="text-xs font-bold text-purple-400 mb-2">🔮 魔法煉金術師 <span class="text-[9px] text-slate-500 font-normal outline outline-1 outline-slate-700 px-1 rounded">Gap×10+Z2×50</span></h4>
            <div class="space-y-2">
              ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
-                ...h, res: ((h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50)
+                ...h, res: window.baseHeroResources(h).mana
              })).sort((a,b)=>b.res-a.res).slice(0, 5).map((h, i) => renderUnifiedHeroCard(h.name, {
                 rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🔮 大煉金術師', tone: 'gold' }] : [],
                 primary: { label: '🔮 神石產量', value: `${h.res.toLocaleString()}`, accent: 'text-purple-400' }
@@ -2892,9 +2903,7 @@ function renderBaseBuilderHtml(view) {
   // 全員工程隊名冊 (統一英雄卡；主力資源 = 個人佔全服比例最高的資源，純呈現)
   const baseRoster = heroList.map(h => ({
     ...h,
-    wood: (h.totalCalories || 0),
-    steel: (h.totalTrimp || 0),
-    mana: (h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50,
+    ...window.baseHeroResources(h),
     workouts: (h.scoreWorkouts ?? h.validWorkouts ?? 0)
   })).sort((a, b) => b.workouts - a.workouts);
   const baseRosterHtml = renderUnifiedHeroGrid(baseRoster.map(h => {
@@ -3064,14 +3073,7 @@ function renderBingoHtml(view) {
 
   // 全員拼圖名冊 (統一英雄卡；狀態 = 領跑幾塊板塊，純呈現)
   const bStats = (gameState?.heroStats || []);
-  const boardGetters = [
-    h => (h.totalCalories || 0), h => (h.scoreWorkouts ?? h.validWorkouts ?? 0), h => (h.scoreZone2 ?? h.zone2Count ?? 0),
-    h => (h.totalTrimp || 0), h => (h.scoreElevation ?? h.totalElevation ?? 0), h => (h.scoreMaxGap ?? h.maxGap ?? 0)
-  ];
-  const boardLeaders = boardGetters.map(fn => {
-    const top = [...bStats].sort((a, b) => fn(b) - fn(a))[0];
-    return top && fn(top) > 0 ? top.name : null;
-  });
+  const boardLeaders = window.bingoBoardLeaders(bStats); // 六大板塊領跑者 (共用 seasonSnapshot.js)
   const bingoRosterHtml = renderUnifiedHeroGrid([...bStats].sort((a, b) => (b.scoreWorkouts ?? b.validWorkouts ?? 0) - (a.scoreWorkouts ?? a.validWorkouts ?? 0)).map(h => {
     const leads = boardLeaders.filter(n => n === h.name).length;
     return renderUnifiedHeroCard(h.name, {
@@ -3140,13 +3142,15 @@ window.handleAvatarUpload = function(heroName, inputElement) {
       canvas.toBlob(async (blob) => {
         try {
           if (typeof showToast === 'function') showToast("上傳至 Supabase 雲端中...", "blue");
-          const hexName = Array.from(new TextEncoder().encode(heroName)).map(b => b.toString(16).padStart(2, '0')).join('');
+          const heroObj = gameState?.heroes?.find(h => h.name === heroName);
+          const dbHeroName = heroObj?.rawName || (typeof window.rawDbText === 'function' ? window.rawDbText(heroName) : heroName);
+          const hexName = Array.from(new TextEncoder().encode(dbHeroName)).map(b => b.toString(16).padStart(2, '0')).join('');
           const fileName = `hero_${hexName}.webp`;
           
           let publicUrl = await supabase.uploadFile('avatars', fileName, blob, 'image/webp');
           publicUrl += "?t=" + Date.now(); // Cache busting
           
-          const updatedRows = await supabase.update('heroes', `name=eq.${encodeURIComponent(heroName)}`, { avatar: publicUrl });
+          const updatedRows = await supabase.update('heroes', `name=eq.${encodeURIComponent(dbHeroName)}`, { avatar: publicUrl });
           if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
             throw new Error(`資料庫中找不到英雄【${heroName}】，頭像未更新`);
           }
@@ -3177,11 +3181,27 @@ window.handleAvatarUpload = function(heroName, inputElement) {
 window.IronApp = {
   show(tab) {
     try {
+      if (!['expansion', 'viewer', 'chronicles'].includes(tab)) tab = 'expansion';
+      window.__appReqTab = tab;
       document.querySelectorAll('[id^=modal-]').forEach(m => m.classList.add('hidden'));
       if (tab === 'expansion') goToActiveExpansion(); else switchMainTab(tab);
       window.scrollTo(0, 0);
       return true;
     } catch (e) { console.error('[IronApp]', e); return false; }
+  },
+  back() {
+    try {
+      const sh = document.getElementById('ia-sheet');
+      if (sh && sh.classList.contains('open') && window.IronAppUI && typeof window.IronAppUI.closeSheet === 'function') {
+        window.IronAppUI.closeSheet();
+        return true;
+      }
+      if (currentMainTab === 'viewer' || currentMainTab === 'chronicles') {
+        this.show('expansion');
+        return true;
+      }
+      return false;
+    } catch (e) { return false; }
   },
   async refresh() {
     try {
@@ -3197,20 +3217,29 @@ window.IronApp = {
 // (各資料片重新渲染時會覆蓋內容，所以在 renderAllGameViews / switchMainTab 之後補上)
 // =====================================================================
 const SEASON_BAR_TABS = ['classic', 'rpg', 'boss', 'faction', 'survival', 'base', 'bingo', 'expedition', 'dream', 'flame', 'monastery'];
-function buildSeasonInfoBarHtml() {
+/** 賽季進度 (期間 / 第幾天 / 剩幾天)：網頁賽季資訊列與 App 資訊膠囊共用 */
+function getSeasonInfo() {
   const st = window.gameState || gameState || {};
   const s = typeof normalizeDateYMD === 'function' ? normalizeDateYMD(st.seasonStart || '') : (st.seasonStart || '');
   const e = typeof normalizeDateYMD === 'function' ? normalizeDateYMD(st.seasonEnd || '') : (st.seasonEnd || '');
-  if (!s || !e) return '';
-  const esc = (v) => (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v));
+  if (!s || !e) return null;
   const today = typeof getTodayYMD === 'function' ? getTodayYMD() : '';
   const total = typeof diffDaysYMD === 'function' ? diffDaysYMD(s, e) + 1 : null;
-  let status = '', detail = '', tone = 'emerald';
+  let status = '', detail = '', tone = 'emerald', day = null, left = null, phase = '';
   if (today && typeof diffDaysYMD === 'function') {
-    if (today < s) { const n = diffDaysYMD(today, s); status = '⏳ 即將開始'; detail = `還有 ${n} 天開賽`; tone = 'sky'; }
-    else if (today > e) { status = '🏁 賽季已結束'; detail = `共 ${total} 天`; tone = 'slate'; }
-    else { const day = diffDaysYMD(s, today) + 1; const left = diffDaysYMD(today, e); status = '🔥 進行中'; detail = `第 ${day} 天 / 共 ${total} 天 • ${left === 0 ? '今天是最後一天！' : `剩 ${left} 天`}`; tone = left <= 3 ? 'rose' : 'emerald'; }
+    if (today < s) { const n = diffDaysYMD(today, s); status = '⏳ 即將開始'; detail = `還有 ${n} 天開賽`; tone = 'sky'; phase = 'upcoming'; left = n; }
+    else if (today > e) { status = '🏁 賽季已結束'; detail = `共 ${total} 天`; tone = 'slate'; phase = 'ended'; }
+    else { day = diffDaysYMD(s, today) + 1; left = diffDaysYMD(today, e); status = '🔥 進行中'; detail = `第 ${day} 天 / 共 ${total} 天 • ${left === 0 ? '今天是最後一天！' : `剩 ${left} 天`}`; tone = left <= 3 ? 'rose' : 'emerald'; phase = 'live'; }
   }
+  return { s, e, total, status, detail, tone, day, left, phase };
+}
+window.getSeasonInfo = getSeasonInfo;
+
+function buildSeasonInfoBarHtml() {
+  const info = getSeasonInfo();
+  if (!info) return '';
+  const { s, e, status, detail, tone } = info;
+  const esc = (v) => (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v));
   const toneCls = { emerald: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40', sky: 'bg-sky-500/15 text-sky-300 border-sky-500/40', rose: 'bg-rose-500/15 text-rose-300 border-rose-500/40', slate: 'bg-slate-700/40 text-slate-300 border-slate-600' }[tone];
   return `<div class="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
       <span class="font-black text-amber-300">📅 賽季期間</span>

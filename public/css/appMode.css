@@ -1,0 +1,206 @@
+/* ==========================================================================
+ * 鋼鐵英雄紀元 2.0 — 📱 App 內嵌版介面 (只作用於 <html class="in-app">，?app=1)
+ * 配色對齊 Flutter App：背景 #020617、卡片 #0f172a、強調 #f59e0b
+ * 注意：不要在 body 加 overscroll-behavior:none (曾造成 Android WebView 無法觸控捲動)
+ * ========================================================================== */
+
+#app-root { display: none; }
+
+html.in-app body { background: #020617 !important; }
+html.in-app main[id^="tab-content-"],
+html.in-app #gm-live-broadcast-banner,
+html.in-app #modal-hero-profile { display: none !important; }
+
+html.in-app #app-root {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px 12px 96px;
+  box-sizing: border-box;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+html.in-app #app-root * { box-sizing: border-box; }
+.ia-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ---------- 共用 ---------- */
+.ia-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 12px; min-width: 0; }
+.ia-center { text-align: center; }
+.ia-muted { color: #94a3b8; }
+.ia-small { font-size: 12px; }
+.ia-ok { color: #34d399; }
+.ia-bad { color: #fb7185; }
+.ia-amber { color: #fbbf24; }
+.ia-tone-ok { color: #34d399; } .ia-tone-bad { color: #fb7185; } .ia-tone-gold, .ia-tone-warn { color: #fbbf24; }
+.ia-tone-info { color: #67e8f9; } .ia-tone-muted { color: #94a3b8; } .ia-tone-purple { color: #d8b4fe; }
+.ia-row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ia-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 900; color: #f8fafc; font-size: 14px; margin-top: 4px; }
+.ia-section-title small { color: #94a3b8; font-weight: 700; font-size: 11px; }
+.ia-textbtn { color: #fbbf24; font-size: 12px; font-weight: 800; background: none; border: 0; padding: 6px 2px; min-height: 32px; }
+.ia-hscroll { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; min-width: 0; max-width: 100%; }
+.ia-hscroll::-webkit-scrollbar { display: none; }
+.ia-gap6 { gap: 6px; }
+
+.ia-av-40 { width: 40px; height: 40px; }
+.ia-av-48 { width: 48px; height: 48px; }
+.ia-av-56 { width: 56px; height: 56px; }
+.ia-av-64 { width: 64px; height: 64px; }
+.ia-av-40 img, .ia-av-48 img, .ia-av-56 img, .ia-av-64 img { width: 100%; height: 100%; object-fit: cover; }
+#app-root .avatar-fx-corner-badge { font-size: 10px; top: -5px; right: -5px; }
+
+.ia-bar { height: 8px; background: #020617; border: 1px solid #1e293b; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.ia-bar > i { display: block; height: 100%; border-radius: 999px; }
+.ia-bar-amber > i { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.ia-bar-rose > i { background: linear-gradient(90deg, #e11d48, #f59e0b); }
+.ia-bar-emerald > i { background: #10b981; } .ia-bar-blue > i { background: #3b82f6; } .ia-bar-purple > i { background: #a855f7; }
+
+/* ---------- 膠囊 ---------- */
+.ia-chips { padding: 2px 0; }
+.ia-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-height: 32px; padding: 6px 12px; border-radius: 999px; border: 1px solid #334155; background: #0f172a; color: #cbd5e1; font-size: 12px; font-weight: 800; }
+.ia-chip-hot { border-color: #f97316; color: #fdba74; background: rgba(124, 45, 18, .45); }
+.ia-chip-ok { border-color: #059669; color: #6ee7b7; background: rgba(2, 44, 34, .6); }
+.ia-chip-on { border-color: #f59e0b; color: #fbbf24; background: rgba(69, 26, 3, .7); }
+
+/* ---------- 我的名次卡 ---------- */
+.ia-mycard, .ia-namecard { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 18px; background: linear-gradient(135deg, rgba(120, 53, 15, .5), #0f172a 65%); border: 1px solid rgba(245, 158, 11, .6); min-width: 0; }
+.ia-namecard { background: #0f172a; border-color: #1e293b; }
+.ia-namecard-big { background: linear-gradient(135deg, rgba(120, 53, 15, .35), #0f172a 65%); border-color: rgba(245, 158, 11, .5); }
+.ia-mycard { cursor: pointer; }
+.ia-mycard-info, .ia-namecard-info { flex: 1; min-width: 0; }
+.ia-mycard-name, .ia-namecard-name { font-size: 17px; font-weight: 900; color: #fff; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; line-height: 1.25; overflow-wrap: anywhere; }
+.ia-mycard-sub, .ia-namecard-sub { font-size: 11.5px; color: #94a3b8; margin-top: 3px; overflow-wrap: anywhere; }
+.ia-mycard-rank { text-align: right; flex-shrink: 0; }
+.ia-mycard-rank b { display: block; font-size: 28px; font-weight: 900; color: #fbbf24; line-height: 1; }
+.ia-mycard-rank small { color: #94a3b8; font-size: 11px; font-weight: 700; }
+.ia-stats3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ia-kpi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ia-stat { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 10px; min-width: 0; }
+.ia-stat span { display: block; font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-stat b { display: block; font-size: 18px; font-weight: 900; color: #f8fafc; overflow-wrap: anywhere; line-height: 1.25; margin-top: 2px; }
+
+/* ---------- 摘要卡 ---------- */
+.ia-summary { padding: 10px; }
+.ia-sum-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ia-sum-tile { background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 8px 10px; min-width: 0; }
+.ia-sum-tile span, .ia-mini span { display: block; font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-sum-tile b, .ia-mini b { display: block; font-size: 15px; font-weight: 900; color: #fff; overflow-wrap: anywhere; }
+.ia-sum-tile small, .ia-mini small { font-size: 11px; color: #fbbf24; font-weight: 700; }
+.ia-mini { flex-shrink: 0; min-width: 118px; background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 8px 10px; }
+.ia-boss { display: flex; align-items: center; gap: 12px; }
+.ia-boss-img { width: 64px; height: 64px; border-radius: 14px; overflow: hidden; border: 2px solid rgba(244, 63, 94, .6); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 30px; background: #020617; }
+.ia-boss-img img { width: 100%; height: 100%; object-fit: cover; }
+.ia-boss-info { flex: 1; min-width: 0; }
+.ia-boss-info b, .ia-route b, .ia-base b { font-weight: 900; color: #fff; display: block; overflow-wrap: anywhere; }
+.ia-boss-info small, .ia-route small { display: block; margin-top: 4px; font-size: 11px; color: #94a3b8; overflow-wrap: anywhere; }
+.ia-base-row { margin-top: 6px; font-size: 11px; color: #cbd5e1; }
+.ia-bingo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ia-bingo-cell { text-align: center; padding: 6px 4px; border-radius: 10px; border: 1px solid #1e293b; background: #020617; opacity: .65; min-width: 0; }
+.ia-bingo-cell.on { opacity: 1; border-color: #d946ef; background: rgba(112, 26, 117, .3); }
+.ia-bingo-cell small { display: block; font-size: 10.5px; font-weight: 800; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ia-torch { font-size: 18px; letter-spacing: 2px; margin-top: 4px; overflow-wrap: anywhere; }
+
+/* ---------- 規則 / 更多細節 ---------- */
+.ia-rules { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; }
+.ia-rules > summary { list-style: none; cursor: pointer; padding: 12px 14px; min-height: 44px; font-weight: 900; color: #fbbf24; font-size: 13px; display: flex; align-items: center; justify-content: space-between; }
+.ia-rules > summary::-webkit-details-marker { display: none; }
+.ia-rules > summary::after { content: '▾'; color: #94a3b8; transition: transform .2s; }
+.ia-rules[open] > summary::after { transform: rotate(180deg); }
+.ia-rules-body { padding: 0 10px 12px; font-size: 12px; overflow-x: auto; display: flex; flex-direction: column; gap: 10px; }
+.ia-rules-body > * { margin: 0 !important; max-width: 100%; }
+.ia-rules-body img { max-width: 100%; }
+
+/* ---------- 排行 (每人一行) ---------- */
+.ia-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ia-row { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; min-width: 0; }
+.ia-row.ia-me { border-color: #f59e0b; background: linear-gradient(135deg, rgba(120, 53, 15, .45), #0f172a 60%); box-shadow: 0 0 0 1px rgba(245, 158, 11, .25); }
+.ia-row.ia-dead { opacity: .62; }
+.ia-row-main, .ia-pick, .ia-act-main { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; min-height: 56px; background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.ia-pick { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; }
+.ia-pick.on { border-color: #f59e0b; }
+.ia-rank { width: 22px; flex-shrink: 0; text-align: center; font-weight: 900; color: #64748b; font-size: 14px; }
+.ia-rank-1 { color: #fbbf24; } .ia-rank-2 { color: #cbd5e1; } .ia-rank-3 { color: #f59e0b; }
+.ia-row-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ia-row-name { font-weight: 900; color: #fff; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-row-sub { font-size: 11.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-you { font-style: normal; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: #f59e0b; color: #1c1917; font-size: 10px; font-weight: 900; vertical-align: 2px; }
+.ia-row-score { text-align: right; flex-shrink: 0; max-width: 40%; }
+.ia-row-score b { display: block; font-size: 16px; font-weight: 900; color: #fbbf24; overflow-wrap: anywhere; line-height: 1.2; }
+.ia-row-score small { font-size: 10.5px; font-weight: 800; }
+.ia-chev { color: #64748b; font-size: 12px; transition: transform .2s; flex-shrink: 0; }
+.ia-row.open .ia-chev { transform: rotate(180deg); }
+.ia-row-detail { display: none; padding: 0 10px 10px; }
+.ia-row.open .ia-row-detail { display: block; }
+.ia-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ia-metric { background: #020617; border: 1px solid #1e293b; border-radius: 10px; padding: 6px 8px; min-width: 0; }
+.ia-metric span { display: block; font-size: 10px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-metric b { display: block; font-size: 13px; font-weight: 800; color: #f1f5f9; overflow-wrap: anywhere; }
+.ia-foot { font-size: 11.5px; color: #94a3b8; margin: 8px 0 0; overflow-wrap: anywhere; }
+.ia-link { display: block; width: 100%; margin-top: 8px; padding: 10px; min-height: 44px; text-align: center; color: #fbbf24; font-weight: 900; font-size: 13px; background: rgba(69, 26, 3, .45); border: 1px solid rgba(245, 158, 11, .35); border-radius: 12px; }
+.ia-link-big { margin-top: 14px; }
+.ia-more { width: 100%; min-height: 44px; border-radius: 12px; border: 1px solid #334155; background: #0f172a; color: #cbd5e1; font-weight: 800; }
+
+/* ---------- 公會小卡 ---------- */
+.ia-gcard { flex-shrink: 0; width: 160px; background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 10px; min-width: 0; }
+.ia-gcard-top { display: flex; gap: 6px; align-items: center; font-size: 12px; min-width: 0; }
+.ia-gcard-top b { color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-gcard-val { font-size: 16px; font-weight: 900; color: #fbbf24; margin-top: 4px; overflow-wrap: anywhere; }
+.ia-gcard-sub { font-size: 11px; color: #94a3b8; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app-root .uhc-stack > .uhc-stack-item .w-8 { width: 26px; height: 26px; }
+
+/* ---------- 我的英雄 ---------- */
+.ia-switchrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ia-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ia-tabs > button { min-height: 40px; border-radius: 12px; border: 1px solid #1e293b; background: #0f172a; color: #94a3b8; font-weight: 900; font-size: 13px; }
+.ia-tabs > button.on { border-color: #f59e0b; color: #fbbf24; background: rgba(69, 26, 3, .6); }
+.ia-zonebar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: #020617; }
+.ia-zonebar > i { display: block; height: 100%; }
+.ia-zonelbl { display: flex; justify-content: space-between; font-size: 10.5px; color: #94a3b8; margin-top: 6px; gap: 4px; flex-wrap: wrap; }
+.ia-badgegrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.ia-badge { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; font-size: 20px; border-radius: 12px; border: 1px solid #1e293b; background: #0f172a; color: #475569; padding: 0; min-width: 0; }
+.ia-badge.on { border-color: #f59e0b; background: rgba(69, 26, 3, .55); color: inherit; }
+#ia-badge-inspector > * { border-radius: 14px; }
+.ia-act { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden; }
+.ia-act-main { min-height: 52px; }
+.ia-act-icon { font-size: 22px; width: 30px; text-align: center; flex-shrink: 0; }
+.ia-act-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ia-act-info b { font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-act-info small { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-act-score { flex-shrink: 0; font-size: 12px; font-weight: 900; max-width: 38%; text-align: right; overflow-wrap: anywhere; }
+.ia-act-detail { padding: 0 10px 10px; }
+
+/* ---------- 英雄史 ---------- */
+.ia-season { flex-shrink: 0; width: 168px; text-align: left; padding: 10px; min-height: 72px; border-radius: 14px; border: 1px solid #1e293b; background: #0f172a; color: #cbd5e1; display: flex; flex-direction: column; gap: 2px; }
+.ia-season.on { border-color: #f59e0b; background: rgba(69, 26, 3, .55); }
+.ia-season span { font-size: 11px; color: #94a3b8; }
+.ia-season b { font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-season small { font-size: 10.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-result { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 18px; border: 1px solid rgba(244, 63, 94, .45); background: linear-gradient(135deg, rgba(76, 5, 25, .55), #0f172a 70%); min-width: 0; }
+.ia-result-img { width: 64px; height: 64px; border-radius: 16px; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; background: #020617; border: 1px solid #334155; }
+.ia-result-img img { width: 100%; height: 100%; object-fit: cover; }
+.ia-result-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ia-result-info b { font-size: 16px; font-weight: 900; color: #fff; overflow-wrap: anywhere; }
+.ia-result-info small { font-size: 11.5px; color: #cbd5e1; overflow-wrap: anywhere; }
+.ia-podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; padding: 4px 6px 0; }
+.ia-pod { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; cursor: pointer; }
+.ia-pod b { font-size: 12.5px; color: #fff; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-pod small { font-size: 11px; color: #fbbf24; font-weight: 800; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ia-pod-base { width: 100%; text-align: center; font-weight: 900; color: #1c1917; border-radius: 10px 10px 0 0; background: #94a3b8; padding-top: 6px; }
+.ia-pod-1 .ia-pod-base { height: 56px; background: linear-gradient(#fde68a, #f59e0b); }
+.ia-pod-2 .ia-pod-base { height: 40px; background: linear-gradient(#f1f5f9, #94a3b8); }
+.ia-pod-3 .ia-pod-base { height: 30px; background: linear-gradient(#fdba74, #b45309); }
+.ia-more-detail .ia-rules-body { gap: 16px; }
+
+/* ---------- 底部面板 ---------- */
+.ia-sheet { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.ia-sheet-backdrop { position: absolute; inset: 0; background: rgba(2, 6, 23, .7); opacity: 0; transition: opacity .2s; }
+.ia-sheet-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 86vh; overflow-y: auto; overscroll-behavior: contain; background: #0b1222; border-top: 1px solid #334155; border-radius: 22px 22px 0 0; padding: 6px 14px 28px; transform: translateY(105%); transition: transform .25s ease; display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin: 0 auto; color: #e2e8f0; font-size: 14px; }
+.ia-sheet:not(.open) .ia-sheet-panel { visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s; }
+.ia-sheet.open { pointer-events: auto; }
+.ia-sheet.open .ia-sheet-backdrop { opacity: 1; }
+.ia-sheet.open .ia-sheet-panel { transform: translateY(0); }
+.ia-sheet-handle { display: flex; justify-content: center; padding: 6px 0 2px; }
+.ia-sheet-handle i { width: 44px; height: 5px; border-radius: 999px; background: #475569; }
+.ia-sheet-close { position: absolute; right: 10px; top: 8px; width: 36px; height: 36px; border-radius: 999px; border: 1px solid #334155; background: #0f172a; color: #94a3b8; font-weight: 900; }
+.ia-sheet-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ia-sheet .ia-av-56 img, .ia-sheet .ia-av-40 img { width: 100%; height: 100%; object-fit: cover; }

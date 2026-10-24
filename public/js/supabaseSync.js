@@ -26,8 +26,22 @@ window.computeFactionSplit = computeFactionSplit;
  * 網址類欄位 (avatar、url、link…) 與日期/數字不處理。
  */
 const SAFE_TEXT_MAP = { '<': '＜', '>': '＞', '"': '＂', "'": '＇', '`': '｀' };
+const UNSAFE_TEXT_MAP = { '＜': '<', '＞': '>', '＂': '"', '＇': "'", '｀': '`' };
 function safeDisplayText(v) {
   return typeof v === 'string' ? v.replace(/[<>"'`]/g, c => SAFE_TEXT_MAP[c]) : v;
+}
+function rawDbText(v) {
+  return typeof v === 'string' ? v.replace(/[＜＞＂＇｀]/g, c => UNSAFE_TEXT_MAP[c]) : v;
+}
+function deepRaw(v) {
+  if (typeof v === 'string') return rawDbText(v);
+  if (Array.isArray(v)) return v.map(deepRaw);
+  if (v && typeof v === 'object') {
+    const out = {};
+    Object.keys(v).forEach(k => { out[rawDbText(k)] = deepRaw(v[k]); });
+    return out;
+  }
+  return v;
 }
 const SAFE_SKIP_KEY = /(avatar|url|link|href|src|image|img)$/i;
 function deepSafe(v, keyName) {
@@ -41,11 +55,20 @@ function deepSafe(v, keyName) {
   return v;
 }
 function sanitizeDbRows(heroes, acts, config) {
-  (heroes || []).forEach(h => { ['name', 'guild', 'rpg_class', 'strava_id'].forEach(k => { if (h[k] != null) h[k] = safeDisplayText(String(h[k])); }); });
-  (acts || []).forEach(a => { ['hero', 'name', 'type', 'device_name', 'origin_app', 'source', 'id'].forEach(k => { if (typeof a[k] === 'string') a[k] = safeDisplayText(a[k]); }); });
+  (heroes || []).forEach(h => {
+    if (h && h.__rawName === undefined) h.__rawName = h.name;
+    ['name', 'guild', 'rpg_class', 'strava_id'].forEach(k => { if (h[k] != null) h[k] = safeDisplayText(String(h[k])); });
+  });
+  (acts || []).forEach(a => {
+    if (a && a.__rawName === undefined) a.__rawName = a.name;
+    if (a && a.__rawHero === undefined) a.__rawHero = a.hero;
+    ['hero', 'name', 'type', 'device_name', 'origin_app', 'source', 'id'].forEach(k => { if (typeof a[k] === 'string') a[k] = safeDisplayText(a[k]); });
+  });
   (config || []).forEach(c => { if (c && c.value != null) c.value = deepSafe(c.value, c.key); });
 }
 window.safeDisplayText = safeDisplayText;
+window.rawDbText = rawDbText;
+window.deepRaw = deepRaw;
 window.sanitizeDbRows = sanitizeDbRows;
 
 const SYNC_CONFIG = {
@@ -59,6 +82,10 @@ function parseActivityDate(dateStr) {
   if (!dateStr) return null;
   try {
     const s = String(dateStr).trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d/.test(s)) {
+      const iso = new Date(s);
+      if (!isNaN(iso.getTime())) return iso;
+    }
     const isPM = s.includes('下午') || s.toUpperCase().includes('PM');
     const isAM = s.includes('上午') || s.toUpperCase().includes('AM');
     const cleaned = s.replace(/下午|上午|AM|PM/gi, '').trim();
@@ -515,6 +542,16 @@ async function syncFromDatabaseCore() {
       window.supabase.fetch('game_config', 'select=*')
     ]);
 
+    // 保留未經全形轉換的原始資料列與設定，供 GM 後台匯出備份與寫回資料庫時使用 (避免全形字寫回 DB 或漏掉預設值污染)
+    try {
+      window.__rawHeroesRows = JSON.parse(JSON.stringify(heroesData || []));
+      window.__rawActivitiesRows = JSON.parse(JSON.stringify(activitiesData || []));
+      window.__rawConfigMap = {};
+      (configData || []).forEach(c => {
+        if (c && c.key) window.__rawConfigMap[c.key] = JSON.parse(JSON.stringify(c.value));
+      });
+    } catch (e) {}
+
     // 🛡️ 安全防護：資料庫裡的自由文字 (英雄名、公會、運動名稱、GM 稱號/活動標題、各種設定文字) 在進入畫面前，
     //    把 < > " ' ` 換成外觀相同的全形字，避免有人在 Strava 運動名稱或英雄名稱藏程式碼 (XSS)。網址欄位不處理。
     window.sanitizeDbRows && window.sanitizeDbRows(heroesData, activitiesData, configData);
@@ -594,6 +631,8 @@ async function syncFromDatabaseCore() {
 
       const heroObj = {
         name,
+        rawName: h.__rawName !== undefined ? h.__rawName : rawDbText(name),
+        createdAt: h.created_at || null,
         age,
         maxHr,
         guild,
@@ -749,9 +788,15 @@ async function syncFromDatabaseCore() {
       activities.push({
         id: actId,
         hero: a.hero,
+        rawHero: a.__rawHero !== undefined ? a.__rawHero : rawDbText(a.hero),
+        rawName: a.__rawName !== undefined ? a.__rawName : rawDbText(actTitle),
         source: a.source || (isManual ? 'manual' : 'strava'),
+        sourceId: a.source_id || null,
         originApp: a.origin_app || '',
         deviceName: a.device_name || '',
+        startTime: a.start_time || null,
+        endTime: a.end_time || null,
+        steps: a.steps ?? null,
         date: a.date,
         time: a.date,
         type: a.type || 'Workout',

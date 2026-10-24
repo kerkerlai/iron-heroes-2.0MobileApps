@@ -488,6 +488,99 @@ function buildBingoView(state) {
 }
 
 // -------------------------------------------------------------
+// 各資料片「每位英雄」計分小公式 (網頁現場 / 快照 / App 排行共用，只有這一份)
+// -------------------------------------------------------------
+/** 雙城激戰：個人攻城傷害 = TRIMP × 10 + MaxGap × 100；城牆修復 = Zone2 × 5000 + Calories */
+function factionHeroScore(h) {
+  return {
+    dmg: (h.totalTrimp || 0) * 10 + (h.scoreMaxGap ?? h.maxGap ?? 0) * 100,
+    rep: (h.scoreZone2 ?? h.zone2Count ?? 0) * 5000 + (h.totalCalories || 0)
+  };
+}
+/** 雙城激戰：陣營分配與主城血量 (輸入 buildFactionView 的 view model) */
+function computeFactionState(view) {
+  const guildList = view?.guilds || [];
+  const heroStats = view?.heroStats || [];
+  const fcfg = view?.faction || {};
+  const faction1 = { name: fcfg.f1Name || "🟢 均衡聯盟", hp: fcfg.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
+  const faction2 = { name: fcfg.f2Name || "🔴 狂怒部落", hp: fcfg.baseHp || 500000, dmg: 0, repair: 0, guilds: [] };
+  // 陣營分配：GM 後台可指定每個公會的陣營 (faction_config.guildAssign)；未指定者照舊依順序交錯分配
+  const factionSplit = window.computeFactionSplit ? window.computeFactionSplit(guildList.map(g => g.name), fcfg.guildAssign) : null;
+  guildList.forEach((g, idx) => {
+    const isF1 = factionSplit ? factionSplit[1].includes(g.name) : idx % 2 === 0;
+    const targetF = isF1 ? faction1 : faction2;
+    targetF.guilds.push(g.name);
+    const gHeroes = heroStats.filter(h => h.guild === g.name);
+    const gTrimp = gHeroes.reduce((s, h) => s + (h.totalTrimp || 0), 0);
+    const gZone2 = gHeroes.reduce((s, h) => s + (h.scoreZone2 ?? h.zone2Count ?? 0), 0);
+    const gGap = gHeroes.reduce((s, h) => s + (h.scoreMaxGap ?? h.maxGap ?? 0), 0);
+    const gCal = gHeroes.reduce((s, h) => s + (h.totalCalories || 0), 0);
+    targetF.dmg += (gTrimp * 10) + (gGap * 100);
+    targetF.repair += (gZone2 * 5000) + gCal;
+  });
+  const f1CurrentHp = Math.max(0, faction1.hp - faction2.dmg + faction1.repair);
+  const f2CurrentHp = Math.max(0, faction2.hp - faction1.dmg + faction2.repair);
+  const f1Pct = Math.min(100, Math.max(0, (f1CurrentHp / faction1.hp) * 100));
+  const f2Pct = Math.min(100, Math.max(0, (f2CurrentHp / faction2.hp) * 100));
+  return { faction1, faction2, f1CurrentHp, f2CurrentHp, f1Pct, f2Pct };
+}
+/** 鋼鐵要塞：個人資源 (木材 = Calories / 鋼鐵 = TRIMP / 神石 = MaxGap × 10 + Zone2 × 50) */
+function baseHeroResources(h) {
+  return {
+    wood: (h.totalCalories || 0),
+    steel: (h.totalTrimp || 0),
+    mana: (h.scoreMaxGap ?? h.maxGap ?? 0) * 10 + (h.scoreZone2 ?? h.zone2Count ?? 0) * 50
+  };
+}
+/** 鋼鐵要塞：全服資源總量與要塞等級 (門檻可由 GM 設定，預設 10k / 500 / 500) */
+function computeBaseStatus(view) {
+  const heroList = view?.heroStats || [];
+  let totalWood = 0, totalSteel = 0, totalMana = 0;
+  heroList.forEach(h => {
+     const r = baseHeroResources(h); // Calories = Wood / TRIMP = Steel / Gap×10 + Z2×50 = Mana
+     totalWood += r.wood;
+     totalSteel += r.steel;
+     totalMana += r.mana;
+  });
+  const getLevel = (wood, steel, mana) => {
+      let lvl = 1;
+      const baseW = Number(view?.base?.woodTarget) || 10000;
+      const baseS = Number(view?.base?.steelTarget) || 500;
+      const baseM = Number(view?.base?.manaTarget) || 500;
+      let wReq = baseW, sReq = baseS, mReq = baseM;
+      const wStep = Math.max(100, Math.round(baseW * 1.5));
+      const sStep = Math.max(50, Math.round(baseS * 1.5));
+      const mStep = Math.max(50, Math.round(baseM * 1.5));
+      while (wood >= wReq && steel >= sReq && mana >= mReq && lvl < 10) {
+          lvl++; wReq += wStep; sReq += sStep; mReq += mStep;
+      }
+      return { lvl, nW: wReq, nS: sReq, nM: mReq };
+  };
+  return { totalWood, totalSteel, totalMana, status: getLevel(totalWood, totalSteel, totalMana) };
+}
+window.computeBaseStatus = computeBaseStatus;
+/** 戰神拼圖：六大板塊 (領跑者 = 該板塊數值最高且 > 0 的英雄) */
+const BINGO_BOARDS = [
+  { key: 'cal', label: '🔥 脂肪燃燒者', unit: 'kcal', get: h => (h.totalCalories || 0) },
+  { key: 'wk', label: '⌚ 紀律部隊', unit: '次', get: h => (h.scoreWorkouts ?? h.validWorkouts ?? 0) },
+  { key: 'z2', label: '🟢 燃脂大師', unit: '次', get: h => (h.scoreZone2 ?? h.zone2Count ?? 0) },
+  { key: 'trimp', label: '⚙️ 心跳超載', unit: '', get: h => (h.totalTrimp || 0) },
+  { key: 'elev', label: '🏔️ 征服巔峰', unit: 'm', get: h => (h.scoreElevation ?? h.totalElevation ?? 0) },
+  { key: 'gap', label: '💥 限界突破', unit: '', get: h => (h.scoreMaxGap ?? h.maxGap ?? 0) }
+];
+function bingoBoardLeaders(heroStats) {
+  return BINGO_BOARDS.map(b => {
+    const top = [...(heroStats || [])].sort((x, y) => b.get(y) - b.get(x))[0];
+    return top && b.get(top) > 0 ? top.name : null;
+  });
+}
+window.factionHeroScore = factionHeroScore;
+window.computeFactionState = computeFactionState;
+window.baseHeroResources = baseHeroResources;
+window.BINGO_BOARDS = BINGO_BOARDS;
+window.bingoBoardLeaders = bingoBoardLeaders;
+
+// -------------------------------------------------------------
 // 英雄顯示資訊凍結 (大頭貼 / 公會 / 徽章數 / GM 稱號特效 / 出征狀態)
 // -------------------------------------------------------------
 function computeHeroActivityStatus(state, heroName, todayYMD) {

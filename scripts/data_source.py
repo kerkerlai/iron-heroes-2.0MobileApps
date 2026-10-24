@@ -38,7 +38,8 @@ def get_mode(url, key):
         return None
     if not rows:
         return "mirror"  # 尚未設定 = 平行測試期
-    mode = (rows[0].get("value") or {}).get("mode")
+    val = rows[0].get("value") if isinstance(rows[0], dict) else None
+    mode = val.get("mode") if isinstance(val, dict) else None
     return "strava" if mode == "strava" else "mirror"
 
 

@@ -1,6 +1,6 @@
 # Iron Heroes Mobile Sync — API Contract v1 (shared by Flutter app & Supabase Edge Functions)
 
-Base URL: `https://yxkvbkfnlqwlybhmugki.supabase.co/functions/v1`
+Base URL: `https://frhnfvdxukwzuzzklzyf.supabase.co/functions/v1`
 All requests: headers `apikey: <SUPABASE_ANON_KEY>`, `Authorization: Bearer <SUPABASE_ANON_KEY>`, `Content-Type: application/json`.
 
 ## 1. POST /register-device
@@ -21,7 +21,7 @@ Response 200:
 ```json
 { "device_id": "uuid", "device_token": "random-64-hex", "hero_name": "Calla", "max_hr": 185 }
 ```
-Errors: 400 invalid body, 403 invalid/expired/used-up invite, 404 hero not found (when create_new_hero=false), 409 hero exists (when create_new_hero=true).
+Errors: 400 invalid body, 403 invalid/expired/used-up invite, 404 hero not found (when create_new_hero=false), 409 hero exists (when create_new_hero=true) or `hero_already_bound` (hero already bound to an active device), 500 `db_error`.
 The app must store `device_id` + `device_token` in secure storage. Token is shown only once (server stores SHA-256 hash).
 
 ## 2. POST /ingest-health
@@ -43,7 +43,7 @@ Request:
       "duration_min": 35.0,                 // active duration in minutes
       "avg_hr": 142, "max_hr": 171,          // computed from HR samples in the workout window (0 if none)
       "calories": 420,                       // active kcal (fallback total kcal)
-      "distance_m": 6020, "elevation_m": 35, // optional
+      "distance_m": 6020,                    // optional
       "steps": 5200                          // optional
     }
   ],
@@ -64,8 +64,8 @@ Request:
 ```
 v1.1 REMOVED fields (do not send): weight_kg, body_fat_pct, vo2max, sleep_deep_min, sleep_rem_min, elevation_m.
 All daily fields optional/null. Max 500 workouts + 120 daily rows per request (client batches).
-Response 200: `{ "inserted_workouts": 3, "skipped_workouts": 1, "upserted_daily": 7, "server_time": "...", "max_hr": 185 }`  (v1.1: app should store max_hr and use it for active_minutes; GM may change hero age)
-Errors: 401 bad/revoked token, 400 invalid body.
+Response 200: `{ "inserted_workouts": 3, "skipped_workouts": 1, "upserted_daily": 7, "server_time": "...", "max_hr": 185, "hero_name": "Calla" }`  (v1.1: app should store max_hr and hero_name so GM age/rename updates propagate automatically)
+Errors: 401 bad/revoked token, 400 invalid body, 500 `db_error`.
 
 Server rules:
 - activities.id = `ah_<source_id>` (apple_health) or `hc_<source_id>` (health_connect); insert with ignore-duplicates (never overwrite GM edits).

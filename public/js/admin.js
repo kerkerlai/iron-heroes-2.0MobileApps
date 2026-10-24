@@ -9,7 +9,9 @@ function showAdminToast(msg, isError = false) {
   }
   const item = document.createElement("div");
   item.className = `p-4 rounded-2xl shadow-2xl text-xs font-bold text-white border flex items-center space-x-2 transition-all transform duration-300 pointer-events-auto ${isError ? "bg-rose-900/90 border-rose-600" : "bg-slate-900/95 border-amber-500/60"}`;
-  item.innerHTML = `<span>${msg}</span>`;
+  const sp = document.createElement("span");
+  sp.textContent = String(msg ?? "");
+  item.appendChild(sp);
   toast.appendChild(item);
   setTimeout(() => {
     item.style.opacity = "0";
@@ -36,17 +38,28 @@ window.addEventListener("gameStateSynced", (e) => {
 
 
 // -------------------------------------------------------------
-// GM AUTHENTICATION GATEKEEPER (Master Password: 800402)
+// GM AUTHENTICATION GATEKEEPER
 // -------------------------------------------------------------
-const GM_MASTER_PASSWORD = "800402";
+const GM_AUTH_HASH = 639381986; // 避免明文金鑰直接出現在前端原始碼；驗證後將輸入金鑰存入 sessionStorage 供後端 Edge Function 驗證
+function _gmCodeCheck(s) {
+  let h = 5381;
+  const v = String(s || "");
+  for (let i = 0; i < v.length; i++) h = (h * 33 + v.charCodeAt(i)) % 1000000007;
+  return h === GM_AUTH_HASH;
+}
+function getGMSecret() {
+  return sessionStorage.getItem("gm_edge_secret") || sessionStorage.getItem("gm_authenticated") || "";
+}
 
 function checkGMAuth() {
   const urlPw = new URLSearchParams(window.location.search).get("pw");
-  if (urlPw === GM_MASTER_PASSWORD) {
-    sessionStorage.setItem("gm_authenticated", GM_MASTER_PASSWORD);
+  if (urlPw && _gmCodeCheck(urlPw)) {
+    sessionStorage.setItem("gm_authenticated", urlPw);
+    sessionStorage.setItem("gm_edge_secret", urlPw);
   }
   stripPasswordFromUrl();
-  const isAuth = sessionStorage.getItem("gm_authenticated") === GM_MASTER_PASSWORD;
+  const saved = sessionStorage.getItem("gm_authenticated") || "";
+  const isAuth = Boolean(saved && _gmCodeCheck(saved));
   const overlay = document.getElementById("admin-login-overlay");
   if (overlay) {
     if (isAuth) {
@@ -59,6 +72,7 @@ function checkGMAuth() {
       }, 100);
     }
   }
+  return isAuth;
 }
 
 function verifyGMPassword() {
@@ -67,8 +81,9 @@ function verifyGMPassword() {
   const overlay = document.getElementById("admin-login-overlay");
   const val = (input?.value || "").trim();
 
-  if (val === GM_MASTER_PASSWORD) {
-    sessionStorage.setItem("gm_authenticated", GM_MASTER_PASSWORD);
+  if (_gmCodeCheck(val)) {
+    sessionStorage.setItem("gm_authenticated", val);
+    sessionStorage.setItem("gm_edge_secret", val);
     if (errEl) errEl.classList.add("hidden");
     if (overlay) overlay.classList.add("hidden");
     showAdminToast("✅ GM 權限認證成功，歡迎進入控制台！");
@@ -96,6 +111,7 @@ function stripPasswordFromUrl() {
 
 function logoutGM() {
   sessionStorage.removeItem("gm_authenticated");
+  sessionStorage.removeItem("gm_edge_secret");
   stripPasswordFromUrl();
   const overlay = document.getElementById("admin-login-overlay");
   const input = document.getElementById("gm-password-input");
@@ -149,8 +165,27 @@ function clearDirtyInputs() {
   document.querySelectorAll("[data-dirty]").forEach(el => { delete el.dataset.dirty; });
 }
 function withDirtyPreserved(fn) {
-  const saved = Array.from(document.querySelectorAll("[data-dirty]")).map(el => [el, el.value]);
-  try { return fn(); } finally { saved.forEach(([el, v]) => { el.value = v; }); }
+  const saved = Array.from(document.querySelectorAll("[data-dirty]"))
+    .filter(el => el && el.id)
+    .map(el => [el.id, el.type === "checkbox" ? el.checked : el.value]);
+  const restore = () => {
+    saved.forEach(([id, v]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === "checkbox") el.checked = v;
+      else el.value = v;
+      el.dataset.dirty = "1";
+    });
+  };
+  try {
+    return fn();
+  } finally {
+    restore();
+    if (saved.some(([id]) => id === "cfg-active-mode")) {
+      onExpansionModeChanged();
+      restore();
+    }
+  }
 }
 /**
  * 鋼鐵英雄紀元 - GM Control Panel Engine (v2.3 動態情境響應版)
@@ -371,9 +406,12 @@ function populateGlobalSettings() {
 
   const kwEl = document.getElementById('cfg-exclude-keywords');
   if (kwEl) {
-    const kws = Array.isArray(gameState.excludeKeywords) && gameState.excludeKeywords.length > 0
-      ? gameState.excludeKeywords
-      : ['羽球', 'Badminton'];
+    const rawKws = window.__rawConfigMap?.exclude_keywords;
+    const kws = Array.isArray(rawKws) && rawKws.length > 0
+      ? rawKws
+      : (Array.isArray(gameState.excludeKeywords) && gameState.excludeKeywords.length > 0
+        ? gameState.excludeKeywords.map(k => (typeof window.rawDbText === 'function' ? window.rawDbText(k) : k))
+        : ['羽球', 'Badminton']);
     kwEl.value = kws.join(', ');
   }
 
@@ -512,25 +550,42 @@ async function syncAllSettingsToSupabase(customMsg) {
   const mobileModesConfig = collectMobileModesConfig();
   const startRaw = document.getElementById('cfg-season-start')?.value || '';
   const endRaw = document.getElementById('cfg-season-end')?.value || '';
+  if (startRaw && endRaw && endRaw < startRaw) {
+    alert('⚠️ 賽季結束日期不能早於開始日期！');
+    return;
+  }
 
   const seasonStart = inputValToDate(startRaw) || gameState?.seasonStart || '2026/08/12';
   const seasonEnd = inputValToDate(endRaw) || gameState?.seasonEnd || '2026/08/31';
 
   const globalMinDurEl = document.getElementById('cfg-global-min-dur');
   const classicMinDurEl = document.getElementById('cfg-classic-min-dur');
-  const minDur = parseFloat(globalMinDurEl?.value || classicMinDurEl?.value) || 30.0;
+  const rawMinDur = parseFloat(globalMinDurEl?.value || classicMinDurEl?.value);
+  const minDur = (Number.isFinite(rawMinDur) && rawMinDur >= 1) ? rawMinDur : 30.0;
   if (globalMinDurEl) globalMinDurEl.value = minDur;
   if (classicMinDurEl) classicMinDurEl.value = minDur;
 
-  // Boss Config
-  const bossConfig = gameState?.boss || {};
+  const posInt = (id, fb) => {
+    const v = parseInt(document.getElementById(id)?.value, 10);
+    return Number.isFinite(v) && v > 0 ? v : fb;
+  };
+  const toRaw = (v) => (typeof window.deepRaw === 'function' ? window.deepRaw(v) : v);
+
+  // Boss Config (從未混入顯示預設值的原始設定複製，並清除歷史誤存的預設文字)
+  const rawBossBase = window.__rawConfigMap?.boss_config || gameState?.boss || {};
+  const bossConfig = JSON.parse(JSON.stringify(rawBossBase));
+  delete bossConfig.subtitle;
+  if (/^索爾受到雷霆魔劍/.test(bossConfig.description || '') && !/索爾/.test(bossConfig.name || '')) {
+    delete bossConfig.description;
+  }
   const bossName = document.getElementById('cfg-boss-name')?.value?.trim();
-  const bossMaxHp = parseInt(document.getElementById('cfg-boss-maxhp')?.value);
-  const magMult = parseFloat(document.getElementById('cfg-mag-mult')?.value) || 15.0;
+  const bossMaxHp = parseInt(document.getElementById('cfg-boss-maxhp')?.value, 10);
+  const magMultRaw = parseFloat(document.getElementById('cfg-mag-mult')?.value);
+  const magMult = (Number.isFinite(magMultRaw) && magMultRaw > 0) ? magMultRaw : 15.0;
   if (bossName) bossConfig.name = bossName;
   const bossAvatarSel = document.getElementById('cfg-boss-avatar')?.value;
   if (bossAvatarSel) bossConfig.avatar = bossAvatarSel;
-  if (bossMaxHp > 0) bossConfig.maxHp = bossMaxHp;
+  if (Number.isFinite(bossMaxHp) && bossMaxHp > 0) bossConfig.maxHp = bossMaxHp;
   delete bossConfig.currentHp;
   bossConfig.seasonStart = seasonStart;
   bossConfig.seasonEnd = seasonEnd;
@@ -554,7 +609,7 @@ async function syncAllSettingsToSupabase(customMsg) {
   const factionConfig = {
     f1Name: document.getElementById('cfg-faction1-name')?.value || gameState?.faction?.f1Name || '🟢 均衡聯盟',
     f2Name: document.getElementById('cfg-faction2-name')?.value || gameState?.faction?.f2Name || '🔴 狂怒部落',
-    baseHp: parseInt(document.getElementById('cfg-faction-basehp')?.value) || gameState?.faction?.baseHp || 500000,
+    baseHp: posInt('cfg-faction-basehp', gameState?.faction?.baseHp > 0 ? gameState.faction.baseHp : 500000),
     // 陣營分配：只保存 GM 明確指定的公會 (1 / 2)；「自動」不寫入
     guildAssign: collectFactionAssign()
   };
@@ -582,21 +637,22 @@ async function syncAllSettingsToSupabase(customMsg) {
   // 合併連續相同扣血值的區段 (例如當天打錯又改回原值)，保持排程乾淨
   decaySchedule = decaySchedule.filter((s, i, arr) => i === 0 || Number(s.perDay) !== Number(arr[i - 1].perDay));
   const survivalConfig = {
-    maxHp: Number.isFinite(maxHpInput) && maxHpInput > 0 ? maxHpInput : (prevSurvival.maxHp || 3000),
+    maxHp: Number.isFinite(maxHpInput) && maxHpInput > 0 ? maxHpInput : (prevSurvival.maxHp > 0 ? prevSurvival.maxHp : 3000),
     decayPerDay: newDecay,
     decaySchedule: decaySchedule
   };
 
   // Expansion 6: Base Builder Config
   const baseConfig = {
-    woodTarget: parseInt(document.getElementById('cfg-base-wood')?.value) || gameState?.base?.woodTarget || 10000,
-    steelTarget: parseInt(document.getElementById('cfg-base-steel')?.value) || gameState?.base?.steelTarget || 500,
-    manaTarget: parseInt(document.getElementById('cfg-base-mana')?.value) || gameState?.base?.manaTarget || 500
+    woodTarget: posInt('cfg-base-wood', gameState?.base?.woodTarget > 0 ? gameState.base.woodTarget : 10000),
+    steelTarget: posInt('cfg-base-steel', gameState?.base?.steelTarget > 0 ? gameState.base.steelTarget : 500),
+    manaTarget: posInt('cfg-base-mana', gameState?.base?.manaTarget > 0 ? gameState.base.manaTarget : 500)
   };
 
   // Expansion 7: Bingo Config
+  const bmRaw = parseFloat(document.getElementById('cfg-bingo-multiplier')?.value);
   const bingoConfig = {
-    multiplier: parseFloat(document.getElementById('cfg-bingo-multiplier')?.value) || gameState?.bingo?.multiplier || 1.0
+    multiplier: (Number.isFinite(bmRaw) && bmRaw > 0) ? bmRaw : (gameState?.bingo?.multiplier > 0 ? gameState.bingo.multiplier : 1.0)
   };
 
   // GM Ops Badge Start Date Sync
@@ -611,15 +667,15 @@ async function syncAllSettingsToSupabase(customMsg) {
 
   await Promise.all([
     window.supabase.insert("game_config", { key: "active_mode", value: activeMode }),
-    window.supabase.insert("game_config", { key: "boss_config", value: bossConfig }),
-    window.supabase.insert("game_config", { key: "classic_config", value: classicConfig }),
-    window.supabase.insert("game_config", { key: "rpg_config", value: rpgConfig }),
-    window.supabase.insert("game_config", { key: "faction_config", value: factionConfig }),
-    window.supabase.insert("game_config", { key: "survival_config", value: survivalConfig }),
-    window.supabase.insert("game_config", { key: "base_config", value: baseConfig }),
-    window.supabase.insert("game_config", { key: "bingo_config", value: bingoConfig }),
-    window.supabase.insert("game_config", { key: "gm_ops_config", value: gmOps }),
-    window.supabase.insert("game_config", { key: "mobile_modes_config", value: mobileModesConfig })
+    window.supabase.insert("game_config", { key: "boss_config", value: toRaw(bossConfig) }),
+    window.supabase.insert("game_config", { key: "classic_config", value: toRaw(classicConfig) }),
+    window.supabase.insert("game_config", { key: "rpg_config", value: toRaw(rpgConfig) }),
+    window.supabase.insert("game_config", { key: "faction_config", value: toRaw(factionConfig) }),
+    window.supabase.insert("game_config", { key: "survival_config", value: toRaw(survivalConfig) }),
+    window.supabase.insert("game_config", { key: "base_config", value: toRaw(baseConfig) }),
+    window.supabase.insert("game_config", { key: "bingo_config", value: toRaw(bingoConfig) }),
+    window.supabase.insert("game_config", { key: "gm_ops_config", value: toRaw(gmOps) }),
+    window.supabase.insert("game_config", { key: "mobile_modes_config", value: toRaw(mobileModesConfig) })
   ]);
 
   if (gameState) {
@@ -786,7 +842,8 @@ function exportSingleSnapshot(snapId) {
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snap, null, 2));
   const downloadAnchor = document.createElement('a');
   downloadAnchor.setAttribute("href", dataStr);
-  downloadAnchor.setAttribute("download", `snapshot_${snap.id}.json`);
+  const fname = String(snap.id || '').startsWith('snapshot_') ? `${snap.id}.json` : `snapshot_${snap.id}.json`;
+  downloadAnchor.setAttribute("download", fname);
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
@@ -920,6 +977,7 @@ function renderHeroTable() {
 }
 
 async function randomizeAllHeroClasses() {
+  if (!assertCloudReady()) return;
   if (!confirm('確定要為所有冒險者隨機重新抽籤分配職業嗎？\n（分配後您依然可以點擊個別英雄進行手動調整）')) return;
 
   const classes = ['狂戰士', '聖騎士', '遊俠', '大法師', '刺客'];
@@ -934,7 +992,8 @@ async function randomizeAllHeroClasses() {
   try {
     for (let i = 0; i < heroes.length; i++) {
       const assignedClass = pool[i];
-      await window.supabase.update("heroes", `name=eq.${encodeURIComponent(heroes[i].name)}`, {
+      const dbName = heroes[i].rawName || (typeof window.rawDbText === 'function' ? window.rawDbText(heroes[i].name) : heroes[i].name);
+      await window.supabase.update("heroes", `name=eq.${encodeURIComponent(dbName)}`, {
         rpg_class: assignedClass
       });
     }
@@ -993,10 +1052,14 @@ function updateModalMaxHr() {
 }
 
 async function saveHeroFromModal() {
+  if (!assertCloudReady()) return;
   const origName = document.getElementById('hero-edit-original-name').value;
-  const name = document.getElementById('hero-modal-name').value.trim();
-  const age = parseInt(document.getElementById('hero-modal-age').value) || 35;
-  const guild = document.getElementById('hero-modal-guild').value.trim() || '自由英雄';
+  const nameRaw = document.getElementById('hero-modal-name').value.trim();
+  const name = typeof window.rawDbText === 'function' ? window.rawDbText(nameRaw) : nameRaw;
+  const ageRaw = parseInt(document.getElementById('hero-modal-age').value, 10);
+  const age = Number.isFinite(ageRaw) ? ageRaw : 35;
+  const guildRaw = document.getElementById('hero-modal-guild').value.trim() || '自由英雄';
+  const guild = typeof window.rawDbText === 'function' ? window.rawDbText(guildRaw) : guildRaw;
   const rpgClass = document.getElementById('hero-modal-class').value;
   const stravaId = (document.getElementById('hero-modal-strava-id')?.value || "").trim();
 
@@ -1004,18 +1067,39 @@ async function saveHeroFromModal() {
     alert('請填寫英雄姓名');
     return;
   }
-  if (/[<>"'`\\]/.test(name) || /[<>"'`\\]/.test(guild)) {
+  if (name.length > 30) {
+    alert('⚠️ 英雄名稱最多 30 個字元');
+    return;
+  }
+  if (guild.length > 30) {
+    alert('⚠️ 公會名稱最多 30 個字元');
+    return;
+  }
+  if (age < 5 || age > 100) {
+    alert('⚠️ 年齡需介於 5 ~ 100 歲之間');
+    return;
+  }
+  if (stravaId && !/^\d+$/.test(stravaId)) {
+    alert('⚠️ Strava ID 只能填寫純數字');
+    return;
+  }
+  const existingHero = gameState?.heroes?.find(h => h.name === (origName || name) || h.rawName === (origName || name));
+  const origDbName = existingHero?.rawName || (typeof window.rawDbText === 'function' ? window.rawDbText(origName) : origName);
+  const isRenamingOrAdding = !origName || name !== origDbName;
+  if (isRenamingOrAdding && (/[<>"'`\\]/.test(name) || /[<>"'`\\]/.test(guild))) {
     alert('⚠️ 英雄名稱與公會名稱不能包含 < > " \' ` \\ 等符號（避免網頁安全問題）');
     return;
   }
-  if (!assertCloudReady()) return;
+  if (!isRenamingOrAdding && /[<>"'`\\]/.test(guild)) {
+    alert('⚠️ 公會名稱不能包含 < > " \' ` \\ 等符號（避免網頁安全問題）');
+    return;
+  }
 
-  if (!origName && gameState?.heroes?.some(h => h.name === name)) {
+  if (!origName && gameState?.heroes?.some(h => h.name === name || h.rawName === name)) {
     alert(`⚠️ 已經有名為【${name}】的冒險者，請改用「編輯」或換一個名字（避免覆蓋既有英雄資料）。`);
     return;
   }
 
-  const existingHero = gameState?.heroes?.find(h => h.name === (origName || name));
   // 年齡未變更時保留原本的最大心率 (避免覆蓋 GM 自訂的 MaxHR)，年齡變更才以 220 - 年齡 重新估算
   const maxHr = (existingHero && Number(existingHero.age) === age && existingHero.maxHr) ? existingHero.maxHr : 220 - age;
   const preservedAvatar = existingHero?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}&backgroundColor=0f172a`;
@@ -1032,13 +1116,13 @@ async function saveHeroFromModal() {
 
   try {
     // ✏️ 改名：先把舊名字底下的所有資料搬到新名字，再存其他欄位 (避免變成兩位英雄、資料留在舊名字)
-    if (origName && name !== origName) {
-      if (gameState?.heroes?.some(h => h.name === name)) {
+    if (origName && name !== origDbName) {
+      if (gameState?.heroes?.some(h => (h.name === name || h.rawName === name) && h !== existingHero)) {
         alert(`⚠️ 已經有名為【${name}】的冒險者，無法改成這個名字。`);
         return;
       }
       if (!confirm(`確定要把【${origName}】改名為【${name}】嗎？\n\n會一併搬移：運動紀錄、手機健康數據、手機綁定、GM 稱號與手動徽章。\n已封存的歷史快照維持當時的名字。`)) return;
-      await renameHeroEverywhere(origName, name);
+      await renameHeroEverywhere(origDbName, name);
     }
     await window.supabase.insert("heroes", heroObj);
     closeHeroModal();
@@ -1051,11 +1135,34 @@ async function saveHeroFromModal() {
   }
 }
 
+async function recordTombstoneList(key, item) {
+  try {
+    const rows = await window.supabase.fetch('game_config', `key=eq.${key}&select=key,value`);
+    const row = (rows || []).find(r => r && r.key === key);
+    const list = Array.isArray(row?.value) ? [...row.value] : [];
+    if (!list.includes(item)) {
+      list.push(item);
+      await window.supabase.insert('game_config', { key, value: list });
+    }
+  } catch (e) {}
+}
+
 async function deleteHero(name) {
+  if (!assertCloudReady()) return;
   if (!confirm(`確定要從 Supabase 雲端資料庫徹底刪除冒險者【${name}】嗎？`)) return;
 
+  const heroObj = gameState?.heroes?.find(h => h.name === name || h.rawName === name);
+  const dbName = heroObj?.rawName || (typeof window.rawDbText === 'function' ? window.rawDbText(name) : name);
+
   try {
-    await window.supabase.delete("heroes", `name=eq.${encodeURIComponent(name)}`);
+    await window.supabase.delete("heroes", `name=eq.${encodeURIComponent(dbName)}`);
+    // 記錄已刪除英雄，避免鏡像模式每 30 分鐘從舊資料庫重新塞回
+    await recordTombstoneList('deleted_heroes', dbName);
+    // 若該英雄有綁定手機裝置，一併停用 (避免已刪除英雄的手機繼續背景同步健康資料)
+    const devs = (gameState?.devices || []).filter(d => (d.hero === name || d.hero === dbName) && !d.revoked);
+    for (const dev of devs) {
+      try { await callAdminMobile('revoke_device', { device_id: dev.id }); } catch (_) {}
+    }
     if (window.syncFromDatabase) await window.syncFromDatabase();
     alert(`🗑️ 冒險者【${name}】已成功自雲端資料庫刪除！`);
     showAdminToast(`已刪除冒險者：${name}`);
@@ -1146,14 +1253,18 @@ function previewDamageCalculation() {
 
 async function handleManualAttack(e) {
   e.preventDefault();
+  if (!assertCloudReady()) return;
 
   const heroName = document.getElementById('inp-hero').value;
+  const heroObj = gameState?.heroes?.find(h => h.name === heroName);
+  const dbHero = heroObj?.rawName || (typeof window.rawDbText === 'function' ? window.rawDbText(heroName) : heroName);
   const type = document.getElementById('inp-type').value;
   const duration = parseFloat(document.getElementById('inp-duration').value) || 0;
   const avgHr = parseFloat(document.getElementById('inp-avg-hr').value) || 0;
   const maxHr = parseFloat(document.getElementById('inp-max-hr').value) || 0;
   const calories = parseFloat(document.getElementById('inp-calories').value) || 0;
-  const title = document.getElementById('inp-title').value.trim() || '手動打卡鍛鍊';
+  const titleRaw = document.getElementById('inp-title').value.trim() || '手動打卡鍛鍊';
+  const title = typeof window.rawDbText === 'function' ? window.rawDbText(titleRaw) : titleRaw;
 
   if (!heroName) { alert('請選擇英雄'); return; }
   if (duration <= 0) { alert('運動時長必須大於 0 分鐘'); return; }
@@ -1164,7 +1275,7 @@ async function handleManualAttack(e) {
 
   const actObj = {
     id: newActId,
-    hero: heroName,
+    hero: dbHero,
     date: dateStr,
     type: type,
     name: title,
@@ -1373,9 +1484,12 @@ function filterAdminActivities() {
 
     tr.className = `hover:bg-slate-900/60 transition ${isExcluded ? 'opacity-40 line-through bg-rose-950/20' : ''}`;
 
+    const srcLbl = isManual
+      ? '手動'
+      : (a.source === 'health_connect' ? '📱 Health Connect' : (a.source === 'apple_health' ? '📱 Apple Health' : '來源'));
     const sourceHtml = isNumericStrava 
       ? `<a href="https://www.strava.com/activities/${actId}" target="_blank" class="text-orange-400 font-mono font-bold hover:underline">#${actId} ↗</a>`
-      : `<span class="text-amber-400 font-mono font-bold">手動 #${actId.slice(-6)}</span>`;
+      : `<span class="text-amber-400 font-mono font-bold">${srcLbl} #${escapeHtmlLite(actId.slice(-6))}</span>`;
 
     const dupBadge = (!isExcluded && a.isSuspectedDuplicate)
       ? `<label class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold border cursor-pointer whitespace-nowrap ${a.duplicateIncluded ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-600'}" title="與紀錄 #${a.duplicateOf} 運動時間重疊，系統保留分數最高的一筆。勾選後此筆也會納入計分。">
@@ -1440,8 +1554,10 @@ async function toggleDuplicateInclude(actId, include) {
 }
 
 async function toggleExcludeActivity(actId, shouldExclude) {
+  if (!assertCloudReady()) return;
   try {
-    await window.supabase.update("activities", `id=eq.${encodeURIComponent(actId)}`, { is_excluded: shouldExclude });
+    const dbId = typeof window.rawDbText === 'function' ? window.rawDbText(actId) : actId;
+    await window.supabase.update("activities", `id=eq.${encodeURIComponent(dbId)}`, { is_excluded: shouldExclude });
     if (window.syncFromDatabase) await window.syncFromDatabase();
     alert(shouldExclude ? `🚫 紀錄 #${actId} 已在 Supabase 資料庫設為作廢，不再計入分數！` : `✅ 紀錄 #${actId} 已在 Supabase 資料庫恢復計入分數！`);
   } catch (e) {
@@ -1451,10 +1567,13 @@ async function toggleExcludeActivity(actId, shouldExclude) {
 }
 
 async function deleteManualActivity(actId) {
+  if (!assertCloudReady()) return;
   if (!confirm(`確定要從 Supabase 雲端資料庫永久刪除紀錄 #${actId} 嗎？`)) return;
 
+  const dbId = typeof window.rawDbText === 'function' ? window.rawDbText(actId) : actId;
   try {
-    await window.supabase.delete("activities", `id=eq.${encodeURIComponent(actId)}`);
+    await window.supabase.delete("activities", `id=eq.${encodeURIComponent(dbId)}`);
+    await recordTombstoneList('deleted_activity_ids', String(dbId));
     if (window.syncFromDatabase) await window.syncFromDatabase();
     alert(`🗑️ 紀錄 #${actId} 已從 Supabase 雲端資料庫永久刪除！`);
   } catch (e) {
@@ -1468,7 +1587,7 @@ function openEditActivityModal(actId) {
   if (!act) return;
 
   document.getElementById('act-edit-id').value = act.id;
-  document.getElementById('act-edit-title').value = act.title || act.name || '';
+  document.getElementById('act-edit-title').value = act.rawName ?? act.title ?? act.name ?? '';
   document.getElementById('act-edit-duration').value = act.duration || 0;
   document.getElementById('act-edit-calories').value = Math.round(act.rawCalories ?? act.calories ?? 0);
   document.getElementById('act-edit-avghr').value = act.avgHr || 0;
@@ -1482,25 +1601,21 @@ function closeActivityModal() {
 }
 
 async function saveActivityFromModal() {
+  if (!assertCloudReady()) return;
   const actId = document.getElementById('act-edit-id').value;
   const act = allActivitiesCache.find(a => String(a.id) === String(actId));
   if (!act) return;
 
-  const newTitle = document.getElementById('act-edit-title').value.trim();
+  const newTitleRaw = document.getElementById('act-edit-title').value.trim();
+  const newTitle = typeof window.rawDbText === 'function' ? window.rawDbText(newTitleRaw) : newTitleRaw;
   const newDuration = parseFloat(document.getElementById('act-edit-duration').value) || 0;
   const newCalories = parseFloat(document.getElementById('act-edit-calories').value) || 0;
   const newAvgHr = parseFloat(document.getElementById('act-edit-avghr').value) || 0;
   const newMaxHr = parseFloat(document.getElementById('act-edit-maxhr').value) || 0;
 
-  act.title = newTitle;
-  act.name = newTitle;
-  act.duration = newDuration;
-  act.calories = newCalories;
-  act.avgHr = newAvgHr;
-  act.maxHr = newMaxHr;
-
+  const dbId = typeof window.rawDbText === 'function' ? window.rawDbText(actId) : actId;
   try {
-    await window.supabase.update("activities", `id=eq.${encodeURIComponent(actId)}`, {
+    await window.supabase.update("activities", `id=eq.${encodeURIComponent(dbId)}`, {
       name: newTitle,
       duration: newDuration,
       calories: newCalories,
@@ -1518,7 +1633,13 @@ async function saveActivityFromModal() {
 }
 
 function exportFullBackupJSON() {
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(gameState, null, 2));
+  const backupObj = {
+    ...gameState,
+    rawHeroes: window.__rawHeroesRows || null,
+    rawActivities: window.__rawActivitiesRows || null,
+    rawConfig: window.__rawConfigMap || null
+  };
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
   const downloadAnchor = document.createElement('a');
   const d = new Date();
   const dateTag = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
@@ -1551,53 +1672,80 @@ function importFullBackupJSON(event) {
     }
     if (!confirm(`確定要以此備份還原 Supabase 雲端資料嗎？\n\n英雄 ${b.heroes.length} 位 / 運動紀錄 ${b.activities.length} 筆 / 遊戲設定與 GM 活動、徽章設定\n\n※ 備份內的資料會覆蓋雲端同 ID 的資料；雲端多出來（備份裡沒有）的紀錄會保留不刪除。`)) return;
 
+    const toRaw = (v) => (typeof window.deepRaw === 'function' ? window.deepRaw(v) : v);
+    const rawStr = (v) => (typeof window.rawDbText === 'function' ? window.rawDbText(v) : v);
+
     try {
-      const heroRows = b.heroes.filter(h => h && h.name).map(h => ({
-        name: h.name,
-        age: h.age ?? 35,
-        max_hr: h.maxHr ?? h.max_hr ?? 185,
-        guild: h.guild || '自由英雄',
-        rpg_class: h.rpgClass || h.rpg_class || '狂戰士',
-        strava_id: h.stravaId || h.strava_id || '',
-        avatar: h.avatar || ''
-      }));
+      const srcHeroes = Array.isArray(b.rawHeroes) && b.rawHeroes.length ? b.rawHeroes : b.heroes;
+      const heroRows = srcHeroes.filter(h => h && (h.name || h.rawName)).map(h => {
+        const row = {
+          name: rawStr(h.rawName || h.name),
+          age: h.age ?? 35,
+          max_hr: h.maxHr ?? h.max_hr ?? 185,
+          guild: rawStr(h.guild || '自由英雄'),
+          rpg_class: rawStr(h.rpgClass || h.rpg_class || '狂戰士'),
+          strava_id: rawStr(h.stravaId || h.strava_id || ''),
+          avatar: h.avatar || ''
+        };
+        if (h.created_at || h.createdAt) row.created_at = h.created_at || h.createdAt;
+        return row;
+      });
       if (heroRows.length) await window.supabase.insert('heroes', heroRows);
 
-      // 運動紀錄還原時使用「原始熱量」(rawCalories)，避免把限時活動加成後的數值寫回資料庫造成重複加成
-      const actRows = b.activities.filter(a => a && a.id !== undefined && a.hero).map(a => ({
-        id: String(a.id),
-        hero: a.hero,
-        date: a.date || a.time,
-        type: a.type || 'Workout',
-        name: a.name || a.title || '運動',
-        duration: Number(a.duration) || 0,
-        distance: Number(a.distance) || 0,
-        elevation: Number(a.elevation) || 0,
-        avg_hr: Number(a.avgHr ?? a.avg_hr) || 0,
-        max_hr: Number(a.maxHr ?? a.max_hr) || 0,
-        calories: Number(a.rawCalories ?? a.calories) || 0,
-        is_manual: Boolean(a.isManual ?? a.is_manual),
-        is_excluded: Boolean(a.isExcluded ?? a.is_excluded)
-      }));
+      // 運動紀錄還原時使用「原始熱量」(rawCalories)，並完整保留手機來源欄位
+      const srcActs = Array.isArray(b.rawActivities) && b.rawActivities.length ? b.rawActivities : b.activities;
+      const actRows = srcActs.filter(a => a && a.id !== undefined && (a.hero || a.rawHero)).map(a => {
+        const isManual = Boolean(a.isManual ?? a.is_manual);
+        const row = {
+          id: rawStr(String(a.id)),
+          hero: rawStr(a.rawHero || a.hero),
+          date: a.date || a.time,
+          type: rawStr(a.type || 'Workout'),
+          name: rawStr(a.rawName || a.name || a.title || '運動'),
+          duration: Number(a.duration) || 0,
+          distance: Number(a.distance) || 0,
+          elevation: Number(a.elevation) || 0,
+          avg_hr: Number(a.avgHr ?? a.avg_hr) || 0,
+          max_hr: Number(a.maxHr ?? a.max_hr) || 0,
+          calories: Number(a.rawCalories ?? a.calories) || 0,
+          is_manual: isManual,
+          is_excluded: Boolean(a.isExcluded ?? a.is_excluded),
+          source: rawStr(a.source || (isManual ? 'manual' : 'strava')),
+          origin_app: (a.originApp || a.origin_app) ? rawStr(a.originApp || a.origin_app) : null,
+          device_name: (a.deviceName || a.device_name) ? rawStr(a.deviceName || a.device_name) : null
+        };
+        if (a.source_id || a.sourceId) row.source_id = a.source_id || a.sourceId;
+        if (a.start_time || a.startTime) row.start_time = a.start_time || a.startTime;
+        if (a.end_time || a.endTime) row.end_time = a.end_time || a.endTime;
+        if (a.steps !== undefined && a.steps !== null) row.steps = Number(a.steps);
+        return row;
+      });
       for (let i = 0; i < actRows.length; i += 500) {
         await window.supabase.insert('activities', actRows.slice(i, i + 500));
       }
 
       const seasonOnly = (c) => c ? { seasonStart: c.seasonStart, seasonEnd: c.seasonEnd, minDuration: c.minDuration } : undefined;
-      const bossCfg = b.boss ? { ...b.boss } : undefined;
-      if (bossCfg) delete bossCfg.currentHp;
+      const bossCfg = b.rawConfig?.boss_config ? { ...b.rawConfig.boss_config } : (b.boss ? { ...b.boss } : undefined);
+      if (bossCfg) {
+        delete bossCfg.currentHp;
+        delete bossCfg.subtitle;
+        if (/^索爾受到雷霆魔劍/.test(bossCfg.description || '') && !/索爾/.test(bossCfg.name || '')) {
+          delete bossCfg.description;
+        }
+      }
       const cfgRows = {
         active_mode: b.activeMode,
-        boss_config: bossCfg,
+        boss_config: bossCfg ? toRaw(bossCfg) : undefined,
         classic_config: seasonOnly(b.classic),
         rpg_config: b.rpg ? { seasonStart: b.rpg.seasonStart, seasonEnd: b.rpg.seasonEnd } : undefined,
-        faction_config: b.faction,
-        survival_config: b.survival,
-        base_config: b.base,
-        bingo_config: b.bingo,
-        gm_ops_config: b.gmOps,
-        snapshots: b.snapshots,
-        exclude_keywords: b.excludeKeywords
+        faction_config: b.faction ? toRaw(b.faction) : undefined,
+        survival_config: b.survival ? toRaw(b.survival) : undefined,
+        base_config: b.base ? toRaw(b.base) : undefined,
+        bingo_config: b.bingo ? toRaw(b.bingo) : undefined,
+        gm_ops_config: b.gmOps ? toRaw(b.gmOps) : undefined,
+        mobile_modes_config: (b.mobileModes || b.rawConfig?.mobile_modes_config) ? toRaw(b.mobileModes || b.rawConfig?.mobile_modes_config) : undefined,
+        snapshots: b.snapshots ? toRaw(b.snapshots) : undefined,
+        exclude_keywords: b.excludeKeywords ? toRaw(b.excludeKeywords) : undefined
       };
       await Promise.all(Object.entries(cfgRows)
         .filter(([, v]) => v !== undefined && v !== null)
@@ -1871,12 +2019,13 @@ async function saveExcludeKeywordsToSupabase() {
     .split(/[,，、\n]/)
     .map(s => s.trim())
     .filter(Boolean);
+  const rawKws = typeof window.deepRaw === 'function' ? window.deepRaw(kws) : kws;
 
   if (!gameState) gameState = {};
   gameState.excludeKeywords = kws;
 
   try {
-    await window.supabase.insert("game_config", { key: "exclude_keywords", value: kws });
+    await window.supabase.insert("game_config", { key: "exclude_keywords", value: rawKws });
     if (window.syncFromDatabase) await window.syncFromDatabase();
     alert(`✅ 爬蟲剃除關鍵字已成功儲存至 Supabase 雲端資料庫！\n目前排除清單：${kws.join(', ') || '無'}`);
     showAdminToast("✅ 已更新爬蟲剃除關鍵字設定！");
@@ -1909,12 +2058,13 @@ function ensureGMOpsState() {
 async function persistGMOpsToSupabase(toastMsg) {
   if (!assertCloudReady()) return false;
   const gmOps = ensureGMOpsState();
+  const rawOps = typeof window.deepRaw === 'function' ? window.deepRaw(gmOps) : gmOps;
   try {
-    localStorage.setItem('gm_ops_config', JSON.stringify(gmOps));
+    localStorage.setItem('gm_ops_config', JSON.stringify(rawOps));
   } catch (e) {}
 
   try {
-    await window.supabase.insert("game_config", { key: "gm_ops_config", value: gmOps });
+    await window.supabase.insert("game_config", { key: "gm_ops_config", value: rawOps });
     ['gm-badge-start-date', 'cfg-badge-start-date'].forEach(id => { const el = document.getElementById(id); if (el) delete el.dataset.dirty; });
     if (typeof window.syncFromDatabase === 'function') {
       await window.syncFromDatabase();
@@ -1925,9 +2075,11 @@ async function persistGMOpsToSupabase(toastMsg) {
     renderHeroTable();
     renderActivityTable();
     if (toastMsg) showAdminToast(toastMsg);
+    return true;
   } catch (e) {
     console.error("Persist GM Ops Error:", e);
     alert("❌ 儲存至雲端失敗：" + e.message);
+    return false;
   }
 }
 
@@ -2014,12 +2166,13 @@ function editGMEvent(eventId) {
   const modeLbl = document.getElementById('gm-event-form-mode-label');
   const cancelBtn = document.getElementById('btn-cancel-gm-event-edit');
   if (modeLbl) {
-    modeLbl.innerHTML = `<span class="text-cyan-400">✏️ 正在回溯修改活動：【${ev.title}】 (修改後全服歷史與當前分數將自動重新計算)</span>`;
+    modeLbl.innerHTML = `<span class="text-cyan-400">✏️ 正在回溯修改活動：【${escapeHtmlLite(ev.title)}】 (修改後全服歷史與當前分數將自動重新計算)</span>`;
   }
   if (cancelBtn) cancelBtn.classList.remove('hidden');
 }
 
 async function saveGMEvent() {
+  if (!assertCloudReady()) return;
   const gmOps = ensureGMOpsState();
   const editId = document.getElementById('gm-event-edit-id')?.value || '';
   const theme = document.getElementById('gm-event-theme')?.value || 'typhoon';
@@ -2077,6 +2230,7 @@ async function saveGMEvent() {
 }
 
 async function deleteGMEvent(eventId) {
+  if (!assertCloudReady()) return;
   const gmOps = ensureGMOpsState();
   const ev = gmOps.events.find(e => e.id === eventId);
   if (!ev) return;
@@ -2207,6 +2361,7 @@ function onGMFxTypeSelect() {
 }
 
 async function saveGMHeroFx() {
+  if (!assertCloudReady()) return;
   const heroName = document.getElementById('gm-fx-hero')?.value;
   if (!heroName) return;
 
@@ -2245,6 +2400,7 @@ async function saveGMHeroFx() {
 }
 
 async function clearGMHeroFx(targetHero) {
+  if (!assertCloudReady()) return;
   const heroName = targetHero || document.getElementById('gm-fx-hero')?.value;
   if (!heroName) return;
 
@@ -2272,23 +2428,29 @@ function renderGMHeroFxActiveList() {
     return;
   }
 
+  const todayYMD = typeof window.getTodayYMD === 'function' ? window.getTodayYMD() : '';
   container.innerHTML = entries.map(([hName, fx]) => {
     const heroObj = (gameState?.heroes || []).find(h => h.name === hName) || { name: hName, guild: '' };
     const avatarPreview = typeof window.renderHeroAvatarHtml === 'function'
       ? window.renderHeroAvatarHtml(heroObj, 'w-11 h-11', 'rounded-xl')
       : '';
     const preset = window.AVATAR_FX_PRESETS?.[fx.type] || { label: '自訂稱號' };
+    const expYMD = fx.expiresAt && typeof window.normalizeDateYMD === 'function' ? window.normalizeDateYMD(fx.expiresAt) : fx.expiresAt;
+    const isExpired = Boolean(expYMD && todayYMD && expYMD < todayYMD);
+    const expLabel = fx.expiresAt
+      ? (isExpired ? `<span class="text-rose-400">到期日: ${escapeHtmlLite(fx.expiresAt)} (已過期)</span>` : `到期日: ${escapeHtmlLite(fx.expiresAt)}`)
+      : '永久有效 (手動關閉)';
     return `
       <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex items-center justify-between gap-2">
         <div class="flex items-center space-x-3 min-w-0">
           ${avatarPreview}
           <div class="min-w-0">
-            <div class="font-bold text-white truncate">${hName}</div>
-            <div class="text-[10px] text-amber-300 truncate">${preset.label} ${fx.customTitle ? `• 「${fx.customTitle}」` : ''}</div>
-            <div class="text-[9px] text-slate-500 font-mono">${fx.expiresAt ? `到期日: ${fx.expiresAt}` : '永久有效 (手動關閉)'}</div>
+            <div class="font-bold text-white truncate">${escapeHtmlLite(hName)}</div>
+            <div class="text-[10px] text-amber-300 truncate">${escapeHtmlLite(preset.label)} ${fx.customTitle ? `• 「${escapeHtmlLite(fx.customTitle)}」` : ''}</div>
+            <div class="text-[9px] text-slate-500 font-mono">${expLabel}</div>
           </div>
         </div>
-        <button type="button" onclick="clearGMHeroFx('${hName}')" class="px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/50 text-[10px] font-bold flex-shrink-0">
+        <button type="button" data-hero="${escapeHtmlLite(hName)}" onclick="clearGMHeroFx(this.dataset.hero)" class="px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/50 text-[10px] font-bold flex-shrink-0">
           ✖ 移除
         </button>
       </div>
@@ -2300,6 +2462,7 @@ function renderGMHeroFxActiveList() {
 // SUB-PANEL 3: 🎖️ GM 專屬全服 100 徽章圖鑑、開始時間設定與手動授勳
 // -------------------------------------------------------------
 async function saveGMBadgeStartDate() {
+  if (!assertCloudReady()) return;
   const gmOps = ensureGMOpsState();
   const rawVal = document.getElementById('gm-badge-start-date')?.value || '';
   gmOps.badgeStartDate = rawVal ? inputValToDate(rawVal) : '';
@@ -2490,6 +2653,7 @@ function renderGMBadgeEncyclopedia() {
 }
 
 async function grantManualBadgeToHero() {
+  if (!assertCloudReady()) return;
   const heroName = document.getElementById('gm-grant-hero')?.value;
   const badgeId = document.getElementById('gm-grant-badge')?.value;
   const reason = (document.getElementById('gm-grant-reason')?.value || 'GM 榮譽授勳').trim();
@@ -2510,6 +2674,7 @@ async function grantManualBadgeToHero() {
 }
 
 async function revokeManualBadgeFromHero(heroName, badgeId) {
+  if (!assertCloudReady()) return;
   if (!confirm(`確定要撤銷手動頒發給【${heroName}】的徽章 (${badgeId}) 嗎？\n(若該英雄本身的運動紀錄已自然達成條件，系統仍會保留其自然達成資格)`)) return;
   const gmOps = ensureGMOpsState();
   if (gmOps.manualBadges?.[heroName]) {
@@ -2559,6 +2724,7 @@ function renderMobileSyncSection() {
 }
 
 async function saveMobileSyncSettings() {
+  if (!assertCloudReady()) return;
   const cfg = getMobileSyncConfig();
   const wantEnabled = Boolean(document.getElementById('mobile-sync-enabled')?.checked);
   if (!wantEnabled && window.isMobileMode && window.isMobileMode(gameState?.activeMode)) {
@@ -2585,7 +2751,7 @@ async function callAdminMobile(action, payload = {}) {
       'Content-Type': 'application/json',
       'apikey': SUPABASE_CONFIG.anonKey,
       'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
-      'x-gm-password': GM_MASTER_PASSWORD
+      'x-gm-password': getGMSecret()
     },
     body: JSON.stringify({ action, ...payload })
   });
@@ -2601,7 +2767,7 @@ async function refreshMobilePanels() {
     renderMobileInvites(inv.invites || []);
     renderMobileDevices(dev.devices || []);
   } catch (e) {
-    if (list) list.innerHTML = `<div class="p-3 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300">⚠️ 無法連線 admin-mobile Edge Function：${e.message}<br>請確認已部署 supabase/functions/admin-mobile 並設定環境變數 GM_PASSWORD。</div>`;
+    if (list) list.innerHTML = `<div class="p-3 rounded-xl bg-rose-950/40 border border-rose-800 text-rose-300">⚠️ 無法連線 admin-mobile Edge Function：${escapeHtmlLite(e.message)}<br>請確認已部署 supabase/functions/admin-mobile 並設定環境變數 GM_PASSWORD。</div>`;
   }
   renderMobileReconciliation();
 }
@@ -2611,14 +2777,20 @@ function renderMobileInvites(invites) {
   if (!list) return;
   if (!invites.length) { list.innerHTML = '<div class="text-slate-500">尚未產生任何邀請碼</div>'; return; }
   const base = `${window.location.origin}/join.html?code=`;
-  list.innerHTML = invites.map(i => `
+  list.innerHTML = invites.map(i => {
+    const safeCode = escapeHtmlLite(i.code);
+    const safeSeason = escapeHtmlLite(i.season || '');
+    const safeUsed = Number(i.used_count) || 0;
+    const safeMax = i.max_uses != null ? Number(i.max_uses) : '∞';
+    return `
     <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2">
-      <div class="flex items-center gap-2"><span class="font-mono font-black text-amber-300 text-sm">${i.code}</span><span class="text-slate-400">${i.season || ''} • 已使用 ${i.used_count || 0}/${i.max_uses || '∞'}</span></div>
+      <div class="flex items-center gap-2"><span class="font-mono font-black text-amber-300 text-sm">${safeCode}</span><span class="text-slate-400">${safeSeason} • 已使用 ${safeUsed}/${safeMax}</span></div>
       <div class="flex items-center gap-2">
-        <button type="button" onclick="navigator.clipboard.writeText('${base}${i.code}'); showAdminToast('已複製邀請連結')" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-cyan-300 font-bold">📋 複製邀請連結</button>
-        <button type="button" onclick="deleteMobileInvite('${i.code}')" class="px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 font-bold">🗑️</button>
+        <button type="button" data-code="${safeCode}" onclick="navigator.clipboard.writeText('${escapeHtmlLite(base)}' + encodeURIComponent(this.dataset.code)); showAdminToast('已複製邀請連結')" class="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-cyan-300 font-bold">📋 複製邀請連結</button>
+        <button type="button" data-code="${safeCode}" onclick="deleteMobileInvite(this.dataset.code)" class="px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 font-bold">🗑️</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function createMobileInvite() {
@@ -2650,15 +2822,19 @@ function renderMobileDevices(devices) {
     const last = d.last_sync_at ? new Date(d.last_sync_at) : null;
     const hours = last ? (now - last.getTime()) / 3600000 : Infinity;
     const light = d.revoked ? '⛔ 已停用' : (hours <= 24 ? '🟢 正常' : (hours <= 48 ? '🟡 稍久未同步' : '🔴 超過 48 小時'));
+    const safeHero = escapeHtmlLite(d.hero);
+    const safeModel = escapeHtmlLite(d.device_model || '');
+    const safeVer = escapeHtmlLite(d.app_version || '-');
+    const safeId = escapeHtmlLite(d.id);
     return `<tr>
-      <td class="p-3 font-bold text-white">${d.hero}</td>
-      <td class="p-3">${d.platform === 'ios' ? '🍎 iPhone' : '🤖 Android'} <span class="text-slate-500">${d.device_model || ''}</span></td>
+      <td class="p-3 font-bold text-white">${safeHero}</td>
+      <td class="p-3">${d.platform === 'ios' ? '🍎 iPhone' : '🤖 Android'} <span class="text-slate-500">${safeModel}</span></td>
       <td class="p-3 font-mono">${last ? last.toLocaleString('zh-TW', { hour12: false }) : '尚未同步'}</td>
-      <td class="p-3 font-mono text-slate-400">${d.app_version || '-'}</td>
+      <td class="p-3 font-mono text-slate-400">${safeVer}</td>
       <td class="p-3">${light}</td>
       <td class="p-3 text-right">${d.revoked
-        ? `<button type="button" onclick="toggleMobileDevice('${d.id}', false)" class="text-emerald-400 font-bold">恢復</button>`
-        : `<button type="button" onclick="toggleMobileDevice('${d.id}', true)" class="text-rose-400 font-bold">停用</button>`}</td>
+        ? `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, false)" class="text-emerald-400 font-bold">恢復</button>`
+        : `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, true)" class="text-rose-400 font-bold">停用</button>`}</td>
     </tr>`;
   }).join('');
 }
@@ -2983,26 +3159,32 @@ function selectBossGallery(i) {
 //   2. 後端尚未部署時 (例如還沒導入手機 App)，改用網站可寫的部分：英雄、運動紀錄、GM 稱號/手動徽章
 // =====================================================================
 async function renameHeroEverywhere(oldName, newName) {
+  const rawOld = typeof window.rawDbText === 'function' ? window.rawDbText(oldName) : oldName;
+  const rawNew = typeof window.rawDbText === 'function' ? window.rawDbText(newName) : newName;
   try {
-    const r = await callAdminMobile('rename_hero', { old_name: oldName, new_name: newName });
+    const r = await callAdminMobile('rename_hero', { old_name: rawOld, new_name: rawNew });
     showAdminToast(`✏️ 改名完成：${oldName} → ${newName}（運動 ${r.counts?.activities ?? 0} 筆、健康 ${r.counts?.daily_health ?? 0} 天、手機 ${r.counts?.devices ?? 0} 支）`);
     return r;
   } catch (e) {
     const notDeployed = /404|not found|Failed to fetch|NOT_FOUND|unknown_action/i.test(String(e.message || e));
     if (!notDeployed) throw new Error('改名失敗：' + e.message);
-    if ((gameState?.devices || []).some(d => d.hero === oldName) || (gameState?.dailyHealth || []).some(d => d.hero === oldName)) {
+    if ((gameState?.devices || []).some(d => d.hero === oldName || d.hero === rawOld) || (gameState?.dailyHealth || []).some(d => d.hero === oldName || d.hero === rawOld)) {
       throw new Error('這位英雄有手機 App 資料，需要先部署 App 後端 (GitHub Actions → Deploy mobile Edge Functions) 才能完整改名。');
     }
     // 網站端備援：英雄列改名 + 運動紀錄 + GM 設定 key
-    await window.supabase.update('heroes', `name=eq.${encodeURIComponent(oldName)}`, { name: newName });
-    await window.supabase.update('activities', `hero=eq.${encodeURIComponent(oldName)}`, { hero: newName });
+    await window.supabase.update('heroes', `name=eq.${encodeURIComponent(rawOld)}`, { name: rawNew });
+    await window.supabase.update('activities', `hero=eq.${encodeURIComponent(rawOld)}`, { hero: rawNew });
     const ops = ensureGMOpsState();
     let changed = false;
     ['heroFx', 'manualBadges'].forEach(k => {
       if (ops[k] && Object.prototype.hasOwnProperty.call(ops[k], oldName)) { ops[k][newName] = ops[k][oldName]; delete ops[k][oldName]; changed = true; }
+      if (ops[k] && rawOld !== oldName && Object.prototype.hasOwnProperty.call(ops[k], rawOld)) { ops[k][rawNew] = ops[k][rawOld]; delete ops[k][rawOld]; changed = true; }
     });
-    if (changed) await window.supabase.insert('game_config', { key: 'gm_ops_config', value: ops });
-    await recordHeroAlias(oldName, newName);
+    if (changed) {
+      const rawOps = typeof window.deepRaw === 'function' ? window.deepRaw(ops) : ops;
+      await window.supabase.insert('game_config', { key: 'gm_ops_config', value: rawOps });
+    }
+    await recordHeroAlias(rawOld, rawNew);
     showAdminToast(`✏️ 改名完成：${oldName} → ${newName}`);
     return { ok: true, fallback: true };
   }

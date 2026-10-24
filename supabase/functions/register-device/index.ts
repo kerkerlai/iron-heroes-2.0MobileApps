@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_body", message: "invite_code、hero_name、platform(ios/android) 為必填" }, 400);
   }
   if (heroName.length > 30) return json({ error: "invalid_body", message: "英雄名稱過長" }, 400);
-  if (/[<>"'`\\]/.test(heroName)) return json({ error: "invalid_body", message: "英雄名稱不能包含 < > \" ' ` \\ 等符號" }, 400);
+  if (createNew && /[<>"'`\\]/.test(heroName)) return json({ error: "invalid_body", message: "英雄名稱不能包含 < > \" ' ` \\ 等符號" }, 400);
 
   const db = serviceClient();
 
@@ -31,12 +31,17 @@ Deno.serve(async (req) => {
   const { data: hero } = await db.from("heroes").select("name").eq("name", heroName).maybeSingle();
   if (createNew) {
     if (hero) return json({ error: "hero_exists", message: "已有同名英雄，請改選「既有英雄」" }, 409);
-    const age = Number(body.age) > 0 ? Math.round(Number(body.age)) : 35;
+    const guild = String(body.guild || "").trim() || "自由英雄";
+    if (guild.length > 30 || /[<>"'`\\]/.test(guild)) {
+      return json({ error: "invalid_body", message: "公會名稱過長或包含不允許的符號" }, 400);
+    }
+    const rawAge = Number(body.age);
+    const age = Number.isFinite(rawAge) && rawAge > 0 ? Math.min(100, Math.max(5, Math.round(rawAge))) : 35;
     const { error: insErr } = await db.from("heroes").insert({
       name: heroName,
       age,
       max_hr: Math.max(120, 220 - age),
-      guild: String(body.guild || "").trim() || "自由英雄",
+      guild,
       rpg_class: "狂戰士",
       strava_id: "",
       avatar: "",
@@ -54,12 +59,13 @@ Deno.serve(async (req) => {
   }
 
   // 3. 發放金鑰 (只回傳一次，資料庫只存雜湊)
+  const cleanStr = (v: unknown, max: number) => String(v || "").replace(/[<>"'`\\]/g, "").slice(0, max);
   const token = randomHex(32);
   const { data: device, error: devErr } = await db.from("devices").insert({
     hero: heroName,
     platform,
-    device_model: String(body.device_model || "").slice(0, 80),
-    app_version: String(body.app_version || "").slice(0, 30),
+    device_model: cleanStr(body.device_model, 80),
+    app_version: cleanStr(body.app_version, 30),
     token_hash: await sha256Hex(token),
   }).select("id").single();
   if (devErr) return json({ error: "db_error", message: devErr.message }, 500);

@@ -122,6 +122,20 @@ def load_aliases():
         sys.exit(f"❌ 讀取英雄改名對照表失敗：{e}（為避免產生重複英雄，本次不同步）")
 
 
+def load_tombstones(key):
+    """GM 在 2.0 刪除過的英雄或運動紀錄：記錄於 game_config.{deleted_heroes|deleted_activity_ids}，
+    避免鏡像同步每 30 分鐘又從舊庫塞回來。"""
+    try:
+        r = requests.get(f"{NEW_URL}/rest/v1/game_config?key=eq.{key}&select=value", headers=NEW_H, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+        v = (rows[0].get("value") if rows else None) or []
+        return {str(x) for x in v if x} if isinstance(v, list) else set()
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ 讀取 {key} 失敗 ({e})，略過")
+        return set()
+
+
 def resolve_name(name, aliases):
     seen = set()
     while name in aliases and name not in seen:
@@ -141,7 +155,10 @@ def heal_duplicates(aliases, new_heroes):
         q = requests.utils.quote(old_name)
         dh = requests.get(f"{NEW_URL}/rest/v1/daily_health?select=hero&hero=eq.{q}&limit=1", headers=NEW_H, timeout=15)
         dv = requests.get(f"{NEW_URL}/rest/v1/devices_public?select=hero&hero=eq.{q}&limit=1", headers=NEW_H, timeout=15)
-        if (dh.ok and dh.json()) or (dv.ok and dv.json()):
+        if not (dh.ok and dv.ok):
+            print(f"  ⚠️ 無法確認「{old_name}」是否有手機資料 (HTTP {dh.status_code}/{dv.status_code})，本次不自動合併")
+            continue
+        if dh.json() or dv.json():
             print(f"  ⚠️ 重複英雄「{old_name}」有手機資料，請 GM 在後台處理 (未自動合併)")
             continue
         if not DRY:
@@ -181,18 +198,27 @@ def main():
     new_heroes = {h["name"]: h for h in new_read("heroes", "name")}
     new_act_ids = {a["id"] for a in new_read("activities", "id")}
     aliases = load_aliases()
+    deleted_heroes = load_tombstones("deleted_heroes")
+    deleted_act_ids = load_tombstones("deleted_activity_ids")
     if aliases:
         print(f"   改名對照：{aliases}")
+    if deleted_heroes or deleted_act_ids:
+        print(f"   已刪除過濾：英雄 {len(deleted_heroes)} 位、運動 {len(deleted_act_ids)} 筆")
     healed = heal_duplicates(aliases, new_heroes)
     print(f"   舊庫：英雄 {len(old_heroes)}、運動紀錄 {len(old_acts)}")
     print(f"   新庫：英雄 {len(new_heroes)}、運動紀錄 {len(new_act_ids)}")
 
     # ---- 英雄 ----
-    # 舊庫英雄若在 2.0 改過名，一律換成新名 (避免產生重複英雄)
+    # 舊庫英雄若在 2.0 改過名，一律換成新名 (避免產生重複英雄)；若已在 2.0 刪除則略過
     if MODE == "full":
-        hero_rows = old_heroes
+        hero_rows = [h for h in old_heroes if h["name"] not in deleted_heroes and resolve_name(h["name"], aliases) not in deleted_heroes]
     else:
-        hero_rows = [h for h in old_heroes if resolve_name(h["name"], aliases) not in new_heroes]
+        hero_rows = [
+            h for h in old_heroes
+            if resolve_name(h["name"], aliases) not in new_heroes
+            and h["name"] not in deleted_heroes
+            and resolve_name(h["name"], aliases) not in deleted_heroes
+        ]
     out = []
     for h in hero_rows:
         h = strip_ts(dict(h))
@@ -221,21 +247,43 @@ def main():
 
     # ---- 運動紀錄 ----
     if MODE == "full":
-        act_rows = old_acts
+        act_rows = [a for a in old_acts if str(a["id"]) not in deleted_act_ids]
     else:
-        act_rows = [a for a in old_acts if a["id"] not in new_act_ids]
+        act_rows = [a for a in old_acts if a["id"] not in new_act_ids and str(a["id"]) not in deleted_act_ids]
     out = []
     for a in act_rows:
         a = strip_ts(dict(a))
         a["hero"] = resolve_name(a.get("hero") or "", aliases)
+        if a["hero"] in deleted_heroes:
+            continue
         a["source"] = "manual" if a.get("is_manual") else (a.get("source") or "strava")
         out.append(a)
     new_write("activities", out, overwrite=(MODE == "full"))
     print(f"🏃 運動紀錄：{'覆蓋/新增' if MODE == 'full' else '新增'} {len(out)} 筆")
 
-    # ---- 遊戲設定 (只在 full 模式) ----
+    # ---- 遊戲設定 (只在 full 模式；保留 2.0 專屬設定並將 gm_ops_config 內的舊名轉換為新名) ----
     if MODE == "full":
-        cfg = [strip_ts(dict(c)) for c in old_read("game_config", "key")]
+        preserve_keys = {
+            "hero_aliases", "data_source_config", "data_source_status_mirror",
+            "data_source_status_crawler", "mobile_modes_config", "deleted_heroes", "deleted_activity_ids"
+        }
+        new_cfg_map = {c["key"]: c.get("value") for c in new_read("game_config", "key")}
+        cfg = []
+        for c in old_read("game_config", "key"):
+            c = strip_ts(dict(c))
+            k = c.get("key")
+            if k in preserve_keys and k in new_cfg_map:
+                continue
+            if k == "gm_ops_config" and isinstance(c.get("value"), dict):
+                val = dict(c["value"])
+                for subk in ("heroFx", "manualBadges"):
+                    if isinstance(val.get(subk), dict):
+                        val[subk] = {resolve_name(hk, aliases): hv for hk, hv in val[subk].items()}
+                new_ops = new_cfg_map.get("gm_ops_config")
+                if isinstance(new_ops, dict) and "mobileSync" in new_ops:
+                    val["mobileSync"] = new_ops["mobileSync"]
+                c["value"] = val
+            cfg.append(c)
         new_write("game_config", cfg, overwrite=True)
         print(f"⚙️ 遊戲設定：覆蓋 {len(cfg)} 項 {[c['key'] for c in cfg]}")
 

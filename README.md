@@ -1,6 +1,6 @@
 # 鋼鐵英雄紀元 (Iron Heroes Era) — 專案總覽與更新紀錄
 
-> 📅 本文件最後更新：2026/10/23（版本 **BugFixed13**）
+> 📅 本文件最後更新：2026/10/24（版本 **2.0 r13**）
 > 🎯 寫給「半年後回來看的自己」：先讀第 0 節的快速重點，需要細節再往下找。
 
 ---
@@ -11,8 +11,8 @@
 |---|---|
 | 現在遊戲怎麼抓運動資料？ | **Strava 爬蟲**（`scripts/strava_scraper.py`，由 GitHub Actions 每 30 分鐘執行）→ 寫入 Supabase |
 | 網站放在哪裡？ | GitHub → Vercel 自動部署（`public/` 為網站、`api/` 為 Vercel 函式） |
-| 資料庫？ | Supabase（project `yxkvbkfnlqwlybhmugki`）：`heroes`、`activities`、`game_config` 三張表 |
-| GM 後台？ | `/admin`（密碼寫在 `public/js/admin.js` 的 `GM_MASTER_PASSWORD`） |
+| 資料庫？ | Supabase（2.0 獨立專案 `frhnfvdxukwzuzzklzyf`）：`heroes`、`activities`、`game_config`、`daily_health`、`devices`、`invite_codes` |
+| GM 後台？ | `/admin`（透過 `public/js/admin.js` 的雜湊驗證與後端 Edge Function `GM_PASSWORD` 雙重把關） |
 | 手機 App 做好了嗎？ | **程式碼已完成但未啟用**（另一個專案 `iron-heroes-mobile`）。啟用步驟見第 2 節 |
 | 新的 4 個資料片可以用了嗎？ | 程式已完成，**必須先開啟手機同步 App** 才能在 GM 後台選用（第 4 節） |
 | 原本的 7 個經典資料片？ | 完全保留，不受手機功能影響 |
@@ -214,4 +214,8 @@
 | BugFixed13 | 2026/10/23 | 📱 新資料片 八/九/十/十一、App 數據 v1.1、本 README |
 | 2.0 r1–r4 | 2026/10/24 | 2.0 獨立版：新 Supabase、舊庫鏡像、GM 資料來源開關、雙城陣營分配、App 內嵌模式、App 後端一鍵部署 |
 | 2.0 r5 | 2026/10/24 | 資料片重新編號（十 不滅之火／十一 鐵人修行院）、夢境規則白話化、11 個資料片統一大頭貼英雄卡、200 枚手機健康徽章（#101–#300）、GM 世界 Boss 10 種形象、標題改為 Kerker's 20% project |
-| **2.0 r6** | 2026/10/24 | 賽季快照「時間凍結」1:1：11 個資料片快照與現場同版面、同英雄卡（凍結大頭貼/徽章數/稱號）、修正雙城/要塞/拼圖快照被存成 Boss、Boss 快照顯示 Boss 圖、XSS 全面防護 (`public/js/seasonSnapshot.js`) |
+| 2.0 r6 | 2026/10/24 | 賽季快照「時間凍結」1:1：11 個資料片快照與現場同版面、同英雄卡（凍結大頭貼/徽章數/稱號）、修正雙城/要塞/拼圖快照被存成 Boss、Boss 快照顯示 Boss 圖、XSS 全面防護 (`public/js/seasonSnapshot.js`) |
+| 2.0 r7 | 2026/10/24 | 手機綁定規則：一位英雄同時只能綁一支手機（GM 停用舊手機即可換機）；GM 改名會一併搬移運動紀錄/健康數據/手機綁定/稱號徽章（後端 `admin-mobile` 新增 `rename_hero`）；英雄名冊顯示「📱 已綁定」；App 自動同步新名字 |
+| 2.0 r10 | 2026/10/24 | GM 編輯視窗可改名；所有資料片頂部顯示賽季資訊列；改名對照表 `game_config.hero_aliases`：鏡像同步把舊庫舊名換成新名、自動合併已產生的重複英雄 |
+| 2.0 r12 | 2026/10/24 | App 專用介面（`public/js/appMode.js`、`public/css/appMode.css`，只在 `?app=1` 啟用）：我的名次卡＋距上一名/今日增加、規則收合、每人一行排行可展開、我的英雄三分頁、英雄史頒獎台、底部英雄面板；修正 App 戰績頁無法滑動；修正快照誤顯示目前賽季列；網頁內切頁同步 App 原生分頁 |
+| **2.0 r13** | 2026/10/24 | 全方位 SW QA 深度檢測與修復（共 36 項）：修正雙城激戰全員英雄卡與快照格式、英雄彈窗作廢/未滿30分狀態、過往英雄史彈窗時間凍結、戰情室運動類型篩選與英雄選單保持、GM 後台未儲存欄位保護與刪除防復活墓碑 (`deleted_heroes` / `deleted_activity_ids`)、寫入端引號還原 (`rawDbText`)、App 專用介面返回鍵/含引號英雄名/啟動競態/手機改名即時刷新、Edge Functions 與爬蟲時區及邊界防護 |

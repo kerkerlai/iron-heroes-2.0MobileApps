@@ -7,6 +7,14 @@ import { corsHeaders, json, serviceClient, sha256Hex, toTaipeiString, num } from
 const MAX_WORKOUTS = 500;
 const MAX_DAILY = 120;
 const PREFIX: Record<string, string> = { apple_health: "ah_", health_connect: "hc_" };
+const cleanStr = (v: unknown, max: number) => String(v || "").replace(/[<>"'`\\]/g, "").slice(0, max);
+const toIsoOrNull = (v: unknown): string | null => {
+  if (!v) return null;
+  const d = new Date(String(v));
+  return isNaN(d.getTime()) ? null : d.toISOString();
+};
+const clamp = (v: number | null, min: number, max: number): number | null =>
+  v === null ? null : Math.min(max, Math.max(min, v));
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -29,37 +37,45 @@ Deno.serve(async (req) => {
   const daily = Array.isArray(body.daily) ? body.daily.slice(0, MAX_DAILY) : [];
 
   // ---- 運動紀錄 ----
+  const nowMs = Date.now();
+  const minStartMs = nowMs - 120 * 86400 * 1000;
+  const maxStartMs = nowMs + 2 * 86400 * 1000;
   const rows: Record<string, unknown>[] = [];
   for (const w of workouts as Record<string, unknown>[]) {
     const src = String(w.platform_source || "");
-    const sid = String(w.source_id || "").trim();
-    const origin = String(w.origin_app || "").toLowerCase();
+    const sid = cleanStr(w.source_id, 120).trim();
+    const origin = cleanStr(w.origin_app, 120).toLowerCase();
     if (!PREFIX[src] || !sid) continue;
     if (origin.includes("strava")) continue; // Strava 資料已由爬蟲處理，避免回寫造成重複
-    const dateStr = toTaipeiString(String(w.start_time || ""));
-    const duration = num(w.duration_min) ?? 0;
-    if (!dateStr || duration < 1) continue;
+    const startIso = toIsoOrNull(w.start_time);
+    const dateStr = startIso ? toTaipeiString(startIso) : null;
+    const durationRaw = num(w.duration_min) ?? 0;
+    const duration = Math.min(1440, Math.max(0, durationRaw));
+    if (!startIso || !dateStr || duration < 1) continue;
+    const startMs = new Date(startIso).getTime();
+    if (startMs < minStartMs || startMs > maxStartMs) continue;
+    const distKm = num(w.distance_m) !== null ? Math.round((clamp(num(w.distance_m), 0, 1000000)! / 1000) * 100) / 100 : 0;
     rows.push({
       id: PREFIX[src] + sid,
       hero,
       date: dateStr,
-      type: String(w.type || "Workout").slice(0, 40),
-      name: String(w.name || w.type || "運動").slice(0, 120),
+      type: cleanStr(w.type || "Workout", 40) || "Workout",
+      name: cleanStr(w.name || w.type || "運動", 120) || "運動",
       duration: Math.round(duration * 10) / 10,
-      distance: num(w.distance_m) !== null ? Math.round((num(w.distance_m)! / 1000) * 100) / 100 : 0, // km (與爬蟲一致)
-      elevation: num(w.elevation_m) ?? 0,
-      avg_hr: num(w.avg_hr) ?? 0,
-      max_hr: num(w.max_hr) ?? 0,
-      calories: Math.round(num(w.calories) ?? 0),
+      distance: distKm, // km (與爬蟲一致)
+      elevation: clamp(num(w.elevation_m), 0, 20000) ?? 0,
+      avg_hr: Math.round(clamp(num(w.avg_hr), 0, 250) ?? 0),
+      max_hr: Math.round(clamp(num(w.max_hr), 0, 250) ?? 0),
+      calories: Math.round(clamp(num(w.calories), 0, 10000) ?? 0),
       is_manual: false,
       is_excluded: false,
       source: src,
       source_id: sid,
-      origin_app: origin.slice(0, 120),
-      device_name: String(w.device_name || "").slice(0, 80) || null,
-      start_time: String(w.start_time),
-      end_time: w.end_time ? String(w.end_time) : null,
-      steps: num(w.steps),
+      origin_app: origin,
+      device_name: cleanStr(w.device_name, 80) || null,
+      start_time: startIso,
+      end_time: toIsoOrNull(w.end_time),
+      steps: clamp(num(w.steps), 0, 100000),
     });
   }
 
@@ -73,17 +89,24 @@ Deno.serve(async (req) => {
   }
 
   // ---- 每日健康數據 ----
-  const fields = ["steps", "active_kcal", "active_minutes", "sleep_minutes", "resting_hr", "hrv_ms", "spo2_pct"];
-  const intFields = ["steps", "active_minutes", "sleep_minutes"];
+  const fieldBounds: Record<string, [number, number, boolean]> = {
+    steps: [0, 100000, true],
+    active_kcal: [0, 10000, false],
+    active_minutes: [0, 1440, true],
+    sleep_minutes: [0, 1440, true],
+    resting_hr: [20, 220, false],
+    hrv_ms: [0, 500, false],
+    spo2_pct: [50, 100, false],
+  };
   const dailyRows: Record<string, unknown>[] = [];
   for (const d of daily as Record<string, unknown>[]) {
     const date = String(d.date || "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     const row: Record<string, unknown> = { hero, date, source: device.platform === "ios" ? "apple_health" : "health_connect", updated_at: new Date().toISOString() };
     let hasValue = false;
-    for (const f of fields) {
-      const v = num(d[f]);
-      if (v !== null) { row[f] = intFields.includes(f) ? Math.round(v) : v; hasValue = true; }
+    for (const [f, [lo, hi, isInt]] of Object.entries(fieldBounds)) {
+      const v = clamp(num(d[f]), lo, hi);
+      if (v !== null) { row[f] = isInt ? Math.round(v) : v; hasValue = true; }
     }
     for (const f of ["bed_time", "wake_time"]) {
       const t = String(d[f] ?? "").trim();
@@ -104,7 +127,7 @@ Deno.serve(async (req) => {
   await db.from("devices").update({
     last_sync_at: new Date().toISOString(),
     last_upload_count: inserted,
-    app_version: String(body.app_version || device.app_version || "").slice(0, 30),
+    app_version: cleanStr(body.app_version || device.app_version || "", 30),
   }).eq("id", deviceId);
 
   const { data: heroRow } = await db.from("heroes").select("max_hr").eq("name", hero).maybeSingle();

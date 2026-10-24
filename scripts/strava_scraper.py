@@ -12,7 +12,9 @@ import json
 import html
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+TPE = timezone(timedelta(hours=8))
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", os.environ.get("SUPABASE_KEY", "")).strip()
@@ -143,8 +145,8 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
         "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
-    # 計算當前月與前一個月的 YYYYMM (涵蓋 2 個月完整區間)
-    now = datetime.now()
+    # 計算當前月與前一個月的 YYYYMM (涵蓋 2 個月完整區間，使用台灣時區)
+    now = datetime.now(TPE)
     curr_ym = now.strftime("%Y%m")
     prev_month_date = now.replace(day=1) - timedelta(days=1)
     prev_ym = prev_month_date.strftime("%Y%m")
@@ -153,7 +155,7 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
     existing_ids = get_existing_activity_ids()
     if existing_ids is None:
         print("🛑 無法確認資料庫現存紀錄，為避免重複寫入或覆蓋 GM 修正資料，本次爬蟲中止，下次排程會自動重試。")
-        return
+        raise RuntimeError("無法讀取資料庫現存活動 ID")
     new_activities_to_insert = []
 
     print(f"🚀 開始針對 {len(athlete_profiles)} 位選手掃描近 2 個月 ({prev_ym} ~ {curr_ym}) 完整運動紀錄...")
@@ -195,11 +197,14 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
             act_name = str(act.get("activityName") or "運動")
             sport_type = str(act.get("type") or "Workout")
 
-            # Check Excluded Keywords against BOTH activityName and sport_type (case-insensitive)
+            # Check Excluded Keywords against BOTH activityName and sport_type (case-insensitive; normalize full-width quotes)
+            norm_q = lambda s: str(s or "").replace("＇", "'").replace("＂", '"').strip().lower()
+            act_name_l = norm_q(act_name)
+            sport_type_l = norm_q(sport_type)
             if any(
-                str(kw).strip().lower() in act_name.lower() or str(kw).strip().lower() in sport_type.lower()
+                norm_q(kw) in act_name_l or norm_q(kw) in sport_type_l
                 for kw in (exclude_keywords or [])
-                if str(kw).strip()
+                if norm_q(kw)
             ):
                 print(f"  🚫 略過排除關鍵字活動：{act_name} [類型: {sport_type}] (#{act_id})")
                 continue
@@ -301,7 +306,7 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
                 print(f"    🔥 依心率自動推算熱量: {calories} kcal")
 
             if not start_time_readable:
-                start_time_readable = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                start_time_readable = datetime.now(TPE).strftime("%Y/%m/%d %H:%M:%S")
 
             act_data = {
                 "id": act_id,
@@ -337,8 +342,10 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
                 print(f"🎉 成功寫入 {len(new_activities_to_insert)} 筆新運動至 Supabase！前台看板與世界 Boss 戰況已秒速同步！")
             else:
                 print(f"❌ 寫入 Supabase 失敗 (HTTP {r.status_code}): {r.text}")
+                raise RuntimeError(f"寫入 Supabase 失敗 (HTTP {r.status_code})")
         except Exception as e:
             print(f"❌ 寫入 Supabase 發生錯誤: {e}")
+            raise
     else:
         print("\n✅ 本次檢查無新活動需要寫入，全服近 2 個月數據已是最新狀態！")
 

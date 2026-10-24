@@ -84,7 +84,7 @@
         <!-- Duration Rules -->
         <div>
           <label class="font-bold text-slate-300 block mb-1">⏱️ 有效運動門檻 (分鐘)</label>
-          <input type="number" step="1" id="cfg-global-min-dur" value="30" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 text-base font-bold">
+          <input type="number" step="1" id="cfg-global-min-dur" value="30" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 text-base font-bold">
         </div>
         <!-- 3 Expansion Packs Switcher -->
         <div>
@@ -527,7 +527,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="text-xs font-bold text-slate-300 block mb-1">冒險者英雄 *</label>
-              <select id="inp-hero" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none" required>
+              <select id="inp-hero" onchange="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none" required>
               </select>
             </div>
 
@@ -695,7 +695,7 @@
             <div class="grid grid-cols-1 gap-2">
               <div>
                 <label class="font-bold text-slate-300 block mb-1">魔攻倍率 (TRIMP ×)</label>
-                <input type="number" id="cfg-mag-mult" value="15" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                <input type="number" id="cfg-mag-mult" value="15" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
               </div>
             </div>
 
