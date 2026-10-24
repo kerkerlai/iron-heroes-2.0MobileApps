@@ -712,6 +712,9 @@
             <input type="text" id="cfg-faction2-name" value="🔴 狂怒部落" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-rose-400 font-bold outline-none">
             <label class="font-bold text-slate-300 block mb-1">❤️ 主城初始血量 (Base HP)</label>
             <input type="number" id="cfg-faction-basehp" value="500000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+            <label class="font-bold text-slate-300 block mb-1">⚔️ 陣營分配 (以公會為單位)</label>
+            <div id="cfg-faction-assign" class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-2"></div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">💡 選「自動」的公會照舊規則分配：依公會順序 (公會中最早註冊英雄的先後) 第 1、3、5… 個進守護陣營，第 2、4… 個進狂怒陣營。全部選自動 = 與舊版相同。儲存後前台立即生效。</p>
             <button onclick="saveFactionSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 font-bold rounded-xl text-xs transition">儲存陣營參數</button>
           </div>
         </div>
