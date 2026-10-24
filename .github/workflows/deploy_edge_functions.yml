@@ -1,0 +1,50 @@
+name: Deploy mobile Edge Functions (App 後端)
+
+# 📱 手機 App 要能用，Supabase 上必須先有 3 個後端程式 (Edge Functions)：
+#    register-device (綁定手機) / ingest-health (接收健康資料) / admin-mobile (GM 後台邀請碼、裝置管理)
+# 這個 workflow 讓你「不用安裝任何軟體」：在 GitHub → Actions → 本 workflow → Run workflow 按一下就部署。
+# 只有手動按才會執行；之後若 functions 程式有更新，再按一次即可。
+#
+# 需要的 GitHub Secrets (Settings → Secrets and variables → Actions)：
+#   SUPABASE_URL           新資料庫網址 (已設定過)
+#   SUPABASE_ACCESS_TOKEN  Supabase 個人存取權杖：supabase.com → 右上頭像 → Account preferences → Access Tokens → Generate new token
+#                          (以 sbp_ 開頭；只放在 GitHub Secrets，不要貼到任何聊天或檔案)
+#   GM_PASSWORD            GM 後台密碼 (與 public/js/admin.js 的 GM_MASTER_PASSWORD 相同)
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Check settings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GM_PASSWORD: ${{ secrets.GM_PASSWORD }}
+        run: |
+          for v in SUPABASE_URL SUPABASE_ACCESS_TOKEN GM_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "❌ 缺少 GitHub Secret：$v"; exit 1; fi
+          done
+          REF=$(echo "$SUPABASE_URL" | sed -E 's#https://([a-z0-9]+)\.supabase\.co/?#\1#')
+          if [ "$REF" = "yxkvbkfnlqwlybhmugki" ]; then echo "❌ 這是舊遊戲的資料庫，拒絕部署"; exit 1; fi
+          echo "PROJECT_REF=$REF" >> "$GITHUB_ENV"
+          echo "✅ 目標專案：$REF"
+      - name: Set function secret (GM_PASSWORD)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GM_PASSWORD: ${{ secrets.GM_PASSWORD }}
+        run: supabase secrets set --project-ref "$PROJECT_REF" GM_PASSWORD="$GM_PASSWORD"
+      - name: Deploy functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          for f in register-device ingest-health admin-mobile; do
+            echo "🚀 部署 $f"
+            supabase functions deploy "$f" --project-ref "$PROJECT_REF"
+          done
+          echo "✅ 3 個 Edge Functions 部署完成"
