@@ -100,6 +100,15 @@ Deno.serve(async (req) => {
           counts.gm_ops_config = 1;
         }
       }
+      // 改名對照表：舊遊戲資料庫 (鏡像同步來源) 仍是舊名，鏡像時會用這張表換成新名，避免出現重複英雄
+      const { data: aliasRow } = await db.from("game_config").select("value").eq("key", "hero_aliases").maybeSingle();
+      const aliases = ((aliasRow?.value && typeof aliasRow.value === "object") ? aliasRow.value : {}) as Record<string, string>;
+      for (const k of Object.keys(aliases)) if (aliases[k] === oldName) aliases[k] = newName;
+      aliases[oldName] = newName;
+      delete aliases[newName];
+      const { error: aErr } = await db.from("game_config").upsert({ key: "hero_aliases", value: aliases }, { onConflict: "key" });
+      if (aErr) throw new Error(`hero_aliases: ${aErr.message}`);
+      counts.hero_aliases = Object.keys(aliases).length;
     } catch (e) {
       return json({ error: "db_error", message: `改名途中失敗：${(e as Error).message}（已完成的部分：${JSON.stringify(counts)}）` }, 500);
     }
