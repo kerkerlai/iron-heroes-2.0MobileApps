@@ -1,0 +1,36 @@
+name: Strava to Supabase Cloud Crawler (2.0)
+
+# 🛰️ 鋼鐵英雄紀元 2.0：排程一直開著，但每次執行前會先讀 GM 後台「資料來源」開關：
+#    - 鏡像舊資料庫 (預設，平行測試期)：只報到、不抓 Strava (GM 後台可看到「最後報到時間」，確認排程與 Secrets 正常)
+#    - 自己抓 Strava (正式切換後)：真的抓 Strava 寫進新資料庫
+#    切換只要在 GM 後台按一下，不需要改這個檔案。
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  scrape-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+
+      - name: Run Strava Scraper
+        env:
+          # 必須在 GitHub Secrets 設定 (指向「新」Supabase)；缺少就會中止，不會寫到別的資料庫
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          STRAVA_COOKIE: ${{ secrets.STRAVA_COOKIE }}
+        run: |
+          python scripts/strava_scraper.py
