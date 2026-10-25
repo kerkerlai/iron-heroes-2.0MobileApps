@@ -463,8 +463,14 @@
         </div>
         <!-- 裝置連線健康度 -->
         <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-800 font-bold text-slate-200">📡 裝置連線健康度 <span class="text-[11px] text-slate-500 font-normal">(超過 48 小時未同步顯示紅燈)</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">平台 / 型號</th><th class="p-3">最後同步</th><th class="p-3">App 版本</th><th class="p-3">狀態</th><th class="p-3 text-right">操作</th></tr></thead><tbody id="mobile-devices-tbody"></tbody></table></div>
+          <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div class="font-bold text-slate-200">📡 裝置連線健康度 <span class="text-[11px] text-slate-400 font-normal">(顯示距最後同步時間；超過 48 小時未同步顯示紅燈)</span></div>
+              <div class="text-[11px] text-slate-500 mt-0.5">💡 手機系統 (Android/iOS) 基於隱私限制，刪除 App 時不會主動通知伺服器；若玩家已重灌或換機，可直接點右側「🗑️ 移除」或一鍵清理舊紀錄。</div>
+            </div>
+            <button type="button" onclick="pruneMobileDevices()" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-bold rounded-xl transition">🧹 清理已停用 / 重複 / 逾期裝置</button>
+          </div>
+          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">平台 / 型號</th><th class="p-3">最後同步</th><th class="p-3">App 版本</th><th class="p-3">連線健康度 (距最後同步)</th><th class="p-3 text-right">操作</th></tr></thead><tbody id="mobile-devices-tbody"></tbody></table></div>
         </div>
         <!-- 來源對帳 -->
         <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
@@ -501,6 +507,7 @@
                       <th class="p-2">😴 睡眠 (入睡~起床)</th>
                       <th class="p-2">💓 靜止心率</th>
                       <th class="p-2">🌿 HRV</th>
+                      <th class="p-2">🫁 血氧</th>
                     </tr>
                   </thead>
                   <tbody id="mobile-inspect-daily-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>

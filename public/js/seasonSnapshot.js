@@ -365,6 +365,8 @@ function snapSlimHeroStats(list) {
     totalCalories: snapNum(h.totalCalories),
     totalTrimp: snapNum(h.totalTrimp),
     scoreZone2: snapNum(h.scoreZone2 ?? h.zone2Count ?? 0),
+    longCount: snapNum(h.longCount ?? 0),
+    scoreLongCount: snapNum(h.scoreLongCount ?? h.longCount ?? 0),
     scoreMaxGap: snapNum(h.scoreMaxGap ?? h.maxGap ?? 0),
     scoreElevation: snapNum(h.scoreElevation ?? h.totalElevation ?? 0)
   }));
@@ -433,11 +435,11 @@ function buildSurvivalView(state) {
   const st = state || window.gameState || {};
   const sv = window.computeSurvivalState(st);
   const heroes = snapHeroStatsOf(st).map(h => {
-    const hp = window.computeSurvivalHeroHp(h, sv); // 狩獵補血 = Calories / 搜刮物資 = TRIMP × 1.5
-    return { name: h.name, guild: h.guild, currentHp: hp.currentHp, isDead: hp.isDead, food: hp.food, scavenge: hp.scavenge };
+    const hp = window.computeSurvivalHeroHp(h, sv, st); // 狩獵補血 = Calories / 搜刮物資 = TRIMP × 1.5
+    return { name: h.name, guild: h.guild, currentHp: hp.currentHp, isDead: hp.isDead, food: hp.food, scavenge: hp.scavenge, survivedDays: hp.survivedDays, totalDays: hp.totalDays };
   }).sort((a, b) => b.currentHp - a.currentHp);
   return {
-    sv: { maxHp: sv.maxHp, decayPerDay: sv.decayPerDay, penalty: sv.penalty, days: sv.days, seasonOver: sv.seasonOver, schedule: sv.schedule || [] },
+    sv: { maxHp: sv.maxHp, decayPerDay: sv.decayPerDay, penalty: sv.penalty, days: sv.days, totalDays: sv.totalDays, seasonOver: sv.seasonOver, schedule: sv.schedule || [] },
     heroes,
     minDur: snapMinDur(st)
   };
@@ -471,7 +473,7 @@ function buildBingoView(state) {
   const c5 = heroStats.filter(h => (h.scoreWorkouts ?? h.validWorkouts ?? 0) >= 10).length >= Math.max(1, Math.ceil(3 * m));
   const c6 = acts.reduce((s, a) => s + (a.calories || 0), 0) >= 50000 * m;
   const c7 = heroStats.filter(h => (h.scoreMaxGap ?? h.maxGap ?? 0) >= 80).length >= Math.max(1, Math.ceil(2 * m));
-  const c8 = acts.filter(a => a.isManual).length <= Math.max(1, Math.floor(5 / m)); // Reward for auto-sync hardware
+  const c8 = acts.length >= Math.max(1, Math.ceil(5 * m)) && acts.filter(a => a.isManual).length <= Math.max(1, Math.floor(5 / m)); // Reward for auto-sync hardware
   const c9 = true; // Free space
   const grid = [
     { key: "長征先鋒", desc: `全服累計 ${Math.ceil(10 * m)} 次超過 1 小時的訓練`, ok: c1 },
@@ -481,7 +483,7 @@ function buildBingoView(state) {
     { key: "紀律部隊", desc: `伺服器至少有 ${Math.max(1, Math.ceil(3 * m))} 人達成 10 次出勤`, ok: c5 },
     { key: "脂肪燃燒者", desc: `全服大熱量！總計燃燒 ${(50000 * m).toLocaleString()} 卡路里`, ok: c6 },
     { key: "死神擦肩", desc: `尋找 ${Math.max(1, Math.ceil(2 * m))} 名極限 MaxGap 突破 80 的勇者`, ok: c7 },
-    { key: "真金不怕火", desc: `賽季手動打卡(無穿戴數據) 次數控制在 ${Math.max(1, Math.floor(5 / m))} 次內`, ok: c8 },
+    { key: "真金不怕火", desc: `全服累積至少 ${Math.max(1, Math.ceil(5 * m))} 次有效運動，且手動打卡控制在 ${Math.max(1, Math.floor(5 / m))} 次內`, ok: c8 },
     { key: "冒險起點", desc: "中央免費贈送的補給空間", ok: c9 },
   ];
   return { grid, heroStats, multiplier: m };
@@ -565,7 +567,7 @@ const BINGO_BOARDS = [
   { key: 'wk', label: '⌚ 紀律部隊', unit: '次', get: h => (h.scoreWorkouts ?? h.validWorkouts ?? 0) },
   { key: 'z2', label: '🟢 燃脂大師', unit: '次', get: h => (h.scoreZone2 ?? h.zone2Count ?? 0) },
   { key: 'trimp', label: '⚙️ 心跳超載', unit: '', get: h => (h.totalTrimp || 0) },
-  { key: 'elev', label: '🏔️ 征服巔峰', unit: 'm', get: h => (h.scoreElevation ?? h.totalElevation ?? 0) },
+  { key: 'long', label: '⏳ 長征先鋒', unit: '次', get: h => (h.scoreLongCount ?? h.longCount ?? 0) },
   { key: 'gap', label: '💥 限界突破', unit: '', get: h => (h.scoreMaxGap ?? h.maxGap ?? 0) }
 ];
 function bingoBoardLeaders(heroStats) {

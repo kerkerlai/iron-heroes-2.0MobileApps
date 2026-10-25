@@ -888,9 +888,11 @@ async function syncFromDatabaseCore() {
         eventBonusSurvivalHp: eventBonusSurvivalHp,
         totalElevation: validSeasonActs.reduce((s, a) => s + (a.elevation || 0), 0),
         zone2Count: validSeasonActs.filter(a => a.isZone2).length,
+        longCount: validSeasonActs.filter(a => (a.duration || 0) >= 60).length,
         // 計分專用 (已含 GM 限時活動加成)；畫面上顯示的 bpm / 次數仍使用上方原始值
         scoreMaxGap: Math.round((agg.scoreMaxGap || 0) * 10) / 10,
         scoreZone2: Math.round(validSeasonActs.reduce((s, a) => s + (a.isZone2 ? (a.scoreWeight ?? 1) : 0), 0) * 100) / 100,
+        scoreLongCount: Math.round(validSeasonActs.reduce((s, a) => s + ((a.duration || 0) >= 60 ? (a.scoreWeight ?? 1) : 0), 0) * 100) / 100,
         scoreWorkouts: Math.round(validSeasonActs.reduce((s, a) => s + (a.scoreWeight ?? 1), 0) * 100) / 100,
         scoreDuration: Math.round(validSeasonActs.reduce((s, a) => s + (a.durationScore ?? a.duration ?? 0), 0) * 10) / 10,
         scoreElevation: Math.round(validSeasonActs.reduce((s, a) => s + (a.elevation || 0) * (a.scoreWeight ?? 1), 0))

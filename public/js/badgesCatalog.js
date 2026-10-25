@@ -151,21 +151,72 @@ function computeSurvivalState(state, now) {
 
   const days = startYMD ? Math.max(0, diffDaysYMD(startYMD, refYMD)) : 0;
   let penalty = 0;
-  for (let i = 1; i <= days; i++) penalty += decayOn(addDaysYMD(startYMD, i));
+  const dailyPenalties = [{ ymd: startYMD || refYMD, penalty: 0 }];
+  for (let i = 1; i <= days; i++) {
+    const dYMD = addDaysYMD(startYMD, i);
+    penalty += decayOn(dYMD);
+    dailyPenalties.push({ ymd: dYMD, penalty });
+  }
+  const totalDays = startYMD ? (days + 1) : 1;
 
   const seasonOver = Boolean(endYMD && todayYMD > endYMD);
   const nextTickYMD = addDaysYMD(refYMD, 1);
   const currentDecay = decayOn(seasonOver ? refYMD : nextTickYMD);
 
-  return { maxHp, decayPerDay: currentDecay, days, penalty, schedule, startYMD, endYMD, refYMD, seasonOver };
+  return { maxHp, decayPerDay: currentDecay, days, totalDays, penalty, dailyPenalties, schedule, startYMD, endYMD, refYMD, seasonOver };
 }
 
-function computeSurvivalHeroHp(heroStat, survivalState) {
-  const sv = survivalState || computeSurvivalState();
+function computeSurvivalHeroHp(heroStat, survivalState, state) {
+  const sv = survivalState || computeSurvivalState(state);
   const food = Number(heroStat?.totalCalories) || 0;
   const scavenge = (Number(heroStat?.totalTrimp) || 0) * 1.5;
   const currentHp = Math.floor(sv.maxHp - sv.penalty + food + scavenge);
-  return { currentHp, isDead: currentHp <= 0, food, scavenge };
+  const totalDays = sv.totalDays || ((sv.days || 0) + 1);
+
+  // 計算「荒野堅持天數」= 開賽至今的存活天數 (每一天結束時生存值 > 0 的天數)
+  const st = state || window.gameState || {};
+  const heroName = heroStat?.name || '';
+  const dailyPens = Array.isArray(sv.dailyPenalties) && sv.dailyPenalties.length > 0
+    ? sv.dailyPenalties
+    : [{ ymd: sv.refYMD || '', penalty: sv.penalty || 0 }];
+
+  let survivedDays = 0;
+  if (heroStat && typeof heroStat.survivedDays === 'number' && !Array.isArray(st.activities)) {
+    survivedDays = heroStat.survivedDays;
+  } else if (Array.isArray(st.activities) && heroName && sv.startYMD) {
+    // 依日期統計該英雄在賽季中每日補充的 HP (Calories + TRIMP * 1.5)
+    const dailyRegenMap = {};
+    st.activities.forEach(a => {
+      if (a.hero !== heroName || !a.isValidAttack || a.isExcluded) return;
+      const ymd = normalizeDateYMD(a.date || a.time);
+      if (!ymd) return;
+      const regen = (Number(a.calories) || 0) + (Number(a.trimp) || 0) * 1.5;
+      dailyRegenMap[ymd] = (dailyRegenMap[ymd] || 0) + regen;
+    });
+    let cumRegen = 0;
+    dailyPens.forEach(dp => {
+      if (dp.ymd && dailyRegenMap[dp.ymd]) cumRegen += dailyRegenMap[dp.ymd];
+      const hpOnDay = Math.floor(sv.maxHp - dp.penalty + cumRegen);
+      if (hpOnDay > 0) survivedDays += 1;
+    });
+  } else {
+    dailyPens.forEach(dp => {
+      const hpOnDay = Math.floor(sv.maxHp - dp.penalty + food + scavenge);
+      if (hpOnDay > 0) survivedDays += 1;
+    });
+  }
+
+  return { currentHp, isDead: currentHp <= 0, food, scavenge, survivedDays, totalDays };
+}
+
+/**
+ * 英雄在本賽季「開賽至今的存活天數」(荒野堅持天數)
+ */
+function countHeroSurvivalDays(state, heroName, survivalState) {
+  const st = state || window.gameState || {};
+  const sv = survivalState || computeSurvivalState(st);
+  const heroStat = (st.heroStats || window.heroStatsList || []).find(h => h.name === heroName) || { name: heroName };
+  return computeSurvivalHeroHp(heroStat, sv, st).survivedDays;
 }
 
 /**
@@ -185,6 +236,7 @@ function countHeroActiveDays(state, heroName) {
 
 window.computeSurvivalState = computeSurvivalState;
 window.computeSurvivalHeroHp = computeSurvivalHeroHp;
+window.countHeroSurvivalDays = countHeroSurvivalDays;
 window.countHeroActiveDays = countHeroActiveDays;
 
 // ============================================================================
@@ -236,6 +288,7 @@ function getHeroHealthSummary(state, heroName, days = 7) {
     avgSleepMin: avg('sleep_minutes'),
     avgRestingHr: avg('resting_hr'),
     avgHrv: avg('hrv_ms'),
+    avgSpo2: avg('spo2_pct'),
     avgActiveMin: avg('active_minutes'),
     lastDate: rows[rows.length - 1]?.date || ''
   };
@@ -382,48 +435,58 @@ window.getActivityEventBonus = getActivityEventBonus;
 const BADGE_RARITY_META = {
   common: {
     key: 'common',
-    label: '銅級 • 初心者',
-    color: 'text-amber-200',
-    bg: 'bg-amber-950/30',
-    border: 'border-amber-700/70 bg-amber-950/30 text-amber-200',
-    glow: 'hover:border-amber-500/80',
-    tagClass: 'bg-amber-900/60 text-amber-300 border-amber-700'
+    label: '銅牌 • 初心者',
+    shortLabel: '銅牌',
+    frameHex: '#d97706',
+    color: 'text-orange-200',
+    bg: 'bg-orange-950/40',
+    border: 'border-2 border-orange-600/90 bg-gradient-to-br from-orange-950/60 to-amber-950/40 text-orange-200 shadow-[inset_0_0_8px_rgba(217,119,6,0.25)]',
+    glow: 'hover:border-orange-400 shadow-[0_0_10px_rgba(217,119,6,0.22)]',
+    tagClass: 'bg-orange-950/90 text-orange-300 border-orange-600'
   },
   rare: {
     key: 'rare',
-    label: '銀級 • 精銳',
-    color: 'text-cyan-300',
-    bg: 'bg-cyan-950/30',
-    border: 'border-cyan-500/60 bg-cyan-950/30 text-cyan-200',
-    glow: 'hover:border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.18)]',
-    tagClass: 'bg-cyan-950 text-cyan-300 border-cyan-600'
+    label: '銀牌 • 精銳',
+    shortLabel: '銀牌',
+    frameHex: '#22d3ee',
+    color: 'text-cyan-200',
+    bg: 'bg-cyan-950/40',
+    border: 'border-2 border-cyan-400/90 bg-gradient-to-br from-slate-800/80 via-cyan-950/60 to-slate-900/80 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.28)]',
+    glow: 'hover:border-cyan-300 shadow-[0_0_14px_rgba(6,182,212,0.32)]',
+    tagClass: 'bg-cyan-950 text-cyan-200 border-cyan-500'
   },
   epic: {
     key: 'epic',
-    label: '金級 • 史詩',
+    label: '金牌 • 史詩',
+    shortLabel: '金牌',
+    frameHex: '#fbbf24',
     color: 'text-amber-300',
-    bg: 'bg-amber-950/40',
-    border: 'border-amber-400/80 bg-amber-950/40 text-amber-300',
-    glow: 'hover:border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.28)]',
-    tagClass: 'bg-amber-950 text-amber-300 border-amber-500'
+    bg: 'bg-amber-950/50',
+    border: 'border-2 border-amber-400 bg-gradient-to-br from-yellow-900/60 via-amber-950/70 to-orange-950/60 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.38)]',
+    glow: 'hover:border-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+    tagClass: 'bg-amber-950 text-amber-300 border-amber-400'
   },
   legendary: {
     key: 'legendary',
-    label: '紫級 • 傳奇',
-    color: 'text-purple-300',
-    bg: 'bg-purple-950/40',
-    border: 'border-purple-500/80 bg-purple-950/40 text-purple-200',
-    glow: 'hover:border-purple-400 shadow-[0_0_18px_rgba(168,85,247,0.35)]',
-    tagClass: 'bg-purple-950 text-purple-300 border-purple-500'
+    label: '紫金 • 傳奇',
+    shortLabel: '紫金',
+    frameHex: '#c084fc',
+    color: 'text-purple-200',
+    bg: 'bg-purple-950/50',
+    border: 'border-2 border-purple-400 bg-gradient-to-br from-purple-900/75 via-fuchsia-950/65 to-amber-950/50 text-purple-100 shadow-[0_0_20px_rgba(192,132,252,0.48)]',
+    glow: 'hover:border-purple-300 shadow-[0_0_22px_rgba(168,85,247,0.55)]',
+    tagClass: 'bg-purple-950 text-purple-200 border-purple-400'
   },
   mythic: {
     key: 'mythic',
     label: '彩級 • 殿堂神話',
-    color: 'text-rose-300',
-    bg: 'bg-rose-950/50',
-    border: 'border-rose-500/90 bg-gradient-to-br from-rose-950/60 via-purple-950/50 to-amber-950/60 text-amber-200',
-    glow: 'hover:border-amber-300 shadow-[0_0_20px_rgba(244,63,94,0.45)]',
-    tagClass: 'bg-gradient-to-r from-rose-900 to-amber-900 text-amber-200 border-rose-400'
+    shortLabel: '彩級',
+    frameHex: '#f43f5e',
+    color: 'text-rose-200',
+    bg: 'bg-rose-950/60',
+    border: 'border-2 border-rose-400 bg-gradient-to-br from-rose-900/80 via-purple-900/70 to-amber-900/80 text-amber-100 ring-1 ring-amber-300/60 shadow-[0_0_24px_rgba(244,63,94,0.6)]',
+    glow: 'hover:border-amber-300 shadow-[0_0_26px_rgba(244,63,94,0.68)]',
+    tagClass: 'bg-gradient-to-r from-rose-900 via-purple-900 to-amber-900 text-amber-200 border-rose-400'
   }
 };
 
@@ -544,6 +607,15 @@ const BADGE_CATALOG = [
   { id: 'b078', num: 78, category: '8. 十項全能 (多元)', name: '聖母峰挑戰者', icon: '🏔️', rarity: 'legendary', condition: '生涯累積爬升高度突破 2,000 公尺', rule: { type: 'total_elev', min: 2000 } },
   { id: 'b079', num: 79, category: '8. 十項全能 (多元)', name: '雙修武器大師', icon: '🎭', rarity: 'rare', condition: '生涯體驗過 2 種以上不同的運動項目類型', rule: { type: 'unique_sports', min: 2 } },
   { id: 'b080', num: 80, category: '8. 十項全能 (多元)', name: '三棲全能王', icon: '🌈', rarity: 'epic', condition: '生涯體驗過 3 種以上不同的運動項目類型', rule: { type: 'unique_sports', min: 3 } },
+  { id: 'b301', num: 301, category: '8. 十項全能 (多元)', name: '三公里起跑', icon: '🏃', rarity: 'common', condition: '單次跑步 (Run) 距離達 3 公里以上', rule: { type: 'single_sport_dist', sports: ['run', 'virtualrun', 'trailrun'], min: 3 } },
+  { id: 'b302', num: 302, category: '8. 十項全能 (多元)', name: '五公里破風', icon: '🏃', rarity: 'rare', condition: '單次跑步 (Run) 距離達 5 公里以上', rule: { type: 'single_sport_dist', sports: ['run', 'virtualrun', 'trailrun'], min: 5 } },
+  { id: 'b303', num: 303, category: '8. 十項全能 (多元)', name: '十公里痛快', icon: '🏃', rarity: 'epic', condition: '單次跑步 (Run) 距離突破 10 公里', rule: { type: 'single_sport_dist', sports: ['run', 'virtualrun', 'trailrun'], min: 10 } },
+  { id: 'b304', num: 304, category: '8. 十項全能 (多元)', name: '半馬征服者', icon: '🏃', rarity: 'legendary', condition: '單次跑步 (Run) 距離突破 21 公里 (半程馬拉松)', rule: { type: 'single_sport_dist', sports: ['run', 'virtualrun', 'trailrun'], min: 21 } },
+  { id: 'b305', num: 305, category: '8. 十項全能 (多元)', name: '全馬神話', icon: '🏃', rarity: 'mythic', condition: '單次跑步 (Run) 距離突破 42 公里 (全程馬拉松)', rule: { type: 'single_sport_dist', sports: ['run', 'virtualrun', 'trailrun'], min: 42 } },
+  { id: 'b306', num: 306, category: '8. 十項全能 (多元)', name: '十里輕騎', icon: '🚴', rarity: 'common', condition: '單次自行車騎乘 (Ride) 距離達 10 公里以上', rule: { type: 'single_sport_dist', sports: ['ride', 'virtualride', 'ebikeride'], min: 10 } },
+  { id: 'b307', num: 307, category: '8. 十項全能 (多元)', name: '三十里巡航', icon: '🚴', rarity: 'rare', condition: '單次自行車騎乘 (Ride) 距離達 30 公里以上', rule: { type: 'single_sport_dist', sports: ['ride', 'virtualride', 'ebikeride'], min: 30 } },
+  { id: 'b308', num: 308, category: '8. 十項全能 (多元)', name: '五十里破風手', icon: '🚴', rarity: 'epic', condition: '單次自行車騎乘 (Ride) 距離突破 50 公里', rule: { type: 'single_sport_dist', sports: ['ride', 'virtualride', 'ebikeride'], min: 50 } },
+  { id: 'b309', num: 309, category: '8. 十項全能 (多元)', name: '百公里鐵騎王', icon: '🚴', rarity: 'legendary', condition: '單次自行車騎乘 (Ride) 距離突破 100 公里', rule: { type: 'single_sport_dist', sports: ['ride', 'virtualride', 'ebikeride'], min: 100 } },
 
   // --------------------------------------------------------------------------
   // 系列九：【幸運彩蛋】趣味巧合與奇蹟系列 (#081 ~ #090)
@@ -571,7 +643,21 @@ const BADGE_CATALOG = [
   { id: 'b097', num: 97, category: '10. 殿堂神話 (傳奇)', name: '晴天戰神', icon: '☀️', rarity: 'legendary', condition: '曾獲得 GM 頒發的「☀️ 烈日戰神」頭像光環榮譽或手動授勳', rule: { type: 'gm_fx', fx: 'sunny' } },
   { id: 'b098', num: 98, category: '10. 殿堂神話 (傳奇)', name: '雨中戰神', icon: '🌧️', rarity: 'legendary', condition: '曾獲得 GM 頒發的「🌧️ 風雨行者」頭像光環榮譽或手動授勳', rule: { type: 'gm_fx', fx: 'rainy' } },
   { id: 'b099', num: 99, category: '10. 殿堂神話 (傳奇)', name: '爆氣覺醒', icon: '🔥', rarity: 'legendary', condition: '曾獲得 GM 頒發的「🔥 爆氣覺醒」頭像光環榮譽或手動授勳', rule: { type: 'gm_fx', fx: 'aura' } },
-  { id: 'b100', num: 100, category: '10. 殿堂神話 (傳奇)', name: '鋼鐵大滿貫', icon: '👑', rarity: 'mythic', condition: '生涯累計解鎖達 50 枚以上傳奇徽章的殿堂級英雄', rule: { type: 'badge_collector', min: 50 } }
+  { id: 'b100', num: 100, category: '10. 殿堂神話 (傳奇)', name: '鋼鐵大滿貫', icon: '👑', rarity: 'mythic', condition: '生涯累計解鎖達 50 枚以上傳奇徽章的殿堂級英雄', rule: { type: 'badge_collector', min: 50 } },
+  { id: 'b310', num: 310, category: '10. 殿堂神話 (傳奇)', name: '賽季新王', icon: '👑', rarity: 'rare', condition: '於已封存的歷代賽季快照中，累計奪得 1 次資料片個人總冠軍 / MVP 榜首', rule: { type: 'snapshot_champion', min: 1 } },
+  { id: 'b311', num: 311, category: '10. 殿堂神話 (傳奇)', name: '雙冠連霸王', icon: '👑', rarity: 'epic', condition: '於已封存的歷代賽季快照中，累計奪得 2 次資料片個人總冠軍 / MVP 榜首', rule: { type: 'snapshot_champion', min: 2 } },
+  { id: 'b312', num: 312, category: '10. 殿堂神話 (傳奇)', name: '三冠王朝霸主', icon: '👑', rarity: 'legendary', condition: '於已封存的歷代賽季快照中，累計奪得 3 次資料片個人總冠軍 / MVP 榜首', rule: { type: 'snapshot_champion', min: 3 } },
+  { id: 'b313', num: 313, category: '10. 殿堂神話 (傳奇)', name: '五冠不朽神帝', icon: '👑', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，累計奪得 5 次資料片個人總冠軍 / MVP 榜首', rule: { type: 'snapshot_champion', min: 5 } },
+  { id: 'b314', num: 314, category: '10. 殿堂神話 (傳奇)', name: '初登頒獎台', icon: '🏆', rarity: 'common', condition: '於已封存的歷代賽季快照中，個人排名站上全服前三名 (Top 3) 達 1 次', rule: { type: 'snapshot_podium', min: 1 } },
+  { id: 'b315', num: 315, category: '10. 殿堂神話 (傳奇)', name: '頒獎台常客', icon: '🏆', rarity: 'rare', condition: '於已封存的歷代賽季快照中，個人排名站上全服前三名 (Top 3) 達 3 次', rule: { type: 'snapshot_podium', min: 3 } },
+  { id: 'b316', num: 316, category: '10. 殿堂神話 (傳奇)', name: '五度奪牌名將', icon: '🏆', rarity: 'epic', condition: '於已封存的歷代賽季快照中，個人排名站上全服前三名 (Top 3) 達 5 次', rule: { type: 'snapshot_podium', min: 5 } },
+  { id: 'b317', num: 317, category: '10. 殿堂神話 (傳奇)', name: '十度無雙戰神', icon: '🏆', rarity: 'legendary', condition: '於已封存的歷代賽季快照中，個人排名站上全服前三名 (Top 3) 達 10 次', rule: { type: 'snapshot_podium', min: 10 } },
+  { id: 'b318', num: 318, category: '10. 殿堂神話 (傳奇)', name: '冠軍小隊功臣', icon: '🛡️', rarity: 'rare', condition: '於已封存的歷代賽季快照中，所屬公會奪得總冠軍(或全服合作通關)且本人有出勤貢獻達 1 季', rule: { type: 'snapshot_guild_win', min: 1 } },
+  { id: 'b319', num: 319, category: '10. 殿堂神話 (傳奇)', name: '三冠王朝核心', icon: '🛡️', rarity: 'epic', condition: '於已封存的歷代賽季快照中，所屬公會奪得總冠軍(或全服合作通關)且本人有出勤貢獻達 3 季', rule: { type: 'snapshot_guild_win', min: 3 } },
+  { id: 'b320', num: 320, category: '10. 殿堂神話 (傳奇)', name: '五冠榮耀元勳', icon: '🛡️', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，所屬公會奪得總冠軍(或全服合作通關)且本人有出勤貢獻達 5 季', rule: { type: 'snapshot_guild_win', min: 5 } },
+  { id: 'b321', num: 321, category: '10. 殿堂神話 (傳奇)', name: '賽季見證者', icon: '📜', rarity: 'common', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 1 個賽季', rule: { type: 'snapshot_veteran', min: 1 } },
+  { id: 'b322', num: 322, category: '10. 殿堂神話 (傳奇)', name: '三朝鋼鐵元老', icon: '📜', rarity: 'epic', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 3 個賽季', rule: { type: 'snapshot_veteran', min: 3 } },
+  { id: 'b323', num: 323, category: '10. 殿堂神話 (傳奇)', name: '五朝不朽活化石', icon: '📜', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 5 個賽季', rule: { type: 'snapshot_veteran', min: 5 } }
 ];
 
 BADGE_CATALOG.forEach(b => {
@@ -792,6 +878,7 @@ function evaluateAllHeroesBadges(state) {
       const maxHr = Number(act.maxHr) || 0;
       const gap = Number(act.gapVal !== undefined ? act.gapVal : act.gap) || Math.max(0, maxHr - avgHr);
       const elev = Number(act.elevation) || 0;
+      const dist = Number(act.distance) || 0;
       const suffer = Number(act.rawSuffer !== undefined ? act.rawSuffer : act.suffer) || 0;
       // 徽章一律採計原始數值 (不含 GM 限時活動加成)，與其他徽章判定標準一致
       const bossRules = targetState.boss?.rules || {};
@@ -933,6 +1020,11 @@ function evaluateAllHeroesBadges(state) {
             matched = sumSport >= r.min;
             break;
           }
+          case 'single_sport_dist': {
+            const targetSports = Array.isArray(r.sports) ? r.sports : [r.sport];
+            matched = targetSports.includes(sportLower) && dist >= r.min;
+            break;
+          }
           case 'total_elev':
             matched = cumElev >= r.min;
             break;
@@ -999,8 +1091,17 @@ function evaluateAllHeroesBadges(state) {
       });
     });
 
-    // 4. 檢查「大滿貫收藏家」類型徽章 (如解鎖滿 50 枚徽章)
-    //    只計算經典圖鑑 (BADGE_CATALOG) 內的徽章，外掛徽章 (如 GM 手動授勳的手機健康徽章) 不影響此計數
+    resultByHero[heroName] = unlockedMap;
+  });
+
+  // 3.5 自動掃描已封存之歷史賽季快照 (snapshots)，頒發歷代賽季榮耀系列徽章 (b310~b323)
+  evaluateSnapshotHonorBadges(targetState, heroes, resultByHero);
+
+  // 4. 檢查「大滿貫收藏家」類型徽章 (如解鎖滿 50 枚徽章)
+  //    只計算經典圖鑑 (BADGE_CATALOG) 內的徽章，外掛徽章 (如 GM 手動授勳的手機健康徽章) 不影響此計數
+  heroes.forEach(h => {
+    const heroName = h.name;
+    const unlockedMap = resultByHero[heroName] || {};
     const classicUnlocked = Object.keys(unlockedMap).filter(bId => classicBadgeIds.has(bId));
     const currentUnlockedCount = classicUnlocked.length;
     BADGE_CATALOG.forEach(badge => {
@@ -1018,8 +1119,6 @@ function evaluateAllHeroesBadges(state) {
         }
       }
     });
-
-    resultByHero[heroName] = unlockedMap;
   });
 
   // 5. 外掛徽章模組 (如 📱 手機健康徽章)：在經典徽章全部算完後才執行，不會影響經典徽章結果
@@ -1038,4 +1137,431 @@ function evaluateAllHeroesBadges(state) {
   return resultByHero;
 }
 
+/**
+ * 掃描已封存且顯示中的歷史賽季快照 (gameState.snapshots)，自動計算：
+ *  - snapshot_champion: 個人總冠軍 / 榜首 / MVP 次數
+ *  - snapshot_podium:   個人全服前三名 (Top 3) 次數
+ *  - snapshot_guild_win: 所屬公會奪冠(或全服合作通關)且本人有出勤貢獻之賽季數
+ *  - snapshot_veteran:  有實際出勤參戰紀錄之賽季數
+ */
+function evaluateSnapshotHonorBadges(targetState, heroes, resultByHero) {
+  const rawSnaps = Array.isArray(targetState?.snapshots) ? targetState.snapshots : [];
+  // 由舊到新排序，讓達成日期與賽季名稱精準對應第 N 次達成的快照
+  const visibleSnaps = rawSnaps
+    .filter(s => s && s.isVisible !== false)
+    .slice()
+    .sort((a, b) => {
+      const da = normalizeDateYMD(a.archivedAt || a.seasonEnd || a.createdAt) || '0000/00/00';
+      const db = normalizeDateYMD(b.archivedAt || b.seasonEnd || b.createdAt) || '0000/00/00';
+      return da.localeCompare(db);
+    });
+  if (!visibleSnaps.length) return;
+
+  const heroGuildFallback = {};
+  (heroes || []).forEach(h => { if (h && h.name) heroGuildFallback[h.name] = h.guild || ''; });
+
+  const statsByHero = {};
+  (heroes || []).forEach(h => {
+    statsByHero[h.name] = {
+      champions: [], // [{ date, label }]
+      podiums: [],
+      guildWins: [],
+      veterans: []
+    };
+  });
+
+  const hasPositiveContribution = (row) => {
+    if (!row || typeof row !== 'object') return false;
+    return (Number(row.workouts) || 0) > 0 ||
+           (Number(row.dmg) || 0) > 0 ||
+           (Number(row.total) || 0) > 0 ||
+           (Number(row.power) || 0) > 0 ||
+           (Number(row.aerobicScore) || 0) > 0 ||
+           (Number(row.anaerobicScore) || 0) > 0 ||
+           (Number(row.regen) || 0) > 0 ||
+           (Number(row.km) || 0) > 0 ||
+           (Number(row.totalDamage) || 0) > 0 ||
+           (Number(row.fullDays) || 0) > 0 ||
+           (Number(row.days) || 0) > 0 ||
+           (Number(row.totalXp) || 0) > 0 ||
+           (Number(row.count) || 0) > 0 ||
+           (Number(row.lines) || 0) > 0;
+  };
+
+  visibleSnaps.forEach(snap => {
+    const snapDate = normalizeDateYMD(snap.archivedAt || snap.seasonEnd || snap.createdAt) || getTodayYMD();
+    const snapTitle = snap.seasonTitle || snap.title || '歷史賽季';
+    const v = snap.view || snap || {};
+    const mode = v.mode || snap.mode || 'classic';
+
+    const championsMap = new Map(); // heroName -> reason
+    const podiumMap = new Map();    // heroName -> reason
+    const veteranSet = new Set();   // heroName
+    const winningGuilds = new Set();
+    let isCoopVictory = false;
+
+    const addChamp = (name, title) => {
+      if (name && statsByHero[name] && !championsMap.has(name)) {
+        championsMap.set(name, `【${snapTitle}】${title}`);
+      }
+    };
+    const addPodium = (name, rank) => {
+      if (name && statsByHero[name] && !podiumMap.has(name)) {
+        podiumMap.set(name, `【${snapTitle}】全服第 ${rank} 名`);
+      }
+    };
+    const addTop3FromList = (list) => {
+      if (!Array.isArray(list)) return;
+      const activeList = list.filter(hasPositiveContribution);
+      activeList.forEach((row, idx) => {
+        if (row?.name && statsByHero[row.name]) {
+          veteranSet.add(row.name);
+          if (idx === 0) addChamp(row.name, '個人榜首總冠軍');
+          if (idx < 3) addPodium(row.name, idx + 1);
+        }
+      });
+    };
+
+    if (mode === 'classic') {
+      const aeroChamp = v.champions?.aerobic || snap.aerobicChampion;
+      const anaChamp = v.champions?.anaerobic || snap.anaerobicChampion;
+      if (aeroChamp?.name && hasPositiveContribution(aeroChamp)) {
+        addChamp(aeroChamp.name, '有氧總冠軍');
+        addPodium(aeroChamp.name, 1);
+        veteranSet.add(aeroChamp.name);
+      }
+      if (anaChamp?.name && hasPositiveContribution(anaChamp)) {
+        addChamp(anaChamp.name, '無氧總冠軍');
+        addPodium(anaChamp.name, 1);
+        veteranSet.add(anaChamp.name);
+      }
+      const board = Array.isArray(v.heroBoard) ? v.heroBoard : (Array.isArray(snap.heroBoard) ? snap.heroBoard : []);
+      const aeroSorted = board.filter(hasPositiveContribution).slice().sort((a, b) => (Number(b.aerobicScore) || 0) - (Number(a.aerobicScore) || 0));
+      const anaSorted = board.filter(hasPositiveContribution).slice().sort((a, b) => (Number(b.anaerobicScore) || 0) - (Number(a.anaerobicScore) || 0));
+      addTop3FromList(aeroSorted);
+      addTop3FromList(anaSorted);
+      const gBoard = Array.isArray(v.guildBoard) ? v.guildBoard : (Array.isArray(snap.guildBoard) ? snap.guildBoard : []);
+      if (gBoard[0]?.name) winningGuilds.add(gBoard[0].name);
+    } else if (mode === 'rpg_talent' || mode === 'rpg') {
+      const mvp = v.mvp || snap.mvp;
+      if (mvp?.name && hasPositiveContribution(mvp)) addChamp(mvp.name, '全服總 MVP');
+      const ranking = Array.isArray(v.heroRanking) ? v.heroRanking : (Array.isArray(snap.rpgHeroRanking) ? snap.rpgHeroRanking : []);
+      addTop3FromList(ranking);
+      const gRank = Array.isArray(v.guildRanking) ? v.guildRanking : (Array.isArray(snap.rpgGuildRanking) ? snap.rpgGuildRanking : []);
+      if (gRank[0]?.name) winningGuilds.add(gRank[0].name);
+    } else if (mode === 'world_boss' || mode === 'boss') {
+      const mvp = v.mvp || snap.mvp;
+      if (mvp?.name && hasPositiveContribution(mvp)) addChamp(mvp.name, '屠龍首席 MVP');
+      const board = Array.isArray(v.dmgBoard) ? v.dmgBoard : (Array.isArray(snap.bossLeaderboard) ? snap.bossLeaderboard : []);
+      addTop3FromList(board);
+      const gBoard = Array.isArray(v.guildBoard) ? v.guildBoard : [];
+      if (gBoard[0]?.name) winningGuilds.add(gBoard[0].name);
+      if (v.boss && Number(v.boss.currHp) <= 0) isCoopVictory = true;
+    } else if (mode === 'faction_war') {
+      const f1 = Array.isArray(v.f1) ? v.f1 : [];
+      const f2 = Array.isArray(v.f2) ? v.f2 : [];
+      const combined = [...f1, ...f2].filter(hasPositiveContribution).sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
+      if (f1[0]?.name && hasPositiveContribution(f1[0])) addChamp(f1[0].name, '陣營首席戰神');
+      if (f2[0]?.name && hasPositiveContribution(f2[0])) addChamp(f2[0].name, '陣營首席戰神');
+      addTop3FromList(combined);
+      const sum1 = Number(v.sum1) || 0;
+      const sum2 = Number(v.sum2) || 0;
+      if (sum1 > sum2 && v.split?.[1]) v.split[1].forEach(g => winningGuilds.add(g));
+      else if (sum2 > sum1 && v.split?.[2]) v.split[2].forEach(g => winningGuilds.add(g));
+    } else if (mode === 'survival') {
+      const list = Array.isArray(v.list) ? v.list : [];
+      addTop3FromList(list);
+      const gBoard = Array.isArray(v.guildBoard) ? v.guildBoard : [];
+      if (gBoard[0]?.name) winningGuilds.add(gBoard[0].name);
+    } else if (mode === 'base_builder') {
+      const contrib = Array.isArray(v.contrib) ? v.contrib : [];
+      addTop3FromList(contrib);
+      if (v.allDone) isCoopVictory = true;
+      const gBoard = Array.isArray(v.guildBoard) ? v.guildBoard : [];
+      if (gBoard[0]?.name) winningGuilds.add(gBoard[0].name);
+    } else if (mode === 'bingo') {
+      const board = Array.isArray(v.board) ? v.board : [];
+      addTop3FromList(board);
+      const gBoard = Array.isArray(v.guildBoard) ? v.guildBoard : [];
+      if (gBoard[0]?.name) winningGuilds.add(gBoard[0].name);
+    } else {
+      // 手機同步資料片 (expedition / dream / flame / monastery)
+      const d = v.data || v || {};
+      const hList = Array.isArray(d.heroes) ? d.heroes : [];
+      addTop3FromList(hList);
+      const gList = Array.isArray(d.guilds) ? d.guilds : [];
+      if (gList[0]?.name) winningGuilds.add(gList[0].name);
+      if (d.victory) isCoopVictory = true;
+    }
+
+    // 補充掃描快照內的 activities，確保有實際出勤的英雄都計入 veteranSet
+    if (Array.isArray(snap.activities)) {
+      snap.activities.forEach(a => {
+        if (a && a.hero && !a.isExcluded && statsByHero[a.hero]) veteranSet.add(a.hero);
+      });
+    }
+
+    Object.keys(statsByHero).forEach(heroName => {
+      const st = statsByHero[heroName];
+      if (championsMap.has(heroName)) st.champions.push({ date: snapDate, label: championsMap.get(heroName) });
+      if (podiumMap.has(heroName)) st.podiums.push({ date: snapDate, label: podiumMap.get(heroName) });
+      if (veteranSet.has(heroName)) {
+        st.veterans.push({ date: snapDate, label: `參戰【${snapTitle}】` });
+        const heroGuild = snap.heroInfo?.[heroName]?.guild || heroGuildFallback[heroName] || '';
+        if (isCoopVictory || (heroGuild && winningGuilds.has(heroGuild))) {
+          st.guildWins.push({ date: snapDate, label: `【${snapTitle}】冠軍公會/全服通關功臣` });
+        }
+      }
+    });
+  });
+
+  // 比對 b310~b323 規則並寫入 resultByHero
+  const snapshotBadges = BADGE_CATALOG.filter(b => b.rule && String(b.rule.type || '').startsWith('snapshot_'));
+  Object.keys(statsByHero).forEach(heroName => {
+    const unlockedMap = resultByHero[heroName];
+    if (!unlockedMap) return;
+    const st = statsByHero[heroName];
+    snapshotBadges.forEach(badge => {
+      if (unlockedMap[badge.id]) return;
+      const r = badge.rule;
+      let arr = [];
+      if (r.type === 'snapshot_champion') arr = st.champions;
+      else if (r.type === 'snapshot_podium') arr = st.podiums;
+      else if (r.type === 'snapshot_guild_win') arr = st.guildWins;
+      else if (r.type === 'snapshot_veteran') arr = st.veterans;
+      if (arr.length >= (r.min || 1)) {
+        const hit = arr[(r.min || 1) - 1] || arr[arr.length - 1];
+        unlockedMap[badge.id] = {
+          unlockedAt: hit.date || getTodayYMD(),
+          actName: hit.label,
+          actTitle: hit.label
+        };
+      }
+    });
+  });
+}
+
+// ============================================================================
+// 5. MULTI-TIER PROGRESSIVE BADGE SLOT ENGINE (132 格進階升框系統)
+//    - 將「同項目、不同難度門檻」的徽章合併為單一 UI 徽章格 (Slot)
+//    - 依達成的最高階級自動換上【銅牌 / 銀牌 / 金牌 / 紫金 / 彩級】外框
+//    - 英雄卡與資料庫仍保留完整 331 階獨立達成紀錄與計數
+// ============================================================================
+const SLOT_DEFINITIONS = [
+  // 經典系列 1~10 (22 個多階合併格 + 35 個獨立特殊格 = 57 格)
+  { id: 'slot_workouts', name: '鋼鐵出勤王', icon: '⚔️', badgeIds: ['b001','b002','b003','b004','b005','b006','b007','b008','b009','b010'] },
+  { id: 'slot_single_cal', name: '暴食粉碎者', icon: '🍲', badgeIds: ['b011','b012','b013','b014','b015'] },
+  { id: 'slot_total_cal', name: '人間熔爐', icon: '🔥', badgeIds: ['b016','b017','b018','b019','b020'] },
+  { id: 'slot_single_dur', name: '耐力長征者', icon: '⏳', badgeIds: ['b021','b022','b023','b024','b025'] },
+  { id: 'slot_total_dur', name: '時間領主', icon: '🧭', badgeIds: ['b026','b027','b028','b029','b030'] },
+  { id: 'slot_single_avghr', name: '引擎超轉', icon: '🚀', badgeIds: ['b031','b032','b033'] },
+  { id: 'slot_single_maxhr', name: '極限心跳', icon: '💥', badgeIds: ['b034','b035'] },
+  { id: 'slot_single_gap', name: '無氧落差王', icon: '👹', badgeIds: ['b036','b037','b038','b039'] },
+  { id: 'slot_zone2_count', name: '有氧燃脂宗師', icon: '💚', badgeIds: ['b041','b042','b043','b044','b045','b046','b047','b048'] },
+  { id: 'slot_single_zone2_dur', name: '長效有氧巡航', icon: '🛸', badgeIds: ['b049','b050'] },
+  { id: 'slot_streak_days', name: '不滅連斬', icon: '🔥', badgeIds: ['b061','b062','b063','b064','b065','b066'] },
+  { id: 'slot_same_day_count', name: '單日多連星', icon: '⚡', badgeIds: ['b067','b068'] },
+  { id: 'slot_sport_run', name: '馬拉松跑魂', icon: '🏃‍♂️', badgeIds: ['b071','b072'] },
+  { id: 'slot_sport_weight', name: '重訓巨石', icon: '🏋️', badgeIds: ['b073','b074'] },
+  { id: 'slot_total_elev', name: '巔峰攀登者', icon: '🏔️', badgeIds: ['b077','b078'] },
+  { id: 'slot_unique_sports', name: '多棲武器大師', icon: '🌈', badgeIds: ['b079','b080'] },
+  { id: 'slot_run_dist', name: '破風長跑', icon: '🏃', badgeIds: ['b301','b302','b303','b304','b305'] },
+  { id: 'slot_ride_dist', name: '百里鐵騎', icon: '🚴', badgeIds: ['b306','b307','b308','b309'] },
+  { id: 'slot_season_champion', name: '歷代賽季霸主', icon: '👑', badgeIds: ['b310','b311','b312','b313'] },
+  { id: 'slot_season_podium', name: '榮耀領獎台', icon: '🏆', badgeIds: ['b314','b315','b316','b317'] },
+  { id: 'slot_season_guild_win', name: '冠軍公會功臣', icon: '🛡️', badgeIds: ['b318','b319','b320'] },
+  { id: 'slot_season_veteran', name: '百戰元老', icon: '📜', badgeIds: ['b321','b322','b323'] },
+
+  // 手機健康系列 11~26 (50 個多階合併格 + 25 個獨立彩蛋格 = 75 格)
+  { id: 'slot_mh_single_steps', name: '單日步數突破', icon: '👣', badgeIds: ['b101','b102','b103','b104','b105','b106','b107','b108','b109','b110','b111','b112'] },
+  { id: 'slot_mh_total_steps', name: '萬里長征總步數', icon: '🗺️', badgeIds: ['b113','b114','b115','b116','b117','b118','b119','b120','b121','b122'] },
+  { id: 'slot_mh_10k_days', name: '萬步達標天數', icon: '🎯', badgeIds: ['b123','b124','b125','b126'] },
+  { id: 'slot_mh_streak_8k', name: '八千步連擊', icon: '🔥', badgeIds: ['b127','b128','b129','b130'] },
+  { id: 'slot_mh_streak_10k', name: '萬步連擊神話', icon: '⚡', badgeIds: ['b131','b132','b133','b134','b135','b136','b137'] },
+  { id: 'slot_mh_week_steps', name: '單週步數霸主', icon: '📅', badgeIds: ['b138','b139'] },
+  { id: 'slot_mh_sleep7_days', name: '優質睡眠累積', icon: '😴', badgeIds: ['b140','b141','b142','b143','b144','b145','b146'] },
+  { id: 'slot_mh_sleep7_streak', name: '連夜好眠連擊', icon: '🌙', badgeIds: ['b147','b148','b149','b150','b151'] },
+  { id: 'slot_mh_week_sleep', name: '全週睡飽大師', icon: '🛌', badgeIds: ['b152','b153'] },
+  { id: 'slot_mh_bed23_days', name: '早睡養生達人', icon: '🕚', badgeIds: ['b154','b155','b156','b157'] },
+  { id: 'slot_mh_bed_streak', name: '早睡連擊王', icon: '🌠', badgeIds: ['b158','b159'] },
+  { id: 'slot_mh_wake_early_days', name: '晨型破曉者', icon: '🌅', badgeIds: ['b160','b161','b162','b163'] },
+  { id: 'slot_mh_early_both_streak', name: '早睡早起連擊', icon: '☀️', badgeIds: ['b164','b165','b166','b167'] },
+  { id: 'slot_mh_reg_bed7', name: '規律入睡生理鐘', icon: '🕰️', badgeIds: ['b168','b169','b170'] },
+  { id: 'slot_mh_reg_bed_long', name: '長效入睡定時器', icon: '⏱️', badgeIds: ['b171','b178'] },
+  { id: 'slot_mh_reg_wake7', name: '規律晨起生理鐘', icon: '⏰', badgeIds: ['b172','b173','b174'] },
+  { id: 'slot_mh_reg_wake_long', name: '長效晨起定時器', icon: '🔔', badgeIds: ['b175','b179'] },
+  { id: 'slot_mh_weekend_wake', name: '週末不賴床', icon: '🏖️', badgeIds: ['b176','b177'] },
+  { id: 'slot_mh_single_active', name: '單日活動分鐘', icon: '⚡', badgeIds: ['b180','b181','b182','b183','b184'] },
+  { id: 'slot_mh_week_active', name: '單週活動分鐘', icon: '🔥', badgeIds: ['b185','b186','b187','b188'] },
+  { id: 'slot_mh_active30_days', name: '活力30分天數', icon: '💪', badgeIds: ['b189','b190','b191'] },
+  { id: 'slot_mh_active30_streak', name: '活力30分連擊', icon: '🚀', badgeIds: ['b192','b193'] },
+  { id: 'slot_mh_single_rhr', name: '超低靜止心率', icon: '💓', badgeIds: ['b194','b195','b196','b197','b198','b199'] },
+  { id: 'slot_mh_rhr_drop', name: '心肺進化降幅', icon: '📉', badgeIds: ['b200','b201','b202','b203'] },
+  { id: 'slot_mh_rhr_rolling', name: '連續低心率穩定', icon: '🫀', badgeIds: ['b204','b205'] },
+  { id: 'slot_mh_rhr_days', name: '靜心觀測紀錄', icon: '🩺', badgeIds: ['b206','b207'] },
+  { id: 'slot_mh_single_kcal', name: '單日活動熱量', icon: '🔥', badgeIds: ['b208','b209','b210','b211','b212','b213'] },
+  { id: 'slot_mh_total_kcal', name: '累積活動總熱量', icon: '🌋', badgeIds: ['b214','b215','b216','b217','b218'] },
+  { id: 'slot_mh_week_kcal', name: '單週燃脂狂潮', icon: '☄️', badgeIds: ['b219','b220'] },
+  { id: 'slot_mh_wk_steps', name: '運動日萬步雙修', icon: '🏃', badgeIds: ['b221','b222','b223'] },
+  { id: 'slot_mh_wk_sleep_before', name: '睡飽再戰', icon: '🔋', badgeIds: ['b224','b225','b226'] },
+  { id: 'slot_mh_wk_sleep_after', name: '練後黃金修復', icon: '🛌', badgeIds: ['b227','b228'] },
+  { id: 'slot_mh_iron_week', name: '文武雙全鐵人週', icon: '🛡️', badgeIds: ['b230','b233','b234'] },
+  { id: 'slot_mh_allround_days', name: '三環全滿天數', icon: '⭕', badgeIds: ['b231','b232'] },
+  { id: 'slot_mh_sync_days', name: '雲端同步累積', icon: '📡', badgeIds: ['b235','b236','b237','b238','b239','b240','b241'] },
+  { id: 'slot_mh_sync_streak', name: '雲端同步連擊', icon: '🔗', badgeIds: ['b242','b243','b244','b245'] },
+  { id: 'slot_mh_weekend_steps', name: '週末健行王', icon: '🥾', badgeIds: ['b247','b248','b249','b250'] },
+  { id: 'slot_mh_workday_rhythm', name: '平日全勤節奏', icon: '💼', badgeIds: ['b251','b255'] },
+  { id: 'slot_mh_weekend_sleep', name: '週末睡眠修復', icon: '🛌', badgeIds: ['b252','b253'] },
+  { id: 'slot_mh_who_weeks', name: 'WHO運動量達標週', icon: '🌍', badgeIds: ['b256','b257'] },
+  { id: 'slot_mh_70k_weeks', name: '週行七萬步', icon: '🦵', badgeIds: ['b258','b259'] },
+  { id: 'slot_mh_hrv_mastery', name: 'HRV身心平衡', icon: '🌿', badgeIds: ['b260','b261','b262','b265'] },
+  { id: 'slot_mh_hrv_trend', name: 'HRV巔峰突破', icon: '📈', badgeIds: ['b263','b264'] },
+  { id: 'slot_mh_spo2', name: '高地血氧飽和', icon: '🫁', badgeIds: ['b266','b267','b268','b269'] },
+  { id: 'slot_mh_balance_days', name: '三維完美平衡日', icon: '☯️', badgeIds: ['b284','b285','b286','b287'] },
+  { id: 'slot_mh_balance_streak', name: '完美平衡連擊', icon: '🌟', badgeIds: ['b288','b289'] },
+  { id: 'slot_mh_morning_night_combo', name: '晨練夜眠黃金律', icon: '🌅', badgeIds: ['b290','b291'] },
+  { id: 'slot_mh_collector', name: '健康徽章大滿貫', icon: '🎖️', badgeIds: ['b292','b293','b294','b295','b296'] },
+  { id: 'slot_mh_endurance_steps', name: '百萬步萬里神行', icon: '👟', badgeIds: ['b297','b299'] },
+  { id: 'slot_mh_supreme_king', name: '三冠至尊傳奇', icon: '👑', badgeIds: ['b298','b300'] }
+];
+
+const BADGE_TO_SLOT_DEF = new Map();
+SLOT_DEFINITIONS.forEach(def => {
+  def.badgeIds.forEach(bId => BADGE_TO_SLOT_DEF.set(bId, def));
+});
+
+/**
+ * 將目前生效的徽章圖鑑濃縮為「進階升框徽章格 (Badge Slots)」陣列。
+ * - 若傳入 heroName，會一併附上該英雄在此格的已解鎖最高階級、外框稀有度、進度標籤與下一階目標。
+ */
+window.getActiveBadgeSlots = function(state, heroName) {
+  const st = state || window.gameState || {};
+  const catalog = window.getActiveBadgeCatalog(st);
+  const byId = new Map(catalog.map(b => [b.id, b]));
+  const heroUnlockedMap = (heroName && st.heroBadges && st.heroBadges[heroName]) ? st.heroBadges[heroName] : {};
+
+  // 為確保全服戰爭迷霧判定 (isGloballyRevealed)：檢查是否有任何一位英雄已解鎖該階
+  const allHeroesBadges = st.heroBadges || {};
+  const isBadgeUnlockedByAnyone = (bId) => {
+    for (const hKey of Object.keys(allHeroesBadges)) {
+      if (allHeroesBadges[hKey] && allHeroesBadges[hKey][bId]) return true;
+    }
+    return false;
+  };
+
+  const seenSlotIds = new Set();
+  const slots = [];
+
+  catalog.forEach(b => {
+    const def = BADGE_TO_SLOT_DEF.get(b.id);
+    const slotId = def ? def.id : b.id;
+    if (seenSlotIds.has(slotId)) return;
+    seenSlotIds.add(slotId);
+
+    const tiers = def
+      ? def.badgeIds.map(id => byId.get(id)).filter(Boolean)
+      : [b];
+    if (!tiers.length) return;
+
+    const firstTier = tiers[0];
+    const isMultiTier = tiers.length > 1;
+    const totalTiers = tiers.length;
+
+    const unlockedTiers = [];
+    let highestUnlockedIdx = -1;
+    tiers.forEach((tb, idx) => {
+      const rec = heroUnlockedMap[tb.id];
+      if (rec) {
+        unlockedTiers.push({ badge: tb, tierIndex: idx, record: rec });
+        highestUnlockedIdx = idx;
+      }
+    });
+
+    const unlockedCount = unlockedTiers.length;
+    const isUnlocked = unlockedCount > 0;
+    const isMaxed = unlockedCount >= totalTiers;
+    const currentTier = highestUnlockedIdx >= 0 ? tiers[highestUnlockedIdx] : null;
+    const currentRecord = currentTier ? heroUnlockedMap[currentTier.id] : null;
+    const nextTier = highestUnlockedIdx + 1 < totalTiers ? tiers[highestUnlockedIdx + 1] : null;
+    const displayBadge = currentTier || firstTier;
+    const rarity = isUnlocked ? (currentTier.rarity || 'common') : (firstTier.rarity || 'common');
+    const anyGloballyRevealed = tiers.some(tb => isBadgeUnlockedByAnyone(tb.id));
+
+    const seriesName = def ? def.name : firstTier.name;
+    const slotIcon = def ? def.icon : firstTier.icon;
+    const displayName = isMultiTier
+      ? (currentTier ? `${seriesName}・${currentTier.name}` : seriesName)
+      : firstTier.name;
+
+    const levelTag = isMultiTier
+      ? (isUnlocked ? (isMaxed ? '★MAX' : `Lv.${unlockedCount}/${totalTiers}`) : `0/${totalTiers}`)
+      : (isUnlocked ? '★達成' : '');
+
+    slots.push({
+      id: slotId,
+      slotNum: slots.length + 1,
+      category: firstTier.category || firstTier.cat,
+      cat: firstTier.cat || firstTier.category,
+      name: seriesName,
+      seriesName,
+      currentTierName: currentTier ? currentTier.name : '',
+      displayName,
+      icon: slotIcon,
+      rarity,
+      isMultiTier,
+      totalTiers,
+      tiers,
+      unlockedTiers,
+      unlockedCount,
+      isUnlocked,
+      isMaxed,
+      currentTier,
+      currentRecord,
+      nextTier,
+      displayBadge,
+      levelTag,
+      anyGloballyRevealed,
+      condition: displayBadge.condition || displayBadge.desc || '',
+      desc: displayBadge.desc || displayBadge.condition || ''
+    });
+  });
+
+  return slots;
+};
+
+/**
+ * 依 slotId 或任一成員 badgeId 查詢對應的進階徽章格 (Slot)
+ */
+window.findBadgeSlot = function(slotOrBadgeId, state, heroName) {
+  if (!slotOrBadgeId) return null;
+  const slots = window.getActiveBadgeSlots(state, heroName);
+  const direct = slots.find(s => s.id === slotOrBadgeId);
+  if (direct) return direct;
+  return slots.find(s => s.tiers.some(t => t.id === slotOrBadgeId)) || null;
+};
+
+/**
+ * 取得某位英雄在「徽章格 (132格)」與「總階數 (331階)」雙軌進度統計
+ */
+window.getHeroBadgeSlotProgress = function(heroName, state) {
+  const st = state || window.gameState || {};
+  const slots = window.getActiveBadgeSlots(st, heroName);
+  const unlockedSlots = slots.filter(s => s.isUnlocked).length;
+  const maxedSlots = slots.filter(s => s.isMaxed).length;
+  const totalSlots = slots.length;
+  const unlockedTiers = slots.reduce((sum, s) => sum + s.unlockedCount, 0);
+  const totalTiers = slots.reduce((sum, s) => sum + s.totalTiers, 0);
+  return {
+    unlockedSlots,
+    maxedSlots,
+    totalSlots,
+    slotPct: totalSlots > 0 ? Math.round((unlockedSlots / totalSlots) * 100) : 0,
+    unlockedTiers,
+    totalTiers,
+    tierPct: totalTiers > 0 ? Math.round((unlockedTiers / totalTiers) * 100) : 0
+  };
+};
+
 window.evaluateAllHeroesBadges = evaluateAllHeroesBadges;
+window.evaluateSnapshotHonorBadges = evaluateSnapshotHonorBadges;
+window.SLOT_DEFINITIONS = SLOT_DEFINITIONS;

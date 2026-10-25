@@ -60,6 +60,38 @@ Deno.serve(async (req) => {
     if (error) return json({ error: "db_error", message: error.message }, 500);
     return json({ ok: true });
   }
+  if (action === "delete_device") {
+    const deviceId = String(body.device_id || "").trim();
+    if (!deviceId) return json({ error: "invalid_body", message: "device_id 為必填" }, 400);
+    const { error } = await db.from("devices").delete().eq("id", deviceId);
+    if (error) return json({ error: "db_error", message: error.message }, 500);
+    return json({ ok: true, deleted_id: deviceId });
+  }
+  if (action === "prune_devices") {
+    const staleDays = Math.max(1, Number(body.stale_days ?? 30));
+    const cutoffMs = Date.now() - staleDays * 86400_000;
+    const { data: allDevs, error: listErr } = await db.from("devices")
+      .select("id, hero, last_sync_at, revoked, created_at")
+      .order("last_sync_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+    if (listErr) return json({ error: "db_error", message: listErr.message }, 500);
+    const seenHero = new Set<string>();
+    const toDelete: string[] = [];
+    for (const d of (allDevs || [])) {
+      const heroKey = String(d.hero || "").trim().toLowerCase();
+      const lastMs = d.last_sync_at ? new Date(d.last_sync_at).getTime() : (d.created_at ? new Date(d.created_at).getTime() : 0);
+      const isDuplicateHeroDevice = heroKey ? seenHero.has(heroKey) : false;
+      if (heroKey && !d.revoked) seenHero.add(heroKey);
+      if (d.revoked || isDuplicateHeroDevice || (lastMs > 0 && lastMs < cutoffMs)) {
+        toDelete.push(String(d.id));
+      }
+    }
+    if (toDelete.length > 0) {
+      const { error: delErr } = await db.from("devices").delete().in("id", toDelete);
+      if (delErr) return json({ error: "db_error", message: delErr.message }, 500);
+    }
+    return json({ ok: true, deleted_count: toDelete.length, deleted_ids: toDelete });
+  }
   if (action === "rename_hero") {
     // 英雄改名：所有掛在舊名字底下的資料一起搬到新名字 (英雄 / 運動紀錄 / 每日健康 / 手機綁定 / GM 稱號與手動徽章)
     const oldName = String(body.old_name || "").trim();

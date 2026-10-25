@@ -255,6 +255,15 @@
   M(232, '全能十日', '💎', 'mythic', `累計 10 天同時達成${WK}、步數 10,000、睡眠 7 小時、活動 60 分鐘`, { type: 'mh_day_count', when: { workouts: 1, steps: 10000, sleep: 420, activeMin: 60 }, min: 10 });
   M(233, '黃金三角', '🔺', 'legendary', `連續 3 天每天都有${WK}、步數 8,000 與睡眠 7 小時`, { type: 'mh_streak', when: { workouts: 1, steps: 8000, sleep: 420 }, min: 3 });
   M(234, '修行者之週', '🏆', 'mythic', `同一週內有 5 天完成${WK}，且 7 晚都睡滿 7 小時`, { type: 'mh_week', conds: [{ when: { workouts: 1 }, min: 5 }, { when: { sleep: 420 }, min: 7 }] });
+  // 🏋️ 健身房 × 生理數據交叉比對彩蛋徽章 (#324 ~ #331)
+  M(324, '純血擼鐵人', '🏋️', 'epic', '單日完成重訓 ≥ 45 分鐘且心率落差 Gap ≥ 40 bpm，但當日總步數 < 4,500 步 (在深蹲架前一步都不多走！)', { type: 'mh_gym_pure_lifter' });
+  M(325, '組間休息大師', '🦁', 'legendary', '單次重訓中最高心率 ≥ 165 bpm (或落差 Gap ≥ 50)，但整場平均心率 ≤ 130 bpm (大重量爆發＋專業組間休息)', { type: 'mh_gym_rest_master' });
+  M(326, '練腿隔天鐵腿', '🦵', 'legendary', '前一天完成高強度重訓 (Suffer ≥ 50 或 TRIMP ≥ 70) 且步數 ≥ 4,000，隔天步數驟降 ≥ 50% (且 < 5,000 步) 並睡滿 7 小時', { type: 'mh_gym_leg_day_doms' });
+  M(327, '減脂黃金套餐', '🔥', 'epic', '同一天內同時完成「重訓」＋「有氧 (跑步/騎車/健走/游泳或 Zone 2)」共 2 場以上有效運動 (先重訓再有氧)', { type: 'mh_gym_combo_meal' });
+  M(328, '氮泵硬撐', '⚡', 'legendary', '前一晚睡眠未滿 6 小時 (< 360 分鐘)，但當天依然完成心率落差 Gap ≥ 60 bpm 或最高心率 ≥ 175 bpm 的高爆發有效運動', { type: 'mh_gym_preworkout_grit' });
+  M(329, '超級補償', '🧬', 'mythic', '單日高負荷訓練 (TRIMP ≥ 120 或 Suffer ≥ 100) 後，隔晚睡滿 7.5 小時，且隔日 HRV 高於個人基準 (或靜止心率下降 ≥ 2 bpm)', { type: 'mh_gym_supercompensation' });
+  M(330, '有氧巡航機器', '🏃‍♂️', 'epic', '單次跑步距離 ≥ 5 公里，且全程平均心率完美控制在個人 Zone 2 燃脂區間', { type: 'mh_gym_aerobic_cruiser' });
+  M(331, '鋼鐵心臟', '🫀', 'mythic', '同一週內平均靜止心率 ≤ 58 bpm (至少 5 天有資料)，且當週完成 ≥ 3 次有效運動', { type: 'mh_gym_iron_heart' });
 
   // 系列二十一：【全年無休】同步忠誠 (#235 ~ #246)
   cat('21. 全年無休 (同步)');
@@ -417,22 +426,24 @@
       if (d.bed == null) d.bed = normBed(parseHM(r.bed_time));
       if (d.wake == null) d.wake = parseHM(r.wake_time);
     });
-    if (merged.size === 0) return null;
+    const actTs = (acts || []).map(a => dayUtc(a.date || a.time)).filter(Number.isFinite);
+    if (merged.size === 0 && actTs.length === 0) return null;
 
-    const ts = Array.from(merged.keys()).sort((a, b) => a - b);
+    const ts = Array.from(new Set([...merged.keys(), ...actTs])).sort((a, b) => a - b);
     let start = ts[0];
     const end = ts[ts.length - 1];
     if ((end - start) / DAY_MS > MAX_CALENDAR_DAYS) start = end - MAX_CALENDAR_DAYS * DAY_MS;
 
-    // 有效運動 (依日期彙整)
+    // 有效運動 (依日期彙整，同時保留當日各場運動明細 actList 供健身房交叉彩蛋判定)
     const wkByDay = new Map();
     acts.forEach(a => {
       const t = dayUtc(a.date || a.time);
       if (!Number.isFinite(t) || t < start || t > end) return;
       let w = wkByDay.get(t);
-      if (!w) { w = { n: 0, min: 0, name: '', id: null }; wkByDay.set(t, w); }
+      if (!w) { w = { n: 0, min: 0, name: '', id: null, list: [] }; wkByDay.set(t, w); }
       w.n += 1;
       w.min += Number(a.duration) || 0;
+      w.list.push(a);
       if (!w.name) { w.name = a.title || a.name || a.type || '有效運動'; w.id = a.id; }
     });
 
@@ -452,7 +463,8 @@
         workouts: w ? w.n : 0,
         workoutMin: w ? Math.round(w.min) : 0,
         workoutName: w ? w.name : '',
-        workoutId: w ? w.id : null
+        workoutId: w ? w.id : null,
+        actList: w ? w.list : []
       });
     }
     // ISO 週分組
@@ -705,6 +717,169 @@
         if (c >= r.minHeroes) return { i, label: `當天全服 ${c} 位英雄達成・${describeDay(days[i], r.when)}` };
       }
       return null;
+    },
+
+    // #324 純血擼鐵人：重訓 ≥ 45 分鐘且 Gap ≥ 40 bpm，但當日總步數 < 4,500 步
+    mh_gym_pure_lifter(r, ctx) {
+      const { days } = ctx;
+      const gymTypes = new Set(['weighttraining', 'workout', 'crossfit', 'strength']);
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        if (d.steps == null || d.steps <= 0 || d.steps >= 4500) continue;
+        const hitAct = (d.actList || []).find(a => {
+          const sp = String(a.type || '').toLowerCase().trim();
+          const dur = Number(a.duration) || 0;
+          const gap = Number(a.gapVal !== undefined ? a.gapVal : a.gap) || Math.max(0, (Number(a.maxHr) || 0) - (Number(a.avgHr) || 0));
+          return gymTypes.has(sp) && dur >= 45 && gap >= 40;
+        });
+        if (hitAct) {
+          const gap = Math.round(Number(hitAct.gapVal !== undefined ? hitAct.gapVal : hitAct.gap) || Math.max(0, (Number(hitAct.maxHr) || 0) - (Number(hitAct.avgHr) || 0)));
+          return { i, label: `🏋️ ${hitAct.title || hitAct.type} (${Math.round(hitAct.duration)}分 / Gap ${gap})・當日僅 ${fmt(d.steps)} 步`, actId: hitAct.id };
+        }
+      }
+      return null;
+    },
+
+    // #325 組間休息大師：重訓中最高心率 ≥ 165 bpm (或 Gap ≥ 50)，但平均心率 ≤ 130 bpm
+    mh_gym_rest_master(r, ctx) {
+      const { days } = ctx;
+      const gymTypes = new Set(['weighttraining', 'workout', 'crossfit', 'strength']);
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        const hitAct = (d.actList || []).find(a => {
+          const sp = String(a.type || '').toLowerCase().trim();
+          const avgHr = Number(a.avgHr) || 0;
+          const maxHr = Number(a.maxHr) || 0;
+          const gap = Number(a.gapVal !== undefined ? a.gapVal : a.gap) || Math.max(0, maxHr - avgHr);
+          return gymTypes.has(sp) && avgHr > 0 && avgHr <= 130 && (maxHr >= 165 || gap >= 50);
+        });
+        if (hitAct) {
+          return { i, label: `🦁 ${hitAct.title || hitAct.type} (均心 ${Math.round(hitAct.avgHr)} / 峰值 ${Math.round(hitAct.maxHr)} bpm)`, actId: hitAct.id };
+        }
+      }
+      return null;
+    },
+
+    // #326 練腿隔天鐵腿：前一天高強度重訓 (Suffer ≥ 50 或 TRIMP ≥ 70) 且步數 ≥ 4,000，隔天步數驟降 ≥ 50% (且 < 5,000) 並睡滿 7 小時
+    mh_gym_leg_day_doms(r, ctx) {
+      const { days } = ctx;
+      const gymTypes = new Set(['weighttraining', 'workout', 'crossfit', 'strength']);
+      for (let i = 0; i + 1 < days.length; i++) {
+        const d0 = days[i], d1 = days[i + 1];
+        if (d0.steps == null || d0.steps < 4000 || d1.steps == null || d1.steps <= 0) continue;
+        if (d1.steps > d0.steps * 0.5 || d1.steps >= 5000) continue;
+        if ((d1.sleep || 0) < 420 && (d0.sleep || 0) < 420) continue;
+        const heavyAct = (d0.actList || []).find(a => {
+          const sp = String(a.type || '').toLowerCase().trim();
+          const suf = Number(a.rawSuffer !== undefined ? a.rawSuffer : a.suffer) || 0;
+          const trp = Number(a.rawTrimp !== undefined ? a.rawTrimp : a.trimp) || 0;
+          return gymTypes.has(sp) && (suf >= 50 || trp >= 70);
+        });
+        if (heavyAct) {
+          return { i: i + 1, label: `🦵 前日重訓 (${fmt(d0.steps)}步) → 隔日鐵腿 ${fmt(d1.steps)}步・睡滿 ${sleepStr(Math.max(d1.sleep || 0, d0.sleep || 0))}`, actId: heavyAct.id };
+        }
+      }
+      return null;
+    },
+
+    // #327 減脂黃金套餐：同一天內同時完成「重訓」＋「有氧」共 2 場以上有效運動
+    mh_gym_combo_meal(r, ctx) {
+      const { days } = ctx;
+      const gymTypes = new Set(['weighttraining', 'workout', 'crossfit', 'strength']);
+      const cardioTypes = new Set(['run', 'virtualrun', 'trailrun', 'ride', 'virtualride', 'ebikeride', 'walk', 'hike', 'swim', 'rowing', 'elliptical', 'stairstepper']);
+      for (let i = 0; i < days.length; i++) {
+        const list = days[i].actList || [];
+        if (list.length < 2) continue;
+        const hasGym = list.some(a => gymTypes.has(String(a.type || '').toLowerCase().trim()));
+        const hasCardio = list.some(a => cardioTypes.has(String(a.type || '').toLowerCase().trim()) || Boolean(a.isZone2));
+        if (hasGym && hasCardio) {
+          return { i, label: `🔥 同日雙修 (${list.map(a => a.title || a.type).slice(0, 2).join(' ＋ ')})`, actId: list[0].id };
+        }
+      }
+      return null;
+    },
+
+    // #328 氮泵硬撐：前一晚睡眠 < 360 分鐘 (< 6h)，當天依然完成 Gap ≥ 60 或 MaxHR ≥ 175 的高爆發有效運動
+    mh_gym_preworkout_grit(r, ctx) {
+      const { days } = ctx;
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        if (d.sleep == null || d.sleep <= 0 || d.sleep >= 360) continue;
+        const gritAct = (d.actList || []).find(a => {
+          const maxHr = Number(a.maxHr) || 0;
+          const avgHr = Number(a.avgHr) || 0;
+          const gap = Number(a.gapVal !== undefined ? a.gapVal : a.gap) || Math.max(0, maxHr - avgHr);
+          return gap >= 60 || maxHr >= 175;
+        });
+        if (gritAct) {
+          return { i, label: `⚡ 睡眠僅 ${sleepStr(d.sleep)} 仍爆發完賽 (${gritAct.title || gritAct.type} 峰值 ${Math.round(gritAct.maxHr || 0)} bpm)`, actId: gritAct.id };
+        }
+      }
+      return null;
+    },
+
+    // #329 超級補償：高負荷訓練 (TRIMP ≥ 120 或 Suffer ≥ 100) 後，隔晚睡滿 7.5h (450m)，且隔日 HRV > 個人基準 (或 RHR 比基準下降 ≥ 2 bpm)
+    mh_gym_supercompensation(r, ctx) {
+      const { days } = ctx;
+      const hrvVals = days.map(d => d.hrv).filter(v => v != null && v > 0);
+      const rhrVals = days.map(d => d.rhr).filter(v => v != null && v > 0);
+      const baseHrv = hrvVals.length >= 3 ? hrvVals.slice(0, Math.min(7, hrvVals.length)).reduce((s, v) => s + v, 0) / Math.min(7, hrvVals.length) : null;
+      const baseRhr = rhrVals.length >= 3 ? rhrVals.slice(0, Math.min(7, rhrVals.length)).reduce((s, v) => s + v, 0) / Math.min(7, rhrVals.length) : null;
+
+      for (let i = 0; i + 1 < days.length; i++) {
+        const d0 = days[i], d1 = days[i + 1];
+        const dayTrimp = (d0.actList || []).reduce((s, a) => s + (Number(a.rawTrimp !== undefined ? a.rawTrimp : a.trimp) || 0), 0);
+        const daySuf = (d0.actList || []).reduce((s, a) => s + (Number(a.rawSuffer !== undefined ? a.rawSuffer : a.suffer) || 0), 0);
+        if (dayTrimp < 120 && daySuf < 100) continue;
+        if ((d1.sleep || 0) < 450) continue;
+        const hrvOk = baseHrv != null && d1.hrv != null && d1.hrv > baseHrv;
+        const rhrOk = baseRhr != null && d1.rhr != null && d1.rhr <= baseRhr - 2;
+        if (hrvOk || rhrOk) {
+          const metricStr = hrvOk ? `HRV ${Math.round(d1.hrv)}ms > 基準 ${Math.round(baseHrv)}ms` : `RHR ${d1.rhr} ≤ 基準 ${Math.round(baseRhr) - 2} bpm`;
+          return { i: i + 1, label: `🧬 高負荷後睡滿 ${sleepStr(d1.sleep)}・${metricStr}` };
+        }
+      }
+      return null;
+    },
+
+    // #330 有氧巡航機器：單次跑步距離 ≥ 5 km 且全程處於個人 Zone 2
+    mh_gym_aerobic_cruiser(r, ctx) {
+      const { days } = ctx;
+      const runTypes = new Set(['run', 'virtualrun', 'trailrun']);
+      for (let i = 0; i < days.length; i++) {
+        const hitAct = (days[i].actList || []).find(a => {
+          const sp = String(a.type || '').toLowerCase().trim();
+          const dist = Number(a.distance) || 0;
+          return runTypes.has(sp) && dist >= 5 && Boolean(a.isZone2);
+        });
+        if (hitAct) {
+          return { i, label: `🏃‍♂️ ${hitAct.title || hitAct.type} (${Number(hitAct.distance).toFixed(1)} km・Zone 2 均心 ${Math.round(hitAct.avgHr || 0)} bpm)`, actId: hitAct.id };
+        }
+      }
+      return null;
+    },
+
+    // #331 鋼鐵心臟：同一週內平均靜止心率 ≤ 58 bpm (至少 5 天有資料)，且當週完成 ≥ 3 次有效運動
+    mh_gym_iron_heart(r, ctx) {
+      const { days, weeks } = ctx;
+      for (const wk of weeks) {
+        const rhrs = [];
+        let wkWorkouts = 0;
+        let lastIdx = wk.idx[0];
+        for (const idx of wk.idx) {
+          const d = days[idx];
+          if (d.rhr != null && d.rhr > 0) rhrs.push(d.rhr);
+          wkWorkouts += (d.workouts || 0);
+          lastIdx = idx;
+        }
+        if (rhrs.length >= 5 && wkWorkouts >= 3) {
+          const avgRhr = rhrs.reduce((s, v) => s + v, 0) / rhrs.length;
+          if (avgRhr <= 58) {
+            return { i: lastIdx, label: `🫀 當週平均靜止心率 ${avgRhr.toFixed(1)} bpm・完成 ${wkWorkouts} 次有效運動` };
+          }
+        }
+      }
+      return null;
     }
   };
 
@@ -743,10 +918,13 @@
       if (!rowsByHero.has(r.hero)) rowsByHero.set(r.hero, []);
       rowsByHero.get(r.hero).push(r);
     });
-    // 有效運動：isValidAttack === true (已內含 GM 最低時長門檻 / 賽季範圍 / 重複上傳排除)
+    // 有效運動：優先使用 badgesCatalog 傳入之生涯有效運動 validCareerActs (已含 GM 最低時長門檻與重複排除)，並相容 isValidAttack === true
     const actsByHero = new Map();
-    (state.activities || []).forEach(a => {
-      if (!a || a.isValidAttack !== true || a.isExcluded) return;
+    const sourceActs = Array.isArray(ctx.validCareerActs)
+      ? ctx.validCareerActs
+      : (state.activities || []).filter(a => a && a.isValidAttack === true && !a.isExcluded);
+    sourceActs.forEach(a => {
+      if (!a || a.isExcluded) return;
       if (!inRange(a.date || a.time)) return;
       if (!actsByHero.has(a.hero)) actsByHero.set(a.hero, []);
       actsByHero.get(a.hero).push(a);
@@ -755,9 +933,10 @@
     const heroes = ctx.heroes || state.heroes || [];
     const seriesByHero = new Map();
     heroes.forEach(h => {
-      const rows = rowsByHero.get(h.name);
-      if (!rows || rows.length === 0) return;
-      const s = buildHeroSeries(rows, actsByHero.get(h.name) || []);
+      const rows = rowsByHero.get(h.name) || [];
+      const acts = actsByHero.get(h.name) || [];
+      if (rows.length === 0 && acts.length === 0) return;
+      const s = buildHeroSeries(rows, acts);
       if (s) seriesByHero.set(h.name, s);
     });
 

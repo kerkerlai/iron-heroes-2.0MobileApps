@@ -50,12 +50,9 @@ Deno.serve(async (req) => {
   } else if (!hero) {
     return json({ error: "hero_not_found", message: "找不到這位英雄，請確認名稱（要跟遊戲裡一字不差，包含空白與大小寫）或選擇「建立新英雄」" }, 404);
   } else {
-    // 一位英雄同時只能綁定一支手機 (避免誤綁 / 冒用)。換手機時請 GM 在後台「停用」舊裝置後再綁定。
-    const { data: bound, error: bErr } = await db.from("devices").select("id").eq("hero", heroName).eq("revoked", false).limit(1);
-    if (bErr) return json({ error: "db_error", message: bErr.message }, 500);
-    if (bound && bound.length) {
-      return json({ error: "hero_already_bound", message: "這位英雄已經綁定在另一支手機上。如果是你換手機，請 GM 在後台「裝置清單」停用舊手機後再試一次。" }, 409);
-    }
+    // 玩家持有有效邀請碼重新綁定既有英雄時（例如重裝 App 或換新手機），自動清除該英雄舊的裝置紀錄，確保一人只留最新一支手機、不累積殭屍紀錄
+    const { error: delOldErr } = await db.from("devices").delete().eq("hero", heroName);
+    if (delOldErr) return json({ error: "db_error", message: delOldErr.message }, 500);
   }
 
   // 3. 發放金鑰 (只回傳一次，資料庫只存雜湊)

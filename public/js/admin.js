@@ -2764,6 +2764,9 @@ async function refreshMobilePanels() {
   const list = document.getElementById('mobile-invite-list');
   try {
     const [inv, dev] = await Promise.all([callAdminMobile('list_invites'), callAdminMobile('list_devices')]);
+    if (gameState && Array.isArray(dev.devices)) {
+      gameState.devices = dev.devices;
+    }
     renderMobileInvites(inv.invites || []);
     renderMobileDevices(dev.devices || []);
   } catch (e) {
@@ -2813,28 +2816,114 @@ async function toggleMobileDevice(deviceId, revoke) {
   try { await callAdminMobile(revoke ? 'revoke_device' : 'restore_device', { device_id: deviceId }); refreshMobilePanels(); } catch (e) { alert('❌ 操作失敗：' + e.message); }
 }
 
+function getHiddenMobileDeviceIds() {
+  const arr = gameState?.gmOps?.hiddenDeviceIds;
+  return new Set(Array.isArray(arr) ? arr.map(String) : []);
+}
+
+async function persistHiddenMobileDeviceIds(idSet) {
+  if (!gameState) return;
+  gameState.gmOps = gameState.gmOps || {};
+  gameState.gmOps.hiddenDeviceIds = Array.from(idSet);
+  if (typeof saveGmOpsConfig === 'function') {
+    try { await saveGmOpsConfig(true); } catch (_) {}
+  }
+}
+
+async function deleteMobileDevice(deviceId, heroName) {
+  const id = String(deviceId || '').trim();
+  if (!id) return;
+  if (!confirm(`確定從後台移除「${heroName || '此玩家'}」的這筆手機綁定紀錄？\n\n• 移除後這支舊裝置將從列表消失且無法再上傳資料\n• 該英雄已上傳過的運動與健康數據都會完整保留\n• 玩家隨時可用邀請碼重新綁定新手機`)) return;
+  try {
+    await callAdminMobile('delete_device', { device_id: id });
+    showAdminToast(`🗑️ 已移除 ${heroName || ''} 的手機裝置紀錄`);
+  } catch (e) {
+    // 若雲端 Edge Function 尚未重新部署 delete_device，自動降級為停用 + 後台隱藏
+    try { await callAdminMobile('revoke_device', { device_id: id }); } catch (_) {}
+    const hidden = getHiddenMobileDeviceIds();
+    hidden.add(id);
+    await persistHiddenMobileDeviceIds(hidden);
+    showAdminToast(`🗑️ 已停用並從列表移除 ${heroName || ''} 的舊裝置紀錄`);
+  }
+  refreshMobilePanels();
+}
+
+async function pruneMobileDevices() {
+  if (!confirm('確定一鍵清理「已停用」、「同一英雄舊的重複綁定」或「超過 30 天未同步」的殭屍裝置紀錄？\n(目前已上傳的所有運動與健康數據皆不受影響)')) return;
+  try {
+    const res = await callAdminMobile('prune_devices', { stale_days: 30 });
+    showAdminToast(`🧹 已清理 ${res.deleted_count ?? 0} 筆舊裝置紀錄`);
+  } catch (e) {
+    // 降級處理：前端掃描已停用、重複英雄舊綁定或超過 30 天未同步的裝置，停用並隱藏
+    const devices = Array.isArray(window._lastAdminMobileDevices) ? window._lastAdminMobileDevices : (gameState?.devices || []);
+    const hidden = getHiddenMobileDeviceIds();
+    const seenHero = new Set();
+    const cutoff = Date.now() - 30 * 86400000;
+    let count = 0;
+    const sorted = [...devices].sort((a, b) => {
+      const ta = new Date(a.last_sync_at || a.created_at || 0).getTime();
+      const tb = new Date(b.last_sync_at || b.created_at || 0).getTime();
+      return tb - ta;
+    });
+    for (const d of sorted) {
+      if (hidden.has(String(d.id))) continue;
+      const hk = String(d.hero || '').trim().toLowerCase();
+      const lastMs = d.last_sync_at ? new Date(d.last_sync_at).getTime() : (d.created_at ? new Date(d.created_at).getTime() : 0);
+      const isDup = hk && seenHero.has(hk);
+      if (hk && !d.revoked) seenHero.add(hk);
+      if (d.revoked || isDup || (lastMs > 0 && lastMs < cutoff)) {
+        try { if (!d.revoked) await callAdminMobile('revoke_device', { device_id: d.id }); } catch (_) {}
+        hidden.add(String(d.id));
+        count++;
+      }
+    }
+    await persistHiddenMobileDeviceIds(hidden);
+    showAdminToast(`🧹 已清理 ${count} 筆舊裝置紀錄`);
+  }
+  refreshMobilePanels();
+}
+
+function formatDeviceSyncStatus(lastDate, revoked, nowMs) {
+  if (revoked) return '<span class="text-rose-400 font-bold">⛔ 已停用</span>';
+  if (!lastDate || isNaN(lastDate.getTime())) {
+    return '<span class="text-amber-300 font-bold">🟡 剛綁定・尚未收到同步</span>';
+  }
+  const diffMin = Math.max(0, Math.floor((nowMs - lastDate.getTime()) / 60000));
+  const hours = diffMin / 60;
+  if (diffMin < 2) return '<span class="text-emerald-400 font-bold">🟢 剛剛同步</span>';
+  if (diffMin < 60) return `<span class="text-emerald-400 font-bold">🟢 ${diffMin} 分鐘前同步</span>`;
+  if (hours <= 24) return `<span class="text-emerald-400 font-bold">🟢 ${Math.floor(hours)} 小時前同步</span> <span class="text-[10px] text-slate-500">(24h內有紀錄)</span>`;
+  if (hours <= 48) return `<span class="text-amber-300 font-bold">🟡 ${Math.floor(hours)} 小時未同步</span>`;
+  const days = Math.floor(hours / 24);
+  return `<span class="text-rose-400 font-bold">🔴 已失聯 ${days} 天 (${Math.floor(hours)}h)</span> <span class="text-[10px] text-slate-500">(未開App或已移除)</span>`;
+}
+
 function renderMobileDevices(devices) {
   const tbody = document.getElementById('mobile-devices-tbody');
   if (!tbody) return;
-  if (!devices.length) { tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">尚無玩家綁定手機</td></tr>'; return; }
+  window._lastAdminMobileDevices = Array.isArray(devices) ? devices : [];
+  const hidden = getHiddenMobileDeviceIds();
+  const visible = (devices || []).filter(d => !hidden.has(String(d.id)));
+  if (!visible.length) { tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">尚無玩家綁定手機 (或舊裝置皆已清理)</td></tr>'; return; }
   const now = Date.now();
-  tbody.innerHTML = devices.map(d => {
+  tbody.innerHTML = visible.map(d => {
     const last = d.last_sync_at ? new Date(d.last_sync_at) : null;
-    const hours = last ? (now - last.getTime()) / 3600000 : Infinity;
-    const light = d.revoked ? '⛔ 已停用' : (hours <= 24 ? '🟢 正常' : (hours <= 48 ? '🟡 稍久未同步' : '🔴 超過 48 小時'));
+    const light = formatDeviceSyncStatus(last, d.revoked, now);
     const safeHero = escapeHtmlLite(d.hero);
     const safeModel = escapeHtmlLite(d.device_model || '');
     const safeVer = escapeHtmlLite(d.app_version || '-');
     const safeId = escapeHtmlLite(d.id);
-    return `<tr>
+    return `<tr class="border-t border-slate-800/60 hover:bg-slate-900/40">
       <td class="p-3 font-bold text-white">${safeHero}</td>
       <td class="p-3">${d.platform === 'ios' ? '🍎 iPhone' : '🤖 Android'} <span class="text-slate-500">${safeModel}</span></td>
       <td class="p-3 font-mono">${last ? last.toLocaleString('zh-TW', { hour12: false }) : '尚未同步'}</td>
       <td class="p-3 font-mono text-slate-400">${safeVer}</td>
       <td class="p-3">${light}</td>
-      <td class="p-3 text-right">${d.revoked
-        ? `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, false)" class="text-emerald-400 font-bold">恢復</button>`
-        : `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, true)" class="text-rose-400 font-bold">停用</button>`}</td>
+      <td class="p-3 text-right whitespace-nowrap space-x-2">${d.revoked
+        ? `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, false)" class="px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 font-bold">恢復</button>`
+        : `<button type="button" data-dev="${safeId}" onclick="toggleMobileDevice(this.dataset.dev, true)" class="px-2 py-1 rounded-lg bg-amber-950/50 border border-amber-500/30 text-amber-300 hover:bg-amber-900/50 font-bold">停用</button>`}
+        <button type="button" data-dev="${safeId}" data-hero="${safeHero}" onclick="deleteMobileDevice(this.dataset.dev, this.dataset.hero)" class="px-2 py-1 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300 hover:bg-rose-900/70 font-bold" title="從列表永久移除此裝置紀錄">🗑️ 移除</button>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -2844,7 +2933,8 @@ function renderMobileReconciliation() {
   if (!tbody) return;
   const acts = gameState?.activities || [];
   const dailyAll = gameState?.dailyHealth || [];
-  const devices = gameState?.devices || [];
+  const hiddenDevs = getHiddenMobileDeviceIds();
+  const devices = (gameState?.devices || []).filter(d => !hiddenDevs.has(String(d.id)));
   const cutoff = Date.now() - 14 * 86400000;
   const cutoffYMD = new Date(cutoff).toISOString().slice(0, 10);
   const recent = acts.filter(a => {
@@ -3004,7 +3094,7 @@ function renderMobileDataInspector(preferredHero) {
   if (actCountEl) actCountEl.textContent = `共 ${myMobileActs.length} 筆`;
 
   dailyTbody.innerHTML = myDaily.length === 0
-    ? '<tr><td colspan="7" class="p-4 text-center text-slate-500">此英雄尚無 daily_health 資料</td></tr>'
+    ? '<tr><td colspan="8" class="p-4 text-center text-slate-500">此英雄尚無 daily_health 資料</td></tr>'
     : myDaily.slice(0, 30).map(r => {
       const slp = r.sleep_minutes != null
         ? `<span class="text-cyan-300">${sleepHours(r)}</span> <span class="text-slate-500 text-[10px]">(${escapeHtmlLite(r.bed_time || '?')}~${escapeHtmlLite(r.wake_time || '?')})</span>`
@@ -3017,6 +3107,7 @@ function renderMobileDataInspector(preferredHero) {
         <td class="p-2 whitespace-nowrap">${slp}</td>
         <td class="p-2 ${r.resting_hr != null ? 'text-rose-300' : 'text-slate-600'}">${r.resting_hr != null ? r.resting_hr + ' bpm' : 'null'}</td>
         <td class="p-2 ${r.hrv_ms != null ? 'text-amber-300' : 'text-slate-600'}">${r.hrv_ms != null ? r.hrv_ms + ' ms' : 'null'}</td>
+        <td class="p-2 ${r.spo2_pct != null ? 'text-sky-300' : 'text-slate-600'}">${r.spo2_pct != null ? r.spo2_pct + '%' : 'null'}</td>
       </tr>`;
     }).join('');
 

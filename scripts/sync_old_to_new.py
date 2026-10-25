@@ -196,7 +196,9 @@ def main():
     old_heroes = old_read("heroes", "name")
     old_acts = old_read("activities", "id")
     new_heroes = {h["name"]: h for h in new_read("heroes", "name")}
-    new_act_ids = {a["id"] for a in new_read("activities", "id")}
+    new_acts_list = new_read("activities", "id")
+    new_act_map = {str(a["id"]): a for a in new_acts_list}
+    new_act_ids = {a["id"] for a in new_acts_list}
     aliases = load_aliases()
     deleted_heroes = load_tombstones("deleted_heroes")
     deleted_act_ids = load_tombstones("deleted_activity_ids")
@@ -260,6 +262,32 @@ def main():
         out.append(a)
     new_write("activities", out, overwrite=(MODE == "full"))
     print(f"🏃 運動紀錄：{'覆蓋/新增' if MODE == 'full' else '新增'} {len(out)} 筆")
+
+    # mirror 模式：若舊庫已校正 Strava 歷史運動熱量（原本新庫為時長×4保底值），自動同步更新 calories（不動 is_excluded）
+    if MODE == "mirror":
+        cal_patched = 0
+        for oa in old_acts:
+            aid = str(oa.get("id") or "")
+            if not aid or aid in deleted_act_ids or aid not in new_act_map:
+                continue
+            na = new_act_map[aid]
+            if na.get("is_manual") or (na.get("source") and na.get("source") != "strava"):
+                continue
+            old_cal = float(oa.get("calories") or 0)
+            new_cal = float(na.get("calories") or 0)
+            dur = float(na.get("duration") or oa.get("duration") or 0)
+            is_new_fallback = new_cal <= 0 or (dur > 0 and (abs(new_cal - round(dur * 4.0)) <= 2 or abs(new_cal - round(dur * 4.5)) <= 2))
+            if old_cal > 0 and old_cal != new_cal and is_new_fallback:
+                if not DRY:
+                    requests.patch(
+                        f"{NEW_URL}/rest/v1/activities?id=eq.{requests.utils.quote(aid)}",
+                        headers={**NEW_H, "Content-Type": "application/json", "Prefer": "return=minimal"},
+                        json={"calories": int(round(old_cal))},
+                        timeout=20,
+                    )
+                cal_patched += 1
+        if cal_patched > 0:
+            print(f"🔥 同步校正舊庫已修復的 Strava 熱量：{cal_patched} 筆")
 
     # ---- 遊戲設定 (只在 full 模式；保留 2.0 專屬設定並將 gm_ops_config 內的舊名轉換為新名) ----
     if MODE == "full":

@@ -1415,8 +1415,7 @@ function loadHeroViewerData(heroOverride) {
       `;
     } else if (activeMode === "survival") {
       const svState = window.computeSurvivalState(gameState);
-      const { currentHp, isDead } = window.computeSurvivalHeroHp(heroStat, svState);
-      const activeDays = window.countHeroActiveDays(gameState, hero.name);
+      const { currentHp, isDead, survivedDays, totalDays } = window.computeSurvivalHeroHp(heroStat, svState, gameState);
       
       kpiContainer.innerHTML = `
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
@@ -1432,8 +1431,8 @@ function loadHeroViewerData(heroOverride) {
           <span class="text-lg font-black font-rpg text-blue-400">+${Math.floor((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
         </div>
         <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800">
-          <span class="text-[11px] text-slate-400 block">⏱️ 荒野堅持天數 (有運動的天數)</span>
-          <span class="text-lg font-black font-rpg text-cyan-400">${activeDays} 天</span>
+          <span class="text-[11px] text-slate-400 block">⏱️ 荒野堅持天數 (開賽至今存活天數)</span>
+          <span class="text-lg font-black font-rpg text-cyan-400">${survivedDays} / ${totalDays} 天</span>
         </div>
       `;
     } else if (activeMode === "base_builder") {
@@ -1552,12 +1551,13 @@ function renderHeroHealthCard(heroName) {
       <span class="font-bold text-slate-200">📱 近 7 天身體狀態 (手機同步)</span>
       <span class="text-[11px] text-slate-400 font-mono">最後更新 ${escapeHtml(String(summary.lastDate || ''))}</span>
     </div>
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+    <div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
       <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800"><span class="text-[10px] text-slate-400 block">👣 平均步數</span><span class="font-rpg font-bold text-amber-400">${fmt(summary.avgSteps)}</span></div>
       <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800"><span class="text-[10px] text-slate-400 block">😴 平均睡眠</span><span class="font-rpg font-bold text-cyan-400">${sleepTxt}</span></div>
       <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800"><span class="text-[10px] text-slate-400 block">💓 靜止心率</span><span class="font-rpg font-bold text-rose-400">${fmt(summary.avgRestingHr)} bpm</span></div>
       <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800"><span class="text-[10px] text-slate-400 block">⚡ 活動分鐘</span><span class="font-rpg font-bold text-emerald-400">${fmt(summary.avgActiveMin)} 分</span></div>
-      <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 col-span-2 sm:col-span-1" title="僅部分品牌提供，僅供參考、不計分"><span class="text-[10px] text-slate-400 block">🌿 HRV (參考)</span><span class="font-rpg font-bold text-amber-300">${fmt(summary.avgHrv, 1)} ms</span></div>
+      <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800" title="僅部分品牌提供，僅供徽章與參考、不計入資料片分數"><span class="text-[10px] text-slate-400 block">🌿 HRV</span><span class="font-rpg font-bold text-amber-300">${fmt(summary.avgHrv, 1)} ms</span></div>
+      <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800" title="僅部分品牌提供，僅供徽章與參考、不計入資料片分數"><span class="text-[10px] text-slate-400 block">🫁 血氧</span><span class="font-rpg font-bold text-sky-300">${fmt(summary.avgSpo2, 1)} %</span></div>
     </div>`;
 }
 
@@ -1569,60 +1569,109 @@ function setBadgeCategoryFilter(cat) {
   renderHeroBadgesWall(selectedViewerHero);
 }
 
-function buildBadgeInspectorHtml(heroName, badgeId) {
-  const catalog = getActiveBadgeCatalogList();
-  const unlockedMap = gameState?.heroBadges?.[heroName] || {};
+function buildBadgeInspectorHtml(heroName, slotOrBadgeId) {
+  const slots = typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(gameState, heroName) : [];
+  if (!slots.length) return '';
   const rarityMeta = window.BADGE_RARITY_META || {};
+  const unlockedMap = gameState?.heroBadges?.[heroName] || {};
 
-  let targetBadge = catalog.find(b => b.id === badgeId) || (window.findBadgeById ? window.findBadgeById(badgeId) : (window.BADGE_CATALOG || []).find(b => b.id === badgeId));
-  if (!targetBadge) {
-    // Default to first unlocked badge of this hero, or first badge in catalog
-    targetBadge = catalog.find(b => unlockedMap[b.id]) || catalog[0];
+  let slot = (typeof window.findBadgeSlot === 'function' ? window.findBadgeSlot(slotOrBadgeId, gameState, heroName) : null)
+    || slots.find(s => s.id === slotOrBadgeId)
+    || slots.find(s => s.isUnlocked)
+    || slots[0];
+  if (!slot) return '';
+
+  const rMeta = rarityMeta[slot.rarity] || rarityMeta.common || { label: '銅牌 • 初心者', shortLabel: '銅牌', color: 'text-slate-200', border: 'border-slate-600', bg: 'bg-slate-900/90', tagClass: 'bg-slate-900 text-slate-300 border-slate-700' };
+  const numStr = `#${String(slot.slotNum).padStart(3, '0')}`;
+
+  // 多階進度列 (銅牌 / 銀牌 / 金牌 / 紫金 / 彩級)
+  let tierLadderHtml = '';
+  if (slot.isMultiTier) {
+    const pills = slot.tiers.map((tb, idx) => {
+      const uRec = unlockedMap[tb.id];
+      const trMeta = rarityMeta[tb.rarity] || rarityMeta.common || {};
+      const isNext = slot.nextTier && slot.nextTier.id === tb.id;
+      if (uRec) {
+        return `<div class="px-2 py-1 rounded-lg border ${trMeta.border || 'border-amber-500/60'} text-[10px] flex items-center gap-1" title="已於 ${escapeHtml(uRec.unlockedAt)} 達成：${escapeHtml(tb.condition)}">
+          <span>✅</span>
+          <span class="font-black ${trMeta.color || 'text-white'}">[${trMeta.shortLabel || '已達成'} Lv.${idx + 1}] ${escapeHtml(tb.name)}</span>
+          <span class="text-slate-300 hidden md:inline">(${escapeHtml(tb.condition)})</span>
+        </div>`;
+      } else if (isNext) {
+        return `<div class="px-2 py-1 rounded-lg border border-dashed border-amber-400/80 bg-amber-950/30 text-[10px] flex items-center gap-1 text-amber-200">
+          <span>🎯</span>
+          <span class="font-bold">下一階 [${trMeta.shortLabel || ''} Lv.${idx + 1}] ${escapeHtml(tb.name)}：${escapeHtml(tb.condition)}</span>
+        </div>`;
+      } else {
+        return `<div class="px-2 py-1 rounded-lg border border-slate-800 bg-slate-900/70 text-[10px] flex items-center gap-1 text-slate-500">
+          <span>🔒</span>
+          <span>[${trMeta.shortLabel || ''} Lv.${idx + 1}] ${slot.isUnlocked || slot.anyGloballyRevealed ? escapeHtml(tb.name) : '？？？'}</span>
+        </div>`;
+      }
+    }).join('');
+    tierLadderHtml = `
+      <div class="mt-2 pt-2 border-t border-slate-800/80 space-y-1.5">
+        <div class="flex items-center justify-between text-[10px] text-slate-400">
+          <span class="font-bold text-amber-300">🪜 同項目進階升框路線（目前已達成 ${slot.unlockedCount} / ${slot.totalTiers} 階）</span>
+          <span>${slot.isMaxed ? '🌟 已達最高滿階外框！' : '繼續累積可升級更高級別外框'}</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">${pills}</div>
+      </div>`;
   }
-  if (!targetBadge) return '';
 
-  const unlocked = unlockedMap[targetBadge.id];
-  const rMeta = rarityMeta[targetBadge.rarity] || rarityMeta.common || { label: '普通', color: 'text-slate-200', border: 'border-slate-600', bg: 'bg-slate-900/90' };
-  const numStr = `#${String(targetBadge.num).padStart(3, '0')}`;
-
-  if (unlocked) {
+  if (slot.isUnlocked) {
+    const curBadge = slot.currentTier || slot.displayBadge;
+    const u = slot.currentRecord || {};
     return `
-      <div class="bg-slate-950/90 border ${rMeta.border} rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-md">
-        <div class="flex items-start sm:items-center space-x-3">
-          <div class="w-11 h-11 rounded-xl ${rMeta.bg} border ${rMeta.border} flex items-center justify-center text-2xl flex-shrink-0">
-            ${targetBadge.icon}
-          </div>
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-xs sm:text-sm font-black text-white">${targetBadge.name}</span>
-              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border ${rMeta.border} ${rMeta.color}">${rMeta.label} ${numStr}</span>
-              <span class="text-[10px] font-bold text-slate-400">• ${targetBadge.cat}</span>
+      <div class="bg-slate-950/90 border ${rMeta.border} rounded-xl p-3 shadow-md">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="flex items-start sm:items-center space-x-3">
+            <div class="w-12 h-12 rounded-xl ${rMeta.border} flex items-center justify-center text-2xl flex-shrink-0 relative">
+              ${slot.icon}
+              ${slot.isMultiTier ? `<span class="absolute -bottom-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-black ${rMeta.tagClass} border">${slot.levelTag}</span>` : ''}
             </div>
-            <p class="text-[11px] text-slate-200 mt-1"><strong class="text-amber-400">📜 取得條件：</strong>${targetBadge.desc}</p>
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs sm:text-sm font-black text-white">${escapeHtml(slot.displayName)}</span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded border ${rMeta.tagClass} font-bold">${rMeta.label}外框 ${numStr}</span>
+                <span class="text-[10px] font-bold text-slate-400">• ${escapeHtml(slot.cat)}</span>
+              </div>
+              <p class="text-[11px] text-slate-200 mt-1"><strong class="text-amber-400">📜 當前階級條件：</strong>${escapeHtml(curBadge.desc || curBadge.condition)}</p>
+              ${slot.nextTier ? `<p class="text-[11px] text-cyan-300 mt-0.5"><strong class="text-cyan-400">🎯 下一階升框目標 (${(rarityMeta[slot.nextTier.rarity]?.shortLabel) || '進階'}框)：</strong>${escapeHtml(slot.nextTier.condition)}</p>` : (slot.isMultiTier ? `<p class="text-[11px] text-rose-300 font-bold mt-0.5">👑 恭喜！此系列所有階級已全數封頂完蒐！</p>` : '')}
+            </div>
+          </div>
+          <div class="flex flex-wrap sm:flex-col sm:items-end justify-between gap-1 text-[11px] border-t sm:border-t-0 border-slate-800/80 pt-1.5 sm:pt-0 flex-shrink-0">
+            <span class="text-slate-300"><strong class="text-cyan-400">📅 何時取得：</strong><span class="font-mono font-bold text-white">${escapeHtml(u.unlockedAt || '')}</span></span>
+            <span class="text-slate-400 truncate max-w-[260px]"><strong class="text-emerald-400">🏃 達成紀錄：</strong>${escapeHtml(u.actTitle || u.actName || '榮譽解鎖')}</span>
           </div>
         </div>
-        <div class="flex flex-wrap sm:flex-col sm:items-end justify-between gap-1 text-[11px] border-t sm:border-t-0 border-slate-800/80 pt-1.5 sm:pt-0 flex-shrink-0">
-          <span class="text-slate-300"><strong class="text-cyan-400">📅 何時取得：</strong><span class="font-mono font-bold text-white">${unlocked.unlockedAt}</span></span>
-          <span class="text-slate-400 truncate max-w-[240px]"><strong class="text-emerald-400">🏃 達成紀錄：</strong>${escapeHtml(unlocked.actTitle || '榮譽解鎖')}</span>
-        </div>
+        ${tierLadderHtml}
       </div>
     `;
   } else {
+    const firstTier = slot.tiers[0];
+    const revealHint = slot.anyGloballyRevealed
+      ? `全服已有英雄解鎖！第一階【${escapeHtml(firstTier.name)}】條件：${escapeHtml(firstTier.condition)}`
+      : `？？？ (尚未達成，保持運動探索或點選上方其他英雄偷看已解鎖線索！)`;
     return `
-      <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl text-slate-500 flex-shrink-0">
-            🔒
-          </div>
-          <div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-xs font-bold text-slate-300">神秘未解鎖徽章</span>
-              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">${numStr} • ${targetBadge.cat}</span>
+      <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center space-x-3">
+            <div class="w-11 h-11 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl text-slate-500 flex-shrink-0 relative">
+              ${slot.anyGloballyRevealed ? slot.icon : '🔒'}
+              ${slot.isMultiTier ? `<span class="absolute -bottom-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-slate-900 text-slate-500 border border-slate-700">0/${slot.totalTiers}階</span>` : ''}
             </div>
-            <p class="text-[11px] text-slate-400 mt-0.5"><strong class="text-amber-400/80">📜 取得條件：</strong>？？？ (尚未達成，保持運動探索或點選上方其他英雄偷看已解鎖線索！)</p>
+            <div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-bold text-slate-300">${slot.anyGloballyRevealed ? escapeHtml(slot.name) : '神秘未解鎖徽章'}</span>
+                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">${numStr} • ${escapeHtml(slot.cat)} ${slot.isMultiTier ? `(共 ${slot.totalTiers} 階可升框)` : ''}</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-0.5"><strong class="text-amber-400/80">📜 取得條件：</strong>${revealHint}</p>
+            </div>
           </div>
+          <span class="text-[10px] font-mono text-slate-500 flex-shrink-0">📅 尚未解鎖</span>
         </div>
-        <span class="text-[10px] font-mono text-slate-500 flex-shrink-0">📅 尚未解鎖</span>
+        ${slot.anyGloballyRevealed ? tierLadderHtml : ''}
       </div>
     `;
   }
@@ -1644,42 +1693,41 @@ function inspectBadgeOnWall(heroName, badgeId) {
 }
 
 /**
- * 渲染冒險者戰情室 100 格永久榮譽徽章牆 (支援擴充至 500 格 + 前台迷霧探索模式 + 手機點按檢視面板)
- * - 已解鎖徽章：完整顯示圖示、名稱、稀有度光暈，Hover 或手機點擊立即顯示「何時取得」與「取得條件」
- * - 未解鎖徽章：隱藏名稱與取得條件（顯示 🔒 神秘未解鎖徽章），鼓勵玩家透過觀看其他英雄的徽章牆探索蒐集條件！
+ * 渲染冒險者戰情室「進階升框榮譽徽章展櫃」 (132 格濃縮展示 / 331 階完整計算)
+ * - 同項目不同難度的徽章合併為 1 格，共用代表圖示，並依最高達成階級換上【銅牌 / 銀牌 / 金牌 / 紫金 / 彩級】外框
+ * - 特殊與奇蹟彩蛋徽章維持獨立 1 格
  */
 function renderHeroBadgesWall(heroName) {
   const wallCard = document.getElementById('hero-badges-wall-card');
   if (!wallCard) return;
 
-  const catalog = getActiveBadgeCatalogList();
-  if (catalog.length === 0) {
-    wallCard.innerHTML = '';
-    return;
-  }
-
   if (!gameState?.heroBadges && typeof window.evaluateAllHeroesBadges === 'function') {
     window.evaluateAllHeroesBadges(gameState);
   }
 
-  const unlockedMap = gameState?.heroBadges?.[heroName] || {};
-  const unlockedCount = catalog.filter(b => unlockedMap[b.id]).length;
-  const totalCount = catalog.length;
-  const pct = totalCount > 0 ? ((unlockedCount / totalCount) * 100).toFixed(1) : '0.0';
+  const allSlots = typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(gameState, heroName) : [];
+  if (allSlots.length === 0) {
+    wallCard.innerHTML = '';
+    return;
+  }
 
-  const categories = ['ALL', ...Array.from(new Set(catalog.map(b => b.cat)))];
-  const filteredBadges = activeBadgeCategoryFilter === 'ALL'
-    ? catalog
-    : catalog.filter(b => b.cat === activeBadgeCategoryFilter);
+  const prog = typeof window.getHeroBadgeSlotProgress === 'function'
+    ? window.getHeroBadgeSlotProgress(heroName, gameState)
+    : { unlockedSlots: 0, totalSlots: allSlots.length, slotPct: 0, unlockedTiers: 0, totalTiers: allSlots.length, tierPct: 0 };
+
+  const categories = ['ALL', ...Array.from(new Set(allSlots.map(s => s.cat)))];
+  const filteredSlots = activeBadgeCategoryFilter === 'ALL'
+    ? allSlots
+    : allSlots.filter(s => s.cat === activeBadgeCategoryFilter);
 
   const rarityMeta = window.BADGE_RARITY_META || {};
   const badgeStartYMD = (typeof window.normalizeDateYMD === 'function' && gameState?.gmOps?.badgeStartDate)
     ? window.normalizeDateYMD(gameState.gmOps.badgeStartDate)
     : (gameState?.gmOps?.badgeStartDate || '');
 
-  const defaultInspected = (inspectedBadgeId && filteredBadges.some(b => b.id === inspectedBadgeId))
-    ? inspectedBadgeId
-    : ((filteredBadges.find(b => unlockedMap[b.id]) || filteredBadges[0])?.id || null);
+  const defaultInspected = (inspectedBadgeId && filteredSlots.some(s => s.id === inspectedBadgeId || s.tiers.some(t => t.id === inspectedBadgeId)))
+    ? (window.findBadgeSlot(inspectedBadgeId, gameState, heroName)?.id || inspectedBadgeId)
+    : ((filteredSlots.find(s => s.isUnlocked) || filteredSlots[0])?.id || null);
 
   wallCard.innerHTML = `
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
@@ -1689,9 +1737,12 @@ function renderHeroBadgesWall(heroName) {
         </div>
         <div>
           <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <h4 class="text-sm font-black text-white tracking-wide">${heroName} 的永久榮譽徽章展櫃</h4>
+            <h4 class="text-sm font-black text-white tracking-wide">${escapeHtml(heroName)} 的永久榮譽徽章展櫃</h4>
             <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-              已解鎖 ${unlockedCount} / ${totalCount} 枚 (${pct}%)
+              已點亮 ${prog.unlockedSlots} / ${prog.totalSlots} 格 (${prog.slotPct}%)
+            </span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40" title="與英雄卡上的徽章總階數一致，每升一階外框就會 +1">
+              累計達成 ${prog.unlockedTiers} / ${prog.totalTiers} 階 (${prog.tierPct}%)
             </span>
             ${badgeStartYMD ? `
               <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700" title="GM 已設定徽章累計起始時間，僅採計該日(含)以後之運動紀錄">
@@ -1700,19 +1751,19 @@ function renderHeroBadgesWall(heroName) {
             ` : ''}
           </div>
           <p class="text-[11px] text-slate-400 mt-0.5">
-            💡 點擊或滑鼠移至徽章即可查看「<strong class="text-cyan-300">何時取得</strong>」與「<strong class="text-amber-300">取得條件</strong>」。未解鎖徽章處於迷霧狀態，快去切換觀看其他英雄的徽章牆尋找線索吧！
+            💡 同系列徽章合一進階：隨達成難度提升，外框依序升級為 <span class="text-orange-300 font-bold">銅牌</span> ➔ <span class="text-cyan-300 font-bold">銀牌</span> ➔ <span class="text-amber-300 font-bold">金牌</span> ➔ <span class="text-purple-300 font-bold">紫金</span> ➔ <span class="text-rose-300 font-bold">彩級</span>！點擊任一徽章可檢視各階目標。
           </p>
         </div>
       </div>
 
       <!-- 進度條 -->
-      <div class="w-full sm:w-48">
+      <div class="w-full sm:w-52">
         <div class="flex justify-between text-[10px] text-slate-400 mb-1 font-mono">
-          <span>蒐集完成度</span>
-          <span class="text-amber-400 font-bold">${unlockedCount} / ${totalCount}</span>
+          <span>展櫃點亮 ${prog.unlockedSlots}/${prog.totalSlots} 格</span>
+          <span class="text-amber-400 font-bold">總階數 ${prog.unlockedTiers}/${prog.totalTiers}</span>
         </div>
         <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-          <div class="h-full bg-gradient-to-r from-amber-500 via-orange-400 to-cyan-400 transition-all duration-500" style="width: ${Math.min(100, parseFloat(pct))}%"></div>
+          <div class="h-full bg-gradient-to-r from-amber-500 via-orange-400 to-cyan-400 transition-all duration-500" style="width: ${Math.min(100, prog.slotPct)}%"></div>
         </div>
       </div>
     </div>
@@ -1721,10 +1772,9 @@ function renderHeroBadgesWall(heroName) {
     <div class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px]">
       ${categories.map(cat => {
         const isAct = activeBadgeCategoryFilter === cat;
-        const catTotal = cat === 'ALL' ? catalog.length : catalog.filter(b => b.cat === cat).length;
-        const catUnlocked = cat === 'ALL'
-          ? unlockedCount
-          : catalog.filter(b => b.cat === cat && unlockedMap[b.id]).length;
+        const catSlots = cat === 'ALL' ? allSlots : allSlots.filter(s => s.cat === cat);
+        const catTotal = catSlots.length;
+        const catUnlocked = catSlots.filter(s => s.isUnlocked).length;
         return `
           <button onclick="setBadgeCategoryFilter(${jsArg(cat)})" class="px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition border ${
             isAct
@@ -1737,56 +1787,61 @@ function renderHeroBadgesWall(heroName) {
       }).join('')}
     </div>
 
-    <!-- 手機與電腦通用：點擊徽章即時詳情檢視列 (避免手機懸浮框被裁切) -->
+    <!-- 手機與電腦通用：點擊徽章即時詳情與升框進度檢視列 -->
     <div id="badge-mobile-inspector">
       ${buildBadgeInspectorHtml(heroName, defaultInspected)}
     </div>
 
-    <!-- 100 格徽章網格 (手機 4 欄不截斷四字成語、平板 6~8 欄、桌機 10 欄，支援未來無縫擴充至 500 格) -->
-    <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 pt-1 max-h-[380px] overflow-y-auto lg:max-h-none lg:overflow-visible pr-1">
-      ${filteredBadges.map(b => {
-        const unlocked = unlockedMap[b.id];
-        const rMeta = rarityMeta[b.rarity] || rarityMeta.common || { label: '普通', color: 'text-slate-200', border: 'border-slate-600', bg: 'bg-slate-900/90', glow: '' };
-        const numStr = `#${String(b.num).padStart(3, '0')}`;
-        const isSelected = b.id === defaultInspected;
+    <!-- 濃縮進階徽章網格 (手機 4 欄、平板 6~8 欄、桌機 9 欄) -->
+    <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-9 gap-2.5 pt-1 max-h-[420px] overflow-y-auto lg:max-h-none lg:overflow-visible pr-1">
+      ${filteredSlots.map(s => {
+        const rMeta = rarityMeta[s.rarity] || rarityMeta.common || { label: '銅牌', shortLabel: '銅牌', color: 'text-slate-200', border: 'border-slate-600', bg: 'bg-slate-900/90', glow: '', tagClass: 'bg-slate-900 text-slate-300 border-slate-700' };
+        const numStr = `#${String(s.slotNum).padStart(3, '0')}`;
+        const isSelected = s.id === defaultInspected;
 
-        if (unlocked) {
+        if (s.isUnlocked) {
+          const curBadge = s.currentTier || s.displayBadge;
+          const u = s.currentRecord || {};
           return `
-            <div tabindex="0" data-badge-id="${b.id}" onclick="inspectBadgeOnWall(${jsArg(heroName)}, ${jsArg(b.id)})" class="badge-slot-item relative group flex flex-col items-center justify-center px-1.5 py-2 rounded-xl border ${rMeta.border} ${rMeta.bg} ${rMeta.glow} ${isSelected ? 'ring-2 ring-amber-400' : ''} cursor-pointer select-none">
-              <span class="absolute top-1 left-1.5 text-[8px] font-mono text-slate-400">${numStr}</span>
-              <span class="text-xl sm:text-2xl my-1 transform group-hover:scale-110 transition">${b.icon}</span>
-              <span class="text-[10px] sm:text-[11px] font-bold ${rMeta.color} w-full text-center leading-tight break-words">${b.name}</span>
+            <div tabindex="0" data-badge-id="${s.id}" onclick="inspectBadgeOnWall(${jsArg(heroName)}, ${jsArg(s.id)})" class="badge-slot-item relative group flex flex-col items-center justify-center px-1.5 pt-4 pb-2 rounded-xl ${rMeta.border} ${rMeta.glow} ${isSelected ? 'ring-2 ring-amber-300' : ''} cursor-pointer select-none transition">
+              <span class="absolute top-1 left-1.5 text-[8px] font-mono text-slate-300/80">${numStr}</span>
+              <span class="absolute top-1 right-1 px-1 py-0.2 rounded text-[8px] font-mono font-black border ${rMeta.tagClass}">${rMeta.shortLabel}${s.isMultiTier ? ` ${s.isMaxed ? '★MAX' : `${s.unlockedCount}/${s.totalTiers}`}` : ''}</span>
+              <span class="text-2xl sm:text-3xl my-1 transform group-hover:scale-110 transition drop-shadow">${s.icon}</span>
+              <span class="text-[10px] sm:text-[11px] font-black ${rMeta.color} w-full text-center leading-tight break-words">${escapeHtml(s.name)}</span>
+              ${s.isMultiTier && s.currentTierName ? `<span class="text-[9px] text-white/90 font-bold truncate max-w-full mt-0.5">「${escapeHtml(s.currentTierName)}」</span>` : ''}
 
-              <!-- 懸浮提示框 (桌機 Hover 顯示何時取得 & 取得條件) -->
+              <!-- 懸浮提示框 (桌機 Hover 顯示目前階級 & 下一階目標) -->
               <div class="badge-tooltip-box hidden sm:block">
-                <div class="flex items-center justify-between border-b border-slate-800 pb-1 mb-1.5">
-                  <span class="font-black text-white">${b.icon} ${b.name}</span>
-                  <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border ${rMeta.border} ${rMeta.color}">${rMeta.label} ${numStr}</span>
+                <div class="flex items-center justify-between border-b border-slate-800 pb-1 mb-1.5 gap-2">
+                  <span class="font-black text-white">${s.icon} ${escapeHtml(s.displayName)}</span>
+                  <span class="text-[9px] font-mono px-1.5 py-0.5 rounded border ${rMeta.tagClass}">${rMeta.label} ${s.levelTag}</span>
                 </div>
                 <div class="space-y-1 text-[10px]">
-                  <p class="text-slate-300"><strong class="text-amber-400">📜 取得條件：</strong>${b.desc}</p>
-                  <p class="text-slate-300"><strong class="text-cyan-400">📅 何時取得：</strong><span class="font-mono">${unlocked.unlockedAt}</span></p>
-                  <p class="text-slate-400 truncate"><strong class="text-emerald-400">🏃 達成紀錄：</strong>${escapeHtml(unlocked.actTitle || '榮譽解鎖')}</p>
+                  <p class="text-slate-200"><strong class="text-amber-400">📜 當前階級：</strong>${escapeHtml(curBadge.condition)}</p>
+                  ${s.nextTier ? `<p class="text-cyan-300"><strong class="text-cyan-400">🎯 下一階 (${rarityMeta[s.nextTier.rarity]?.shortLabel || '進階'}框)：</strong>${escapeHtml(s.nextTier.name)} — ${escapeHtml(s.nextTier.condition)}</p>` : (s.isMultiTier ? `<p class="text-rose-300 font-bold">👑 已達此項目最高階級 (MAX)！</p>` : '')}
+                  <p class="text-slate-300"><strong class="text-cyan-400">📅 何時取得：</strong><span class="font-mono">${escapeHtml(u.unlockedAt || '')}</span></p>
+                  <p class="text-slate-400 truncate"><strong class="text-emerald-400">🏃 達成紀錄：</strong>${escapeHtml(u.actTitle || u.actName || '榮譽解鎖')}</p>
                 </div>
               </div>
             </div>
           `;
         } else {
           return `
-            <div tabindex="0" data-badge-id="${b.id}" onclick="inspectBadgeOnWall(${jsArg(heroName)}, ${jsArg(b.id)})" class="badge-slot-item badge-slot-locked relative group flex flex-col items-center justify-center px-1.5 py-2 rounded-xl border border-slate-800/80 bg-slate-950/70 ${isSelected ? 'ring-2 ring-amber-400' : ''} cursor-pointer select-none">
+            <div tabindex="0" data-badge-id="${s.id}" onclick="inspectBadgeOnWall(${jsArg(heroName)}, ${jsArg(s.id)})" class="badge-slot-item badge-slot-locked relative group flex flex-col items-center justify-center px-1.5 pt-4 pb-2 rounded-xl border border-slate-800/80 bg-slate-950/70 ${isSelected ? 'ring-2 ring-amber-400' : ''} cursor-pointer select-none">
               <span class="absolute top-1 left-1.5 text-[8px] font-mono text-slate-600">${numStr}</span>
-              <span class="text-lg sm:text-xl my-1 text-slate-600">🔒</span>
-              <span class="text-[10px] font-mono text-slate-600 whitespace-nowrap text-center leading-tight">？？？</span>
+              ${s.isMultiTier ? `<span class="absolute top-1 right-1 px-1 rounded text-[8px] font-mono text-slate-600 bg-slate-900 border border-slate-800">0/${s.totalTiers}</span>` : ''}
+              <span class="text-xl sm:text-2xl my-1 text-slate-600">${s.anyGloballyRevealed ? s.icon : '🔒'}</span>
+              <span class="text-[10px] font-mono text-slate-500 w-full text-center leading-tight truncate">${s.anyGloballyRevealed ? escapeHtml(s.name) : '？？？'}</span>
 
-              <!-- 未解鎖神秘提示框 (不劇透未蒐集條件) -->
+              <!-- 未解鎖神秘提示框 -->
               <div class="badge-tooltip-box hidden sm:block">
                 <div class="flex items-center justify-between border-b border-slate-800 pb-1 mb-1.5">
-                  <span class="font-bold text-slate-400">🔒 神秘未解鎖徽章</span>
-                  <span class="text-[9px] font-mono text-slate-500">${numStr} • ${b.cat}</span>
+                  <span class="font-bold text-slate-300">${s.anyGloballyRevealed ? `${s.icon} ${escapeHtml(s.name)}` : '🔒 神秘未解鎖徽章'}</span>
+                  <span class="text-[9px] font-mono text-slate-500">${numStr} • ${escapeHtml(s.cat)}</span>
                 </div>
                 <div class="space-y-1 text-[10px]">
-                  <p class="text-slate-400"><strong class="text-amber-400/80">📜 取得條件：</strong>？？？ (尚未達成，保持運動探索或點選其他冒險者偷看線索！)</p>
-                  <p class="text-slate-500"><strong class="text-slate-400">📅 何時取得：</strong>尚未解鎖</p>
+                  <p class="text-slate-400"><strong class="text-amber-400/80">📜 第一階目標：</strong>${s.anyGloballyRevealed ? escapeHtml(s.tiers[0].condition) : '？？？ (尚未達成，保持運動探索或點選其他冒險者偷看線索！)'}</p>
+                  <p class="text-slate-500"><strong class="text-slate-400">📅 何時取得：</strong>尚未解鎖 ${s.isMultiTier ? `(共 ${s.totalTiers} 階可升框)` : ''}</p>
                 </div>
               </div>
             </div>
@@ -2138,8 +2193,7 @@ function openHeroDetailModal(heroName) {
     `;
   } else if (activeMode === "survival") {
     const svState = window.computeSurvivalState(gameState);
-    const { currentHp, isDead } = window.computeSurvivalHeroHp(heroStat, svState);
-    const activeDays = window.countHeroActiveDays(gameState, cleanName);
+    const { currentHp, isDead, survivedDays, totalDays } = window.computeSurvivalHeroHp(heroStat, svState, gameState);
     
     modalCardsHtml = `
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
@@ -2155,8 +2209,8 @@ function openHeroDetailModal(heroName) {
         <span class="font-rpg font-bold text-blue-400 text-sm">+${Math.floor((heroStat.totalTrimp || 0) * 1.5).toLocaleString()}</span>
       </div>
       <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-        <span class="text-[10px] text-slate-400 block">有運動的天數</span>
-        <span class="font-rpg font-bold text-cyan-400 text-sm">${activeDays} 荒野日</span>
+        <span class="text-[10px] text-slate-400 block">荒野堅持天數</span>
+        <span class="font-rpg font-bold text-cyan-400 text-sm">${survivedDays} / ${totalDays} 天</span>
       </div>
     `;
   } else if (activeMode === "base_builder") {
@@ -2201,38 +2255,43 @@ function openHeroDetailModal(heroName) {
     `;
   }
 
-  // Build unlocked badges mini-showcase inside Hero Detail Modal
-  const catalog = getActiveBadgeCatalogList();
+  // Build unlocked badges mini-showcase inside Hero Detail Modal (使用濃縮進階徽章格)
+  const allSlots = typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(gameState, hero.name) : [];
+  const unlockedSlots = allSlots.filter(s => s.isUnlocked);
+  const prog = typeof window.getHeroBadgeSlotProgress === 'function'
+    ? window.getHeroBadgeSlotProgress(hero.name, gameState)
+    : { unlockedSlots: unlockedSlots.length, totalSlots: allSlots.length, unlockedTiers: 0, totalTiers: 0 };
   const rarityMeta = window.BADGE_RARITY_META || {};
-  const unlockedMap = gameState?.heroBadges?.[hero.name] || {};
-  const unlockedBadgesList = catalog.filter(b => unlockedMap[b.id]);
 
   const modalBadgesHtml = `
     <div class="bg-slate-950/90 p-3 rounded-2xl border border-amber-500/30 space-y-2">
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
         <span class="font-bold text-amber-300 text-xs flex items-center space-x-1.5">
-          <span>🎖️ 已解鎖榮譽徽章 (${unlockedBadgesList.length} / ${catalog.length})</span>
+          <span>🎖️ 已點亮榮譽徽章 (${prog.unlockedSlots}/${prog.totalSlots} 格 • 累計 ${prog.unlockedTiers}/${prog.totalTiers} 階)</span>
         </span>
         <button onclick="jumpToHeroBadgesWall(${jsArg(hero.name)})" class="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-950/50 border border-cyan-800/60 px-2 py-0.5 rounded-lg transition">
           前往戰情室徽章牆 ➔
         </button>
       </div>
-      ${unlockedBadgesList.length === 0 ? `
+      ${unlockedSlots.length === 0 ? `
         <p class="text-[11px] text-slate-500 py-2 text-center">尚未解鎖任何榮譽徽章</p>
       ` : `
-        <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto py-1">
-          ${unlockedBadgesList.map(b => {
-            const u = unlockedMap[b.id];
-            const rMeta = rarityMeta[b.rarity] || rarityMeta.common || { color: 'text-slate-200', border: 'border-slate-700', bg: 'bg-slate-900' };
+        <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-1">
+          ${unlockedSlots.map(s => {
+            const u = s.currentRecord || {};
+            const curBadge = s.currentTier || s.displayBadge;
+            const rMeta = rarityMeta[s.rarity] || rarityMeta.common || { shortLabel: '銅牌', color: 'text-slate-200', border: 'border-slate-700', bg: 'bg-slate-900' };
+            const nextTxt = s.nextTier ? `\n🎯 下一階 (${rarityMeta[s.nextTier.rarity]?.shortLabel || '進階'}框)：${s.nextTier.condition}` : (s.isMultiTier ? '\n👑 已達最高階 (MAX)！' : '');
             return `
-              <div class="inline-flex items-center space-x-1 px-2 py-1 rounded-lg border ${rMeta.border} ${rMeta.bg} text-[10px] cursor-help" title="【${b.name}】&#10;📜 取得條件：${b.desc}&#10;📅 何時取得：${u.unlockedAt}&#10;🏃 達成紀錄：${escapeHtml(u.actTitle || '')}">
-                <span>${b.icon}</span>
-                <span class="font-bold ${rMeta.color}">${b.name}</span>
+              <div class="inline-flex items-center space-x-1 px-2 py-1 rounded-lg ${rMeta.border} text-[10px] cursor-help" title="【${escapeHtml(s.displayName)}】(${rMeta.shortLabel}框 ${s.levelTag})&#10;📜 當前階級：${escapeHtml(curBadge.condition)}${escapeHtml(nextTxt)}&#10;📅 何時取得：${escapeHtml(u.unlockedAt || '')}&#10;🏃 達成紀錄：${escapeHtml(u.actTitle || u.actName || '')}">
+                <span>${s.icon}</span>
+                <span class="font-bold ${rMeta.color}">${escapeHtml(s.displayName)}</span>
+                ${s.isMultiTier ? `<span class="text-[9px] font-mono opacity-85">(${s.isMaxed ? '★MAX' : `${s.unlockedCount}/${s.totalTiers}`})</span>` : ''}
               </div>
             `;
           }).join('')}
         </div>
-        <p class="text-[10px] text-slate-500">💡 滑鼠移至徽章上方可偷看該徽章的「取得條件」與「何時取得」</p>
+        <p class="text-[10px] text-slate-500">💡 滑鼠移至徽章上方可偷看目前階級條件、下一階升框目標與達成時間</p>
       `}
     </div>
   `;
@@ -2781,7 +2840,8 @@ function renderSurvivalHtml(view) {
         metrics: [
           { label: '🍖 狩獵熱量', value: `+${Math.floor(h.food).toLocaleString()}`, accent: 'text-emerald-300' },
           { label: '🎒 搜刮物資', value: `+${Math.floor(h.scavenge).toLocaleString()}`, accent: 'text-amber-300' },
-          { label: '☣️ 毒圈流失', value: `-${currentPenalty.toLocaleString()}`, accent: 'text-rose-300' }
+          { label: '☣️ 毒圈流失', value: `-${currentPenalty.toLocaleString()}`, accent: 'text-rose-300' },
+          { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : ((sv.days || 0) + 1))} / ${h.totalDays ?? ((sv.days || 0) + 1)} 天`, accent: 'text-cyan-300' }
         ],
         footHtml: `<div class="w-full h-2 ${h.isDead ? 'bg-slate-800' : 'bg-slate-900'} rounded-full overflow-hidden" title="HP = 初始 - 毒圈 + 熱量 + 衝力"><div class="h-full bg-gradient-to-r from-amber-500 to-orange-500" style="width:${hpPct}%"></div></div>${h.isDead ? '<span class="block mt-1 text-rose-400">去運動補血即可復活</span>' : ''}`
       });
@@ -3041,15 +3101,15 @@ function renderBingoHtml(view) {
         </div>
 
         
-        <!-- Elevation 貢獻 -->
+        <!-- 長征先鋒 (單次 ≥ 60 分鐘) 貢獻 -->
         <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
-           <h4 class="text-xs font-bold text-teal-400 mb-2">🏔️ 征服巔峰 <span class="text-[9px] text-slate-500 ml-1">累積爬升 (Elevation)</span></h4>
+           <h4 class="text-xs font-bold text-teal-400 mb-2">⏳ 長征先鋒 <span class="text-[9px] text-slate-500 ml-1">單次 ≥ 60 分鐘次數</span></h4>
            <div class="space-y-2">
              ${renderUnifiedHeroList((gameState?.heroStats || []).map(h => ({
-                ...h, res: (h.scoreElevation ?? h.totalElevation ?? 0)
+                ...h, res: (h.scoreLongCount ?? h.longCount ?? 0)
              })).sort((a,b)=>b.res-a.res).slice(0, 3).map((h, i) => renderUnifiedHeroCard(h.name, {
-                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 🏔️ 征服巔峰', tone: 'gold' }] : [],
-                primary: { label: '累積爬升 (Elevation)', value: `${Math.round(h.res).toLocaleString()} m`, accent: 'text-teal-400' }
+                rank: i + 1, compact: true, guild: h.guild, status: i === 0 ? [{ text: '👑 ⏳ 長征先鋒', tone: 'gold' }] : [],
+                primary: { label: '單次 ≥ 60 分鐘', value: `${Math.round(h.res * 10) / 10} 次`, accent: 'text-teal-400' }
              })))}
            </div>
         </div>
@@ -3084,7 +3144,7 @@ function renderBingoHtml(view) {
         { label: '🔥 熱量', value: `${Math.round(h.totalCalories || 0).toLocaleString()}`, accent: 'text-rose-300' },
         { label: '🟢 Zone2', value: `${Math.round(h.scoreZone2 ?? h.zone2Count ?? 0)} 次`, accent: 'text-emerald-300' },
         { label: '⚙️ TRIMP', value: Math.round(h.totalTrimp || 0).toLocaleString(), accent: 'text-blue-300' },
-        { label: '🏔️ 爬升', value: `${Math.round(h.scoreElevation ?? h.totalElevation ?? 0).toLocaleString()} m`, accent: 'text-teal-300' },
+        { label: '⏳ 長征≥60m', value: `${Math.round((h.scoreLongCount ?? h.longCount ?? 0) * 10) / 10} 次`, accent: 'text-teal-300' },
         { label: '💥 MaxGap', value: `${Math.round(h.scoreMaxGap ?? h.maxGap ?? 0)}`, accent: 'text-purple-300' }
       ]
     });

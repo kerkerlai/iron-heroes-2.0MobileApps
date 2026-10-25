@@ -197,7 +197,8 @@
           metrics: [
             { label: '🍖 狩獵熱量', value: `+${Math.floor(num(h.food)).toLocaleString()}` },
             { label: '🎒 搜刮物資', value: `+${Math.floor(num(h.scavenge)).toLocaleString()}` },
-            { label: '☣️ 毒圈流失', value: `-${num(sv.penalty).toLocaleString()}` }
+            { label: '☣️ 毒圈流失', value: `-${num(sv.penalty).toLocaleString()}` },
+            { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : ((sv.days || 0) + 1))} / ${h.totalDays ?? ((sv.days || 0) + 1)} 天` }
           ],
           bar: h.isDead ? 0 : Math.min(100, Math.max(0, (num(h.currentHp) / maxHp) * 100))
         }));
@@ -557,15 +558,26 @@
     return (st().activities || []).filter(a => a.hero === name).sort((x, y) => actTime(y) - actTime(x));
   }
   function latestUnlocked(name, n) {
-    const catalog = getActiveBadgeCatalogList();
-    const map = st().heroBadges?.[name] || {};
-    return catalog.filter(b => map[b.id]).map(b => ({ b, at: String(map[b.id].unlockedAt || '') })).sort((x, y) => y.at.localeCompare(x.at)).slice(0, n);
+    const slots = typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(st(), name) : [];
+    return slots
+      .filter(s => s.isUnlocked)
+      .map(s => ({ slot: s, at: String(s.currentRecord?.unlockedAt || '') }))
+      .sort((x, y) => y.at.localeCompare(x.at))
+      .slice(0, n);
   }
-  function badgeIcon(b, unlocked, onclick) {
-    const rm = (window.BADGE_RARITY_META || {})[b.rarity] || {};
+  function badgeIcon(slotOrBadge, unlocked, onclick, heroName = '') {
+    const isSlot = Boolean(slotOrBadge && Array.isArray(slotOrBadge.tiers));
+    const slotId = isSlot ? slotOrBadge.id : (slotOrBadge?.id || '');
+    const rarity = slotOrBadge?.rarity || 'common';
+    const icon = slotOrBadge?.icon || '🎖️';
+    const title = isSlot ? slotOrBadge.displayName : (slotOrBadge?.name || '');
+    const levelTag = isSlot && slotOrBadge.isMultiTier
+      ? (unlocked ? (slotOrBadge.isMaxed ? 'MAX' : `${slotOrBadge.unlockedCount}/${slotOrBadge.totalTiers}`) : `0/${slotOrBadge.totalTiers}`)
+      : '';
+    const dataAttrs = `data-slot-id="${esc(slotId)}" data-hero="${esc(heroName || selectedViewerHero || selfHero() || '')}"`;
     return unlocked
-      ? `<button type="button" class="ia-badge on ${esc(rm.border || '')}" title="${esc(b.name)}" ${onclick ? `onclick="${onclick}"` : ''}>${b.icon}</button>`
-      : `<button type="button" class="ia-badge" title="🔒 神秘未解鎖徽章" ${onclick ? `onclick="${onclick}"` : ''}>🔒</button>`;
+      ? `<button type="button" class="ia-badge on ia-rarity-${esc(rarity)}" ${dataAttrs} title="${esc(title)}" ${onclick ? `onclick="${onclick}"` : ''}><span>${icon}</span>${levelTag ? `<i class="ia-badge-lv">${esc(levelTag)}</i>` : ''}</button>`
+      : `<button type="button" class="ia-badge" ${dataAttrs} title="🔒 神秘未解鎖徽章" ${onclick ? `onclick="${onclick}"` : ''}><span>${isSlot && slotOrBadge.anyGloballyRevealed ? icon : '🔒'}</span>${levelTag ? `<i class="ia-badge-lv ia-badge-lv-lock">${esc(levelTag)}</i>` : ''}</button>`;
   }
 
   function renderViewer(root) {
@@ -599,23 +611,30 @@
           <div class="ia-zonelbl"><span>Z1 ${zoneSegs[0] ?? 0}%</span><span class="ia-ok">Z2 ${zoneSegs[1] ?? 0}%</span><span>Z3 ${zoneSegs[2] ?? 0}%</span><span>Z4 ${zoneSegs[3] ?? 0}%</span><span class="ia-bad">Z5 ${zoneSegs[4] ?? 0}%</span></div></div>
         ${hs ? `<div class="ia-section-title"><span>📱 近 7 天身體狀態</span><small>手機同步</small></div>
           <div class="ia-kpi"><div class="ia-stat"><span>👣 平均步數</span><b>${f0(hs.avgSteps)}</b></div><div class="ia-stat"><span>😴 平均睡眠</span><b>${sleepTxt}</b></div>
-          <div class="ia-stat"><span>💓 靜止心率</span><b>${f0(hs.avgRestingHr)} bpm</b></div><div class="ia-stat"><span>⚡ 活動分鐘</span><b>${f0(hs.avgActiveMin)} 分</b></div></div>` : ''}
-        <div class="ia-section-title"><span>🎖️ 最近解鎖</span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('badges')">全部 ›</button></div>
-        <div class="ia-badgegrid">${(() => { const l = latestUnlocked(name, 6); const cells = l.map(x => badgeIcon(x.b, true, `IronAppUI.inspectBadge(${esc(JSON.stringify(x.b.id))})`)); while (cells.length < 6) cells.push('<span class="ia-badge">🔒</span>'); return cells.join(''); })()}</div>
+          <div class="ia-stat"><span>💓 靜止心率</span><b>${f0(hs.avgRestingHr)} bpm</b></div><div class="ia-stat"><span>⚡ 活動分鐘</span><b>${f0(hs.avgActiveMin)} 分</b></div>
+          <div class="ia-stat"><span>🌿 HRV</span><b>${hs.avgHrv != null ? Math.round(hs.avgHrv * 10) / 10 + ' ms' : '—'}</b></div><div class="ia-stat"><span>🫁 血氧</span><b>${hs.avgSpo2 != null ? Math.round(hs.avgSpo2 * 10) / 10 + '%' : '—'}</b></div></div>` : ''}
+        <div class="ia-section-title"><span>🎖️ 最近解鎖 <small style="font-weight:600;color:#94a3b8">(長按偷看條件)</small></span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('badges')">全部 ›</button></div>
+        <div class="ia-badgegrid">${(() => { const l = latestUnlocked(name, 6); const cells = l.map(x => badgeIcon(x.slot, true, '', name)); while (cells.length < 6) cells.push('<span class="ia-badge">🔒</span>'); return cells.join(''); })()}</div>
         <div class="ia-section-title"><span>🏃 最近運動</span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('acts')">全部 ›</button></div>
         <div class="ia-list">${acts.slice(0, 3).map((a, i) => actRowHtml(a, 'ov' + i)).join('') || '<div class="ia-card ia-muted">尚無運動紀錄</div>'}</div>`;
     } else if (ui.viewerTab === 'badges') {
-      const catalog = getActiveBadgeCatalogList();
-      const map = s.heroBadges?.[name] || {};
-      const cats = ['ALL', ...Array.from(new Set(catalog.map(x => x.cat)))];
+      const allSlots = typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(s, name) : [];
+      const prog = typeof window.getHeroBadgeSlotProgress === 'function'
+        ? window.getHeroBadgeSlotProgress(name, s)
+        : { unlockedSlots: 0, totalSlots: allSlots.length, slotPct: 0, unlockedTiers: b.unlocked, totalTiers: b.total };
+      const cats = ['ALL', ...Array.from(new Set(allSlots.map(x => x.cat)))];
       if (!cats.includes(ui.badgeCat)) ui.badgeCat = 'ALL';
-      const list = ui.badgeCat === 'ALL' ? catalog : catalog.filter(x => x.cat === ui.badgeCat);
-      const pct = b.total ? (b.unlocked / b.total * 100) : 0;
+      const list = ui.badgeCat === 'ALL' ? allSlots : allSlots.filter(x => x.cat === ui.badgeCat);
+      const pct = prog.totalSlots ? (prog.unlockedSlots / prog.totalSlots * 100) : 0;
       body = `
-        <div class="ia-card"><div class="ia-row-between"><b>🎖️ 收集進度</b><b class="ia-amber">${b.unlocked} / ${b.total}</b></div><div class="ia-bar ia-bar-amber"><i style="width:${pct}%"></i></div></div>
-        <div class="ia-hscroll ia-chips">${cats.map(c => { const tot = c === 'ALL' ? catalog.length : catalog.filter(x => x.cat === c).length; const un = (c === 'ALL' ? catalog : catalog.filter(x => x.cat === c)).filter(x => map[x.id]).length; return `<button type="button" class="ia-chip${ui.badgeCat === c ? ' ia-chip-on' : ''}" onclick="IronAppUI.setBadgeCat(${esc(JSON.stringify(c))})">${c === 'ALL' ? '🌟 全部' : esc(c)} ${un}/${tot}</button>`; }).join('')}</div>
-        <div id="ia-badge-inspector">${ui.badgeInspect ? buildBadgeInspectorHtml(name, ui.badgeInspect) : '<div class="ia-card ia-muted ia-small">💡 點格子查看取得條件；未解鎖徽章維持迷霧狀態。</div>'}</div>
-        <div class="ia-badgegrid">${list.map(x => badgeIcon(x, Boolean(map[x.id]), `IronAppUI.inspectBadge(${esc(JSON.stringify(x.id))})`)).join('')}</div>`;
+        <div class="ia-card">
+          <div class="ia-row-between"><b>🎖️ 展櫃點亮 ${prog.unlockedSlots} / ${prog.totalSlots} 格</b><b class="ia-amber">累計 ${prog.unlockedTiers} / ${prog.totalTiers} 階</b></div>
+          <div class="ia-bar ia-bar-amber"><i style="width:${pct}%"></i></div>
+          <div class="ia-muted ia-small" style="margin-top:6px">💡 長按任一徽章可彈出小視窗查看條件與升框進度（放開即離開）；外框依序升級：銅 ➔ 銀 ➔ 金 ➔ 紫金 ➔ 彩！</div>
+        </div>
+        <div class="ia-hscroll ia-chips">${cats.map(c => { const catSlots = c === 'ALL' ? allSlots : allSlots.filter(x => x.cat === c); const tot = catSlots.length; const un = catSlots.filter(x => x.isUnlocked).length; return `<button type="button" class="ia-chip${ui.badgeCat === c ? ' ia-chip-on' : ''}" onclick="IronAppUI.setBadgeCat(${esc(JSON.stringify(c))})">${c === 'ALL' ? '🌟 全部' : esc(c)} ${un}/${tot}</button>`; }).join('')}</div>
+        <div id="ia-badge-inspector">${ui.badgeInspect ? buildBadgeInspectorHtml(name, ui.badgeInspect) : ''}</div>
+        <div class="ia-badgegrid">${list.map(x => badgeIcon(x, x.isUnlocked, `IronAppUI.inspectBadge(${esc(JSON.stringify(x.id))})`, name)).join('')}</div>`;
     } else {
       body = `<div class="ia-section-title"><span>🏃 運動紀錄</span><small>共 ${acts.length} 筆</small></div>
         <div class="ia-list">${acts.slice(0, ui.actLimit).map(a => actRowHtml(a, 'a' + String(a.id))).join('') || '<div class="ia-card ia-muted">尚無運動紀錄</div>'}</div>
@@ -738,9 +757,10 @@
           : '<div class="ia-card ia-muted">本資料片尚無此英雄的成績</div>';
       } else if (sheetState.tab === 'badges') {
         const b = badgeOf(name);
+        const prog = typeof window.getHeroBadgeSlotProgress === 'function' ? window.getHeroBadgeSlotProgress(name, st()) : { unlockedSlots: 0, totalSlots: 0 };
         const l = latestUnlocked(name, 12);
-        body = `<div class="ia-row-between"><b>🎖️ 已解鎖徽章</b><b class="ia-amber">${b.unlocked} / ${b.total}</b></div>
-          <div class="ia-badgegrid">${l.map(x => badgeIcon(x.b, true, '')).join('') || '<span class="ia-muted ia-small">尚未解鎖任何徽章</span>'}</div>`;
+        body = `<div class="ia-row-between"><b>🎖️ 已點亮 ${prog.unlockedSlots}/${prog.totalSlots} 格 <small class="ia-muted">(長按查看條件)</small></b><b class="ia-amber">${b.unlocked} / ${b.total} 階</b></div>
+          <div class="ia-badgegrid">${l.map(x => badgeIcon(x.slot, true, '', name)).join('') || '<span class="ia-muted ia-small">尚未解鎖任何徽章</span>'}</div>`;
       } else {
         body = `<div class="ia-list">${heroActs(name).slice(0, 3).map((a, i) => actRowHtml(a, 's' + i, false)).join('') || '<div class="ia-card ia-muted">尚無運動紀錄</div>'}</div>`;
       }
@@ -760,6 +780,154 @@
     el.querySelector('.ia-sheet-body').innerHTML = `<div class="ia-section-title"><span>👤 切換英雄</span></div><div class="ia-list">${heroes.map(h => `
       <button type="button" class="ia-pick${h.name === cur ? ' on' : ''}" onclick="IronAppUI.selectHero(${arg(h.name)})">${avatar(h.name, 'ia-av-40', 'rounded-xl')}<span class="ia-row-info"><span class="ia-row-name">${esc(h.name)}${h.name === me ? '<em class="ia-you">你</em>' : ''}</span><span class="ia-row-sub">${guildBadge(h.guild)} ${esc(h.guild || '')}</span></span></button>`).join('')}</div>`;
     el.classList.add('open');
+  }
+
+  // ---------------------------------------------------------------
+  // ⑤ 手機長按徽章即時浮層小視窗 (#ia-badge-peek：按住彈出、放開即關閉，不跳轉分頁)
+  // ---------------------------------------------------------------
+  function ensureBadgePeek() {
+    let el = document.getElementById('ia-badge-peek');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'ia-badge-peek';
+    el.className = 'ia-badge-peek';
+    el.innerHTML = `<div class="ia-badge-peek-card"></div>`;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function buildBadgePeekHtml(heroName, slotOrBadgeId) {
+    const s = st();
+    const slot = typeof window.findBadgeSlot === 'function' ? window.findBadgeSlot(slotOrBadgeId, s, heroName) : null;
+    if (!slot) return '';
+    const rarityMeta = window.BADGE_RARITY_META || {};
+    const rMeta = rarityMeta[slot.rarity] || rarityMeta.common || { label: '銅牌 • 初心者', shortLabel: '銅牌' };
+    const unlockedMap = s?.heroBadges?.[heroName] || {};
+    const numStr = `#${String(slot.slotNum).padStart(3, '0')}`;
+
+    let ladderHtml = '';
+    if (slot.isMultiTier) {
+      const items = slot.tiers.map((tb, idx) => {
+        const uRec = unlockedMap[tb.id];
+        const trMeta = rarityMeta[tb.rarity] || rarityMeta.common || {};
+        const isNext = slot.nextTier && slot.nextTier.id === tb.id;
+        if (uRec) {
+          return `<div class="ia-peek-tier done"><span>✅</span><b>[${esc(trMeta.shortLabel || '達成')} Lv.${idx + 1}] ${esc(tb.name)}</b><small>${esc(tb.condition)}</small></div>`;
+        } else if (isNext) {
+          return `<div class="ia-peek-tier next"><span>🎯</span><b>下一階 [${esc(trMeta.shortLabel || '')} Lv.${idx + 1}] ${esc(tb.name)}</b><small>${esc(tb.condition)}</small></div>`;
+        } else {
+          return `<div class="ia-peek-tier lock"><span>🔒</span><b>[${esc(trMeta.shortLabel || '')} Lv.${idx + 1}] ${slot.isUnlocked || slot.anyGloballyRevealed ? esc(tb.name) : '？？？'}</b></div>`;
+        }
+      }).join('');
+      ladderHtml = `<div class="ia-peek-ladder"><div class="ia-peek-ladder-title">🪜 升框進度 (${slot.unlockedCount}/${slot.totalTiers} 階)</div>${items}</div>`;
+    }
+
+    if (slot.isUnlocked) {
+      const curBadge = slot.currentTier || slot.displayBadge;
+      const u = slot.currentRecord || {};
+      return `
+        <div class="ia-peek-head">
+          <div class="ia-badge on ia-rarity-${esc(slot.rarity)} ia-peek-icon"><span>${slot.icon}</span></div>
+          <div class="ia-peek-title">
+            <div class="ia-peek-tags"><span class="ia-peek-pill ia-rarity-${esc(slot.rarity)}">${esc(rMeta.label)}外框</span><span class="ia-peek-num">${numStr} · ${esc(slot.levelTag)}</span></div>
+            <b>${esc(slot.displayName)}</b>
+            <small>${esc(slot.cat)}</small>
+          </div>
+        </div>
+        <div class="ia-peek-info">
+          <p><b>📜 當前取得條件：</b>${esc(curBadge.condition)}</p>
+          ${slot.nextTier ? `<p class="ia-peek-next"><b>🎯 下一階升框目標 (${esc(rarityMeta[slot.nextTier.rarity]?.shortLabel || '進階')}框)：</b>${esc(slot.nextTier.condition)}</p>` : (slot.isMultiTier ? `<p class="ia-peek-max">👑 已達成此系列最高滿階外框！</p>` : '')}
+          <p><b>📅 何時取得：</b>${esc(u.unlockedAt || '')} · <b>🏃 達成紀錄：</b>${esc(u.actTitle || u.actName || '榮譽解鎖')}</p>
+        </div>
+        ${ladderHtml}
+        <div class="ia-peek-foot">👆 放開手指即自動關閉</div>`;
+    } else {
+      const firstTier = slot.tiers[0];
+      const condText = slot.anyGloballyRevealed
+        ? `全服已有英雄解鎖！第一階【${esc(firstTier.name)}】：${esc(firstTier.condition)}`
+        : '？？？ (尚未達成，保持運動探索或切換其他英雄偷看線索！)';
+      return `
+        <div class="ia-peek-head">
+          <div class="ia-badge ia-peek-icon"><span>${slot.anyGloballyRevealed ? slot.icon : '🔒'}</span></div>
+          <div class="ia-peek-title">
+            <div class="ia-peek-tags"><span class="ia-peek-num">${numStr} ${slot.isMultiTier ? `· 共 ${slot.totalTiers} 階可升框` : ''}</span></div>
+            <b>${slot.anyGloballyRevealed ? esc(slot.name) : '神秘未解鎖徽章'}</b>
+            <small>${esc(slot.cat)}</small>
+          </div>
+        </div>
+        <div class="ia-peek-info">
+          <p><b>📜 取得條件：</b>${condText}</p>
+        </div>
+        ${slot.anyGloballyRevealed ? ladderHtml : ''}
+        <div class="ia-peek-foot">👆 放開手指即自動關閉</div>`;
+    }
+  }
+
+  function showBadgePeek(slotOrBadgeId, heroName) {
+    const targetHero = heroName || (sheetState.name && document.getElementById('ia-sheet')?.classList.contains('open') ? sheetState.name : ((typeof selectedViewerHero !== 'undefined' && selectedViewerHero) || selfHero()));
+    const html = buildBadgePeekHtml(targetHero, slotOrBadgeId);
+    if (!html) return;
+    const el = ensureBadgePeek();
+    el.querySelector('.ia-badge-peek-card').innerHTML = html;
+    el.classList.add('open');
+  }
+
+  function hideBadgePeek() {
+    const el = document.getElementById('ia-badge-peek');
+    if (el) el.classList.remove('open');
+  }
+
+  function setupBadgeLongPress() {
+    let timer = null;
+    let startX = 0, startY = 0;
+    let activePeek = false;
+
+    const clearTimer = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+    };
+    const onRelease = () => {
+      clearTimer();
+      if (activePeek) {
+        activePeek = false;
+        hideBadgePeek();
+      }
+    };
+
+    document.addEventListener('pointerdown', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.ia-badge[data-slot-id]') : null;
+      if (!btn) return;
+      const slotId = btn.getAttribute('data-slot-id');
+      const hero = btn.getAttribute('data-hero') || '';
+      if (!slotId) return;
+      startX = e.clientX || 0;
+      startY = e.clientY || 0;
+      clearTimer();
+      timer = setTimeout(() => {
+        activePeek = true;
+        showBadgePeek(slotId, hero);
+      }, 150);
+    }, { passive: true });
+
+    document.addEventListener('pointermove', (e) => {
+      if (!timer) return;
+      const dx = Math.abs((e.clientX || 0) - startX);
+      const dy = Math.abs((e.clientY || 0) - startY);
+      if (dx > 12 || dy > 12) clearTimer();
+    }, { passive: true });
+
+    document.addEventListener('pointerup', onRelease, { passive: true });
+    document.addEventListener('pointercancel', onRelease, { passive: true });
+    document.addEventListener('touchend', onRelease, { passive: true });
+    document.addEventListener('touchcancel', onRelease, { passive: true });
+    document.addEventListener('contextmenu', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.ia-badge[data-slot-id]') : null;
+      if (btn) {
+        e.preventDefault();
+        const slotId = btn.getAttribute('data-slot-id');
+        const hero = btn.getAttribute('data-hero') || '';
+        if (slotId) { activePeek = true; showBadgePeek(slotId, hero); }
+      }
+    });
   }
 
   // ---------------------------------------------------------------
@@ -800,6 +968,8 @@
     buildModel,
     snapshotModel,
     computeTodayGains,
+    showBadgePeek,
+    hideBadgePeek,
     toggleRow(btn) {
       const row = btn.closest('.ia-row'); if (!row) return;
       const page = row.closest('[data-page]')?.getAttribute('data-page') || 'expansion';
@@ -824,7 +994,15 @@
     },
     setViewerTab(k) { ui.viewerTab = k; render(); window.scrollTo(0, 0); },
     setBadgeCat(c) { ui.badgeCat = c; ui.badgeInspect = null; render(); },
-    inspectBadge(id) { ui.badgeInspect = id; if (ui.viewerTab !== 'badges') ui.viewerTab = 'badges'; render(); const el = document.getElementById('ia-badge-inspector'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); },
+    inspectBadge(id) {
+      // 在「徽章」子分頁點擊時原地展開詳情；若在其他地方點擊則不強制跳轉分頁
+      ui.badgeInspect = id;
+      if (ui.viewerTab === 'badges') {
+        const el = document.getElementById('ia-badge-inspector');
+        const name = (typeof selectedViewerHero !== 'undefined' && selectedViewerHero) || selfHero();
+        if (el) el.innerHTML = buildBadgeInspectorHtml(name, id);
+      }
+    },
     toggleAct(key) { ui.openAct = ui.openAct === key ? null : key; render(); },
     moreActs() { ui.actLimit += 30; render(); },
     rulesToggled(type, open) { ui.rulesOpen[type] = Boolean(open); },
@@ -839,6 +1017,8 @@
   window.IronAppUI = api;
   if (!IS_APP) return;
 
+  setupBadgeLongPress();
+
   // 掛勾：網頁分頁切換 / 全部重繪後同步更新 App 介面；App 模式下英雄彈窗改成底部面板
   const wrap = (fnName, after) => {
     const orig = window[fnName];
@@ -849,6 +1029,6 @@
   wrap('renderAllGameViews', render);
   const origModal = window.openHeroDetailModal;
   window.openHeroDetailModal = function (name) { if (api.openSheet(name)) return; return origModal && origModal.apply(this, arguments); };
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.closeSheet(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { api.hideBadgePeek(); api.closeSheet(); } });
   if (document.readyState !== 'loading') render(); else document.addEventListener('DOMContentLoaded', () => setTimeout(render, 0));
 })();

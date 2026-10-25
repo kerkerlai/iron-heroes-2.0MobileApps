@@ -80,12 +80,45 @@ Deno.serve(async (req) => {
   }
 
   let inserted = 0;
+  let backfilled = 0;
   if (rows.length) {
     const { data, error } = await db.from("activities")
       .upsert(rows, { onConflict: "id", ignoreDuplicates: true })
       .select("id");
     if (error) return json({ error: "db_error", message: error.message }, 500);
-    inserted = data?.length ?? 0;
+    const insertedIds = new Set((data || []).map((x: Record<string, unknown>) => String(x.id)));
+    inserted = insertedIds.size;
+
+    // 若雲端既有運動紀錄在首次同步時因限流或手錶延遲寫入而缺漏心率/熱量 (avg_hr = 0 或 calories = 0)，
+    // 當手機後續重傳帶有有效數值時自動回補缺漏欄位（嚴格保留 is_excluded 作廢狀態與 GM 手動修改）。
+    const backfillCandidates = rows.filter((r) =>
+      !insertedIds.has(String(r.id)) &&
+      (Number(r.avg_hr) > 0 || Number(r.max_hr) > 0 || Number(r.calories) > 0)
+    );
+    if (backfillCandidates.length) {
+      const candIds = backfillCandidates.map((r) => String(r.id));
+      const byId = new Map(backfillCandidates.map((r) => [String(r.id), r]));
+      const { data: existingActs } = await db.from("activities")
+        .select("id, avg_hr, max_hr, calories, distance, steps, is_manual")
+        .in("id", candIds);
+      for (const ex of (existingActs || []) as Record<string, unknown>[]) {
+        if (ex.is_manual) continue;
+        const inc = byId.get(String(ex.id));
+        if (!inc) continue;
+        const patch: Record<string, unknown> = {};
+        if ((!ex.avg_hr || Number(ex.avg_hr) <= 0) && Number(inc.avg_hr) > 0) patch.avg_hr = inc.avg_hr;
+        if ((!ex.max_hr || Number(ex.max_hr) <= 0) && Number(inc.max_hr) > 0) patch.max_hr = inc.max_hr;
+        if ((!ex.calories || Number(ex.calories) <= 0) && Number(inc.calories) > 0) patch.calories = inc.calories;
+        if ((!ex.distance || Number(ex.distance) <= 0) && Number(inc.distance) > 0) patch.distance = inc.distance;
+        if ((ex.steps === null || ex.steps === undefined || Number(ex.steps) <= 0) && inc.steps !== null && Number(inc.steps) > 0) {
+          patch.steps = inc.steps;
+        }
+        if (Object.keys(patch).length > 0) {
+          const { error: upErr } = await db.from("activities").update(patch).eq("id", String(ex.id));
+          if (!upErr) backfilled++;
+        }
+      }
+    }
   }
 
   // ---- 每日健康數據 ----
@@ -134,8 +167,9 @@ Deno.serve(async (req) => {
   return json({
     max_hr: heroRow?.max_hr ?? 185,
     hero_name: hero,
-    inserted_workouts: inserted,
-    skipped_workouts: workouts.length - inserted,
+    inserted_workouts: inserted + backfilled,
+    backfilled_workouts: backfilled,
+    skipped_workouts: Math.max(0, workouts.length - inserted - backfilled),
     upserted_daily: dailyRows.length,
     server_time: new Date().toISOString(),
   });
