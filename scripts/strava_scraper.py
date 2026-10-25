@@ -85,7 +85,7 @@ def load_exclude_keywords_from_supabase():
 
 
 def legacy_calculate_calories(avg_hr, duration_mins):
-    """舊版有係數誤差的保底公式 (會把 <139 bpm 的運動全部壓成 dur * 4.0)，僅用於識別需要自動修復的舊紀錄"""
+    """舊版公式 (僅用於識別需要自動修復為真实熱量或時長×4的歷史紀錄)"""
     try:
         hr = float(avg_hr or 0)
         dur = float(duration_mins or 0)
@@ -99,8 +99,23 @@ def legacy_calculate_calories(avg_hr, duration_mins):
         return 0
 
 
+def keytel_calculate_calories(avg_hr, duration_mins):
+    """前版 Keytel 心率推算值 (僅用於識別並回退至 Strava 真實熱量或時長×4保底)"""
+    try:
+        hr = float(avg_hr or 0)
+        dur = float(duration_mins or 0)
+        if dur <= 0:
+            return 0
+        if hr <= 0:
+            return int(round(dur * 5.5))
+        kcal_per_min = (-37.75 + 0.539 * hr + 0.09 * 68.0 + 0.138 * 32.0) / 4.184
+        return max(int(round(kcal_per_min * dur)), int(round(dur * 4.5)))
+    except Exception:
+        return 0
+
+
 def is_legacy_fallback_calories(cal, avg_hr, duration_mins):
-    """判斷資料庫既有 Strava 紀錄的熱量是否為舊版 `時長 × 4` 保底公式產物"""
+    """判斷資料庫既有 Strava 紀錄的熱量是否為公式推算值（非 Strava 原生熱量），以便重新嘗試擷取真實熱量或統一改為 時長×4"""
     try:
         c = float(cal or 0)
         dur = float(duration_mins or 0)
@@ -111,7 +126,10 @@ def is_legacy_fallback_calories(cal, avg_hr, duration_mins):
         old_est = legacy_calculate_calories(avg_hr, dur)
         if old_est > 0 and abs(c - old_est) <= 2:
             return True
-        if abs(c - round(dur * 4.0)) <= 1 or abs(c - round(dur * 4.5)) <= 1:
+        keytel_est = keytel_calculate_calories(avg_hr, dur)
+        if keytel_est > 0 and abs(c - keytel_est) <= 2:
+            return True
+        if abs(c - round(dur * 4.0)) <= 1 or abs(c - round(dur * 4.5)) <= 1 or abs(c - round(dur * 5.5)) <= 1:
             return True
         return False
     except Exception:
@@ -172,19 +190,14 @@ def seconds_to_mins(sec):
 
 
 def calculate_calories(avg_hr, duration_mins):
-    """當 Strava 網頁完全未提供熱量時的心率推算公式 (Keytel 2005 標準有氧代謝公式)"""
+    """當 Strava 網頁未提供熱量時，統一使用 時長(分) × 4 低估保底計算（提醒選手將裝置同步做好）"""
     try:
-        hr = float(avg_hr or 0)
         dur = float(duration_mins or 0)
         if dur <= 0:
             return 0
-        if hr <= 0:
-            return int(round(dur * 5.5))
-        # Keytel (2005) 綜合公式 (以平均體重 68kg、年齡 32 歲為基準)
-        kcal_per_min = (-37.75 + 0.539 * hr + 0.09 * 68.0 + 0.138 * 32.0) / 4.184
-        return max(int(round(kcal_per_min * dur)), int(round(dur * 4.5)))
+        return int(round(dur * 4.0))
     except Exception:
-        return int(round(float(duration_mins or 0) * 5.5))
+        return 0
 
 
 def _parse_valid_cal(raw_val):
@@ -311,6 +324,12 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
         "Cookie": clean_cookie,
         "X-Requested-With": "XMLHttpRequest",
         "Accept": "text/javascript, application/json, text/html, */*",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
+    page_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Cookie": clean_cookie,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
@@ -440,11 +459,11 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
                 except Exception:
                     pass
 
-            # 若詳情資料缺漏 (尤其是列表 API 未提供卡路里時)，抓取活動單頁擷取真實卡路里與心率
+            # 若詳情資料缺漏 (尤其是列表 API 未提供卡路里時)，以標準 HTML Header 抓取活動單頁擷取真實卡路里與心率
             if not calories or not avg_hr:
                 detail_url = f"https://www.strava.com/activities/{act_id}"
                 try:
-                    detail_resp = requests.get(detail_url, headers=headers, timeout=15)
+                    detail_resp = requests.get(detail_url, headers=page_headers, timeout=15)
                     if detail_resp.status_code == 200:
                         d_soup = BeautifulSoup(detail_resp.text, "html.parser")
                         if not calories:
@@ -489,10 +508,10 @@ def scrape_strava_activities(strava_cookie, athlete_profiles, exclude_keywords):
                 except Exception as e:
                     print(f"    ⚠️ Streams 讀取異常: {e}")
 
-            if not calories and avg_hr and moving_time_mins:
+            if not calories and moving_time_mins:
                 calories = calculate_calories(avg_hr, moving_time_mins)
                 if not is_existing:
-                    print(f"    🔥 依心率自動推算熱量: {calories} kcal")
+                    print(f"    🔥 Strava 未提供熱量，依時長×4保底計算: {calories} kcal")
 
             # 若為既有活動且屬於舊版時長×4保底熱量，僅透過 PATCH 更新 calories 欄位 (保留 GM 作廢等所有設定)
             if is_existing:
