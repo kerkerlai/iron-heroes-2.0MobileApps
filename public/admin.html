@@ -468,8 +468,67 @@
         </div>
         <!-- 來源對帳 -->
         <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-800 font-bold text-slate-200">⚖️ Strava × 手機 App 來源對帳 <span class="text-[11px] text-slate-500 font-normal">(近 14 天；全部一致後即可關閉 Strava 爬蟲)</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">🟠 Strava</th><th class="p-3">📱 手機 App</th><th class="p-3">兩邊都有 (自動去重)</th><th class="p-3">只有 Strava</th><th class="p-3">只有手機</th><th class="p-3">狀態</th></tr></thead><tbody id="mobile-recon-tbody"></tbody></table></div>
+          <div class="px-4 py-2.5 border-b border-slate-800 font-bold text-slate-200">⚖️ Strava × 手機 App 來源對帳 <span class="text-[11px] text-slate-500 font-normal">(近 14 天運動對帳＋每日健康連線診斷；點「🔍 查看明細」可看該英雄傳上雲端的每一筆原始資料)</span></div>
+          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">🟠 Strava 運動(14天)</th><th class="p-3">📱 手機運動(14天/累計)</th><th class="p-3">兩邊都有</th><th class="p-3">📅 每日健康(14天步數/睡眠)</th><th class="p-3">狀態與排查診斷</th><th class="p-3 text-right">原始資料</th></tr></thead><tbody id="mobile-recon-tbody"></tbody></table></div>
+        </div>
+        <!-- 🔬 手機健康資料接收明細 & 診斷檢視器 -->
+        <div id="mobile-raw-inspector" class="bg-slate-950/60 border border-cyan-500/30 rounded-2xl p-4 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <div class="font-bold text-cyan-300 text-xs flex items-center gap-1.5">🔬 手機健康資料接收明細 (Health Connect / Apple Health 雲端原始紀錄)</div>
+              <p class="text-[11px] text-slate-400 mt-0.5">直接檢視手機 App 已傳進 Supabase 雲端的「每日健康 (`daily_health`)」與「手機運動 (`activities`)」，一眼判斷哪些項目有通、哪些項目沒寫入。</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-[11px] text-slate-400 font-bold">檢視英雄：</label>
+              <select id="mobile-inspect-hero-select" onchange="renderMobileDataInspector(this.value)" class="bg-slate-900 border border-cyan-500/40 rounded-xl px-3 py-1.5 text-xs font-bold text-white outline-none"></select>
+            </div>
+          </div>
+          <div id="mobile-inspect-diag-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs"></div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
+              <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
+                <span>📅 已收到的每日健康數據 (`daily_health`)</span>
+                <span id="mobile-inspect-daily-count" class="text-[11px] font-mono text-cyan-300"></span>
+              </div>
+              <div class="overflow-x-auto max-h-72">
+                <table class="w-full text-left text-[11px]">
+                  <thead class="bg-slate-950 text-slate-400 sticky top-0">
+                    <tr>
+                      <th class="p-2">日期</th>
+                      <th class="p-2">👣 步數</th>
+                      <th class="p-2">🔥 熱量</th>
+                      <th class="p-2">⚡ 活動分</th>
+                      <th class="p-2">😴 睡眠 (入睡~起床)</th>
+                      <th class="p-2">💓 靜止心率</th>
+                      <th class="p-2">🌿 HRV</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mobile-inspect-daily-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
+              <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
+                <span>🏃 已收到的手機運動紀錄 (`health_connect` / `apple_health`)</span>
+                <span id="mobile-inspect-act-count" class="text-[11px] font-mono text-amber-300"></span>
+              </div>
+              <div class="overflow-x-auto max-h-72">
+                <table class="w-full text-left text-[11px]">
+                  <thead class="bg-slate-950 text-slate-400 sticky top-0">
+                    <tr>
+                      <th class="p-2">日期時間</th>
+                      <th class="p-2">類型 / 名稱</th>
+                      <th class="p-2">⏱️ 時長</th>
+                      <th class="p-2">💓 均/峰</th>
+                      <th class="p-2">🔥 熱量</th>
+                      <th class="p-2">來源 / 對帳</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mobile-inspect-act-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

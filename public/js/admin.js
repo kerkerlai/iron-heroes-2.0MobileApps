@@ -2843,7 +2843,10 @@ function renderMobileReconciliation() {
   const tbody = document.getElementById('mobile-recon-tbody');
   if (!tbody) return;
   const acts = gameState?.activities || [];
+  const dailyAll = gameState?.dailyHealth || [];
+  const devices = gameState?.devices || [];
   const cutoff = Date.now() - 14 * 86400000;
+  const cutoffYMD = new Date(cutoff).toISOString().slice(0, 10);
   const recent = acts.filter(a => {
     if (a.isExcluded) return false;
     const d = typeof window.parseActivityDate === 'function' ? window.parseActivityDate(a.date) : new Date(a.date);
@@ -2859,16 +2862,180 @@ function renderMobileReconciliation() {
   });
   const heroes = (gameState?.heroes || []).map(h => h.name);
   tbody.innerHTML = heroes.map(name => {
+    const safeName = escapeHtmlLite(name);
     const mine = recent.filter(a => a.hero === name);
     const strava = mine.filter(a => a.source === 'strava');
     const mobile = mine.filter(isMobile);
+    const allMobileActs = acts.filter(a => a.hero === name && isMobile(a) && !a.isExcluded);
     const both = mobile.filter(a => matched.has(String(a.id))).length;
     const onlyStrava = strava.filter(a => !matched.has(String(a.id))).length;
-    const onlyMobile = mobile.filter(a => !matched.has(String(a.id))).length;
-    const status = mobile.length === 0 ? '<span class="text-slate-500">尚未連接手機</span>'
-      : (onlyStrava === 0 ? '<span class="text-emerald-400 font-bold">✅ 一致</span>' : '<span class="text-amber-400 font-bold">⚠️ 請確認手錶 App 是否已開啟同步</span>');
-    return `<tr><td class="p-3 font-bold text-white">${name}</td><td class="p-3 font-mono">${strava.length}</td><td class="p-3 font-mono">${mobile.length}</td><td class="p-3 font-mono text-emerald-300">${both}</td><td class="p-3 font-mono ${onlyStrava ? 'text-amber-300' : ''}">${onlyStrava}</td><td class="p-3 font-mono">${onlyMobile}</td><td class="p-3">${status}</td></tr>`;
+
+    const myDev = devices.find(d => d.hero === name && !d.revoked);
+    const myDailyAll = dailyAll.filter(r => r.hero === name);
+    const myDaily14 = myDailyAll.filter(r => String(r.date || '') >= cutoffYMD);
+    const stepDays14 = myDaily14.filter(r => Number(r.steps) > 0).length;
+    const sleepDays14 = myDaily14.filter(r => Number(r.sleep_minutes) > 0).length;
+
+    let status = '';
+    if (!myDev && myDailyAll.length === 0 && allMobileActs.length === 0) {
+      status = '<span class="text-slate-500">尚未綁定手機</span>';
+    } else if (mobile.length > 0 && onlyStrava === 0) {
+      status = '<span class="text-emerald-400 font-bold">✅ 運動與健康皆同步正常</span>';
+    } else if (mobile.length === 0 && strava.length > 0) {
+      status = `<span class="text-amber-300 font-bold">⚠️ 手機已通(${stepDays14 ? `有步數${stepDays14}天` : '無近14天步數'}${allMobileActs.length ? `、舊運動${allMobileActs.length}筆` : ''})，但近14天手錶運動未寫入 Health Connect / Apple 健康</span>`;
+    } else if (onlyStrava > 0) {
+      status = `<span class="text-amber-400 font-bold">⚠️ 有 ${onlyStrava} 筆 Strava 運動未在手機健康資料庫出現</span>`;
+    } else {
+      status = `<span class="text-cyan-300 font-bold">📱 手機已連線（近14天步數 ${stepDays14} 天 / 睡眠 ${sleepDays14} 天）</span>`;
+    }
+
+    const dailySummaryHtml = (myDailyAll.length || myDev)
+      ? `<span class="${stepDays14 > 0 ? 'text-emerald-300' : 'text-slate-500'}">👣 ${stepDays14}天</span> / <span class="${sleepDays14 > 0 ? 'text-cyan-300' : 'text-rose-400'}">😴 ${sleepDays14}天</span>`
+      : '<span class="text-slate-600">—</span>';
+
+    return `<tr>
+      <td class="p-3 font-bold text-white">${safeName}</td>
+      <td class="p-3 font-mono">${strava.length}</td>
+      <td class="p-3 font-mono">${mobile.length} <span class="text-slate-500 text-[10px]">(累計 ${allMobileActs.length})</span></td>
+      <td class="p-3 font-mono text-emerald-300">${both}</td>
+      <td class="p-3 font-mono">${dailySummaryHtml}</td>
+      <td class="p-3">${status}</td>
+      <td class="p-3 text-right"><button type="button" data-hero="${safeName}" onclick="inspectMobileHero(this.dataset.hero)" class="px-2.5 py-1 rounded-lg bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-300 font-bold text-[11px] whitespace-nowrap">🔍 查看明細</button></td>
+    </tr>`;
   }).join('');
+  renderMobileDataInspector();
+}
+
+function inspectMobileHero(heroName) {
+  const sel = document.getElementById('mobile-inspect-hero-select');
+  if (sel && heroName) sel.value = heroName;
+  renderMobileDataInspector(heroName);
+  const box = document.getElementById('mobile-raw-inspector');
+  if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderMobileDataInspector(preferredHero) {
+  const sel = document.getElementById('mobile-inspect-hero-select');
+  const diagBox = document.getElementById('mobile-inspect-diag-cards');
+  const dailyTbody = document.getElementById('mobile-inspect-daily-tbody');
+  const actTbody = document.getElementById('mobile-inspect-act-tbody');
+  const dailyCountEl = document.getElementById('mobile-inspect-daily-count');
+  const actCountEl = document.getElementById('mobile-inspect-act-count');
+  if (!sel || !diagBox || !dailyTbody || !actTbody) return;
+
+  const heroes = (gameState?.heroes || []).map(h => h.name);
+  const devices = gameState?.devices || [];
+  const dailyAll = gameState?.dailyHealth || [];
+  const actsAll = gameState?.activities || [];
+  const isMobile = a => a.source === 'apple_health' || a.source === 'health_connect';
+
+  // 優先把「已綁定手機」或「有手機資料」的英雄排在選單最前面
+  const hasDataSet = new Set([
+    ...devices.filter(d => !d.revoked).map(d => d.hero),
+    ...dailyAll.map(r => r.hero),
+    ...actsAll.filter(isMobile).map(a => a.hero)
+  ]);
+  const sortedHeroes = [...heroes].sort((a, b) => (hasDataSet.has(b) ? 1 : 0) - (hasDataSet.has(a) ? 1 : 0) || a.localeCompare(b));
+
+  const curVal = preferredHero || sel.value || sortedHeroes[0] || '';
+  sel.innerHTML = sortedHeroes.map(n => {
+    const tag = hasDataSet.has(n) ? ' 📱(有手機資料)' : '';
+    return `<option value="${escapeHtmlLite(n)}" ${n === curVal ? 'selected' : ''}>${escapeHtmlLite(n)}${tag}</option>`;
+  }).join('');
+  const hero = sel.value || curVal;
+
+  const myDev = devices.find(d => d.hero === hero && !d.revoked);
+  const myDaily = dailyAll.filter(r => r.hero === hero).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const myMobileActs = actsAll.filter(a => a.hero === hero && isMobile(a)).sort((a, b) => parseAdminActivityTimestamp(b.date) - parseAdminActivityTimestamp(a.date));
+
+  const lastStepRow = myDaily.find(r => Number(r.steps) > 0);
+  const lastSleepRow = myDaily.find(r => Number(r.sleep_minutes) > 0);
+  const lastRhrRow = myDaily.find(r => Number(r.resting_hr) > 0);
+  const lastActRow = myMobileActs[0];
+
+  const card = (title, ok, mainText, subText) => `
+    <div class="bg-slate-900/90 border ${ok === 'ok' ? 'border-emerald-500/40' : (ok === 'warn' ? 'border-amber-500/40' : 'border-slate-800')} rounded-xl p-3 space-y-1">
+      <div class="flex items-center justify-between"><span class="text-[11px] font-bold text-slate-300">${title}</span><span>${ok === 'ok' ? '🟢 有通' : (ok === 'warn' ? '🟡 部分/中斷' : '⚪ 尚無資料')}</span></div>
+      <div class="font-mono font-bold text-xs ${ok === 'ok' ? 'text-emerald-300' : (ok === 'warn' ? 'text-amber-300' : 'text-slate-500')}">${mainText}</div>
+      <div class="text-[10px] text-slate-400 leading-snug">${subText}</div>
+    </div>`;
+
+  const devSyncStr = myDev?.last_sync_at ? new Date(myDev.last_sync_at).toLocaleString('zh-TW', { hour12: false }) : '尚未同步';
+  const sleepHours = r => r && r.sleep_minutes ? `${Math.floor(r.sleep_minutes / 60)}h ${Math.round(r.sleep_minutes % 60)}m` : '—';
+  const sleepRecent = lastSleepRow && lastSleepRow.date >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const actRecent = lastActRow && parseAdminActivityTimestamp(lastActRow.date) >= (Date.now() - 14 * 86400000);
+
+  diagBox.innerHTML = [
+    card(
+      '📡 手機 App 連線',
+      myDev ? 'ok' : (myDaily.length || myMobileActs.length ? 'warn' : 'none'),
+      myDev ? `${escapeHtmlLite(myDev.device_model || myDev.platform)}` : '未綁定裝置',
+      myDev ? `最後同步：${escapeHtmlLite(devSyncStr)}（v${escapeHtmlLite(myDev.app_version || '-')}）` : '請玩家用邀請碼綁定手機'
+    ),
+    card(
+      '👣 步數 & 活動熱量',
+      lastStepRow ? 'ok' : 'none',
+      lastStepRow ? `最新 ${escapeHtmlLite(lastStepRow.date)}：${Number(lastStepRow.steps).toLocaleString()} 步` : '尚未收到步數',
+      lastStepRow ? `共收到 ${myDaily.filter(r => Number(r.steps) > 0).length} 天步數（代表手機 Health Connect 權限已開通）` : '請檢查 Health Connect 步數讀取權限'
+    ),
+    card(
+      '😴 睡眠 & 💓 靜止心率',
+      sleepRecent ? 'ok' : (lastSleepRow || lastRhrRow ? 'warn' : 'none'),
+      lastSleepRow ? `最新 ${escapeHtmlLite(lastSleepRow.date)}：${sleepHours(lastSleepRow)}` : '尚未收到睡眠',
+      lastSleepRow
+        ? (sleepRecent
+          ? `靜止心率 ${lastRhrRow ? lastRhrRow.resting_hr + ' bpm' : '—'} • 手錶睡眠同步正常`
+          : `⚠️ 睡眠只到 ${escapeHtmlLite(lastSleepRow.date)}，近期為空白！請檢查手錶 App 是否斷開 Health Connect 同步`)
+        : '手錶 App 尚未將睡眠/心率寫入 Health Connect / Apple 健康'
+    ),
+    card(
+      '🏃 手機運動紀錄',
+      actRecent ? 'ok' : (myMobileActs.length ? 'warn' : 'none'),
+      myMobileActs.length ? `共 ${myMobileActs.length} 筆（最新 ${escapeHtmlLite(String(lastActRow.date).slice(0, 10))}）` : '0 筆運動',
+      myMobileActs.length
+        ? (actRecent
+          ? `最近一筆：${escapeHtmlLite(lastActRow.type)} ${lastActRow.duration} 分`
+          : `⚠️ 最新運動停在 ${escapeHtmlLite(String(lastActRow.date).slice(0, 10))}！近 14 天無手錶運動寫入 Health Connect（或由 Strava App 紀錄被自動略過）`)
+        : '注意：由 Strava App 寫入手機的運動會自動略過，只收手錶原生 App 寫入的運動'
+    )
+  ].join('');
+
+  if (dailyCountEl) dailyCountEl.textContent = `共 ${myDaily.length} 天`;
+  if (actCountEl) actCountEl.textContent = `共 ${myMobileActs.length} 筆`;
+
+  dailyTbody.innerHTML = myDaily.length === 0
+    ? '<tr><td colspan="7" class="p-4 text-center text-slate-500">此英雄尚無 daily_health 資料</td></tr>'
+    : myDaily.slice(0, 30).map(r => {
+      const slp = r.sleep_minutes != null
+        ? `<span class="text-cyan-300">${sleepHours(r)}</span> <span class="text-slate-500 text-[10px]">(${escapeHtmlLite(r.bed_time || '?')}~${escapeHtmlLite(r.wake_time || '?')})</span>`
+        : '<span class="text-slate-600">null</span>';
+      return `<tr class="hover:bg-slate-900/60">
+        <td class="p-2 font-bold text-white whitespace-nowrap">${escapeHtmlLite(r.date)}</td>
+        <td class="p-2 ${Number(r.steps) > 0 ? 'text-emerald-300 font-bold' : 'text-slate-600'}">${r.steps != null ? Number(r.steps).toLocaleString() : 'null'}</td>
+        <td class="p-2">${r.active_kcal != null ? Number(r.active_kcal).toLocaleString() : '<span class="text-slate-600">null</span>'}</td>
+        <td class="p-2">${r.active_minutes != null ? r.active_minutes : '<span class="text-slate-600">null</span>'}</td>
+        <td class="p-2 whitespace-nowrap">${slp}</td>
+        <td class="p-2 ${r.resting_hr != null ? 'text-rose-300' : 'text-slate-600'}">${r.resting_hr != null ? r.resting_hr + ' bpm' : 'null'}</td>
+        <td class="p-2 ${r.hrv_ms != null ? 'text-amber-300' : 'text-slate-600'}">${r.hrv_ms != null ? r.hrv_ms + ' ms' : 'null'}</td>
+      </tr>`;
+    }).join('');
+
+  actTbody.innerHTML = myMobileActs.length === 0
+    ? '<tr><td colspan="6" class="p-4 text-center text-slate-500">此英雄尚無 health_connect / apple_health 運動紀錄</td></tr>'
+    : myMobileActs.slice(0, 30).map(a => {
+      const srcMeta = typeof window.getActivitySourceMeta === 'function' ? window.getActivitySourceMeta(a) : { icon: '📱', label: a.source };
+      const dupTxt = a.duplicateOf
+        ? `<span class="text-emerald-300 text-[10px]">🔗 與 #${escapeHtmlLite(String(a.duplicateOf))} 重疊去重</span>`
+        : `<span class="text-slate-400 text-[10px]">${escapeHtmlLite(srcMeta.brand || srcMeta.label || a.source)}</span>`;
+      return `<tr class="hover:bg-slate-900/60">
+        <td class="p-2 text-white whitespace-nowrap">${escapeHtmlLite(a.date || a.time)}</td>
+        <td class="p-2"><span class="font-bold text-amber-300">${escapeHtmlLite(a.type)}</span> <span class="text-slate-400">${escapeHtmlLite(a.title || '')}</span></td>
+        <td class="p-2">${a.duration} 分</td>
+        <td class="p-2">${a.avgHr || 0} / ${a.maxHr || 0}</td>
+        <td class="p-2">${Math.round(a.rawCalories ?? a.calories ?? 0)}</td>
+        <td class="p-2">${dupTxt}</td>
+      </tr>`;
+    }).join('');
 }
 
 window.addEventListener('gameStateSynced', () => { try { renderMobileSyncSection(); } catch (e) { console.error(e); } });

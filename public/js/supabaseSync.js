@@ -587,7 +587,9 @@ async function syncFromDatabaseCore() {
       // 讀取範圍：賽季開始前 28 天 (鐵人修行院的慢性負荷需要) ~ 今天；若無賽季設定則取近 120 天
       const seasonStartForHealth = (configMap.boss_config && configMap.boss_config.seasonStart) || (configMap.classic_config && configMap.classic_config.seasonStart) || '';
       const ss = normalizeDateYMD(seasonStartForHealth);
-      const sinceDate = ss ? addDaysYMD(ss, -28).replace(/\//g, '-') : new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+      const ssMinus28 = ss ? addDaysYMD(ss, -28).replace(/\//g, '-') : '9999-99-99';
+      const last60d = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+      const sinceDate = ssMinus28 < last60d ? ssMinus28 : last60d;
       [dailyHealthRows, deviceRows] = await Promise.all([
         window.supabase.fetchAll('daily_health', `select=*&date=gte.${sinceDate}&order=date.asc`).catch(e => { console.warn('[MobileSync] daily_health 讀取失敗 (是否已執行資料庫擴充 SQL？)', e.message); return []; }),
         window.supabase.fetch('devices_public', 'select=*').catch(() => [])
