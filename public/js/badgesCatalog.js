@@ -119,9 +119,9 @@ window.diffDaysYMD = diffDaysYMD;
 
 /**
  * 【資料片五：飢餓法則】統一的毒圈扣血計算 (前台主畫面 / 戰情室 / 英雄卡 / GM 快照共用同一套邏輯)
- * - 毒圈於賽季開始後「每過一個午夜」扣一次血 (開賽當天 0 次，第 2 天 1 次 ...)。
+ * - 與 1.0 (BugFixed10) 完全對齊：開賽當天即為「賽季第 1 天」(含開賽當日共 diffDays + 1 天)。
  * - 賽季結束日之後不再扣血。
- * - 支援分段扣血 (survival.decaySchedule = [{ from: 'YYYY/MM/DD', perDay: 200 }, ...])：
+ * - 支援分段扣血 (survival.decaySchedule = [{ from: 'YYYY/MM/DD', perDay: 200 }, ...] 或 1.0 的 decayBasePenalty + decayUpdatedDate)：
  *   GM 中途調高每日扣血時只影響「生效日之後」的天數，不會回溯把過去的天數一起加重扣血。
  */
 function computeSurvivalState(state, now) {
@@ -131,8 +131,8 @@ function computeSurvivalState(state, now) {
   const baseDecay = Number.isFinite(Number(cfg.decayPerDay)) && cfg.decayPerDay !== '' && cfg.decayPerDay !== null && cfg.decayPerDay !== undefined
     ? Number(cfg.decayPerDay) : 200;
 
-  const startYMD = normalizeDateYMD(st.seasonStart || '');
-  const endYMD = normalizeDateYMD(st.seasonEnd || '');
+  const startYMD = normalizeDateYMD(st.seasonStart || cfg.seasonStart || '');
+  const endYMD = normalizeDateYMD(st.seasonEnd || cfg.seasonEnd || '');
   const nowDate = now instanceof Date ? now : new Date();
   const todayYMD = `${nowDate.getFullYear()}/${String(nowDate.getMonth() + 1).padStart(2, '0')}/${String(nowDate.getDate()).padStart(2, '0')}`;
   const refYMD = (endYMD && todayYMD > endYMD) ? endYMD : todayYMD;
@@ -149,16 +149,29 @@ function computeSurvivalState(state, now) {
     return v;
   };
 
-  const days = startYMD ? Math.max(0, diffDaysYMD(startYMD, refYMD)) : 0;
+  // 與 1.0 對齊：開賽當日即算第 1 天 (例如 10/19 ~ 10/25 為第 7 天，共扣 7 天)
+  const days = (startYMD && refYMD >= startYMD) ? (diffDaysYMD(startYMD, refYMD) + 1) : 0;
   let penalty = 0;
-  const dailyPenalties = [{ ymd: startYMD || refYMD, penalty: 0 }];
-  for (let i = 1; i <= days; i++) {
+  const dailyPenalties = [];
+  for (let i = 0; i < days; i++) {
     const dYMD = addDaysYMD(startYMD, i);
     penalty += decayOn(dYMD);
     dailyPenalties.push({ ymd: dYMD, penalty });
   }
-  const totalDays = startYMD ? (days + 1) : 1;
+  if (dailyPenalties.length === 0) {
+    dailyPenalties.push({ ymd: startYMD || refYMD, penalty: 0 });
+  }
 
+  // 相容 1.0 舊制 (decayBasePenalty + decayUpdatedDate)
+  if (schedule.length <= 1 && cfg.decayBasePenalty !== undefined && cfg.decayUpdatedDate) {
+    const updYMD = normalizeDateYMD(cfg.decayUpdatedDate);
+    if (updYMD && startYMD && updYMD >= startYMD && refYMD >= updYMD) {
+      const daysSinceUpd = Math.max(0, diffDaysYMD(updYMD, refYMD));
+      penalty = Number(cfg.decayBasePenalty) + (daysSinceUpd * baseDecay);
+    }
+  }
+
+  const totalDays = Math.max(1, days);
   const seasonOver = Boolean(endYMD && todayYMD > endYMD);
   const nextTickYMD = addDaysYMD(refYMD, 1);
   const currentDecay = decayOn(seasonOver ? refYMD : nextTickYMD);
@@ -171,7 +184,7 @@ function computeSurvivalHeroHp(heroStat, survivalState, state) {
   const food = Number(heroStat?.totalCalories) || 0;
   const scavenge = (Number(heroStat?.totalTrimp) || 0) * 1.5;
   const currentHp = Math.floor(sv.maxHp - sv.penalty + food + scavenge);
-  const totalDays = sv.totalDays || ((sv.days || 0) + 1);
+  const totalDays = sv.totalDays || sv.days || 1;
 
   // 計算「荒野堅持天數」= 開賽至今的存活天數 (每一天結束時生存值 > 0 的天數)
   const st = state || window.gameState || {};
