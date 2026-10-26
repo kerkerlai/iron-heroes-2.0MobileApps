@@ -514,6 +514,57 @@ th.sortable:hover {
 }
 
 /* ============================================================
+   GM Exclusive Ultra-Premium Badge Frames (Imperial / Celestial / Sovereign)
+   ============================================================ */
+@keyframes pulseImperialGold {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #fde047, 0 0 18px rgba(250, 204, 21, 0.72), inset 0 0 12px rgba(250, 204, 21, 0.35);
+    border-color: #fde047;
+  }
+  50% {
+    box-shadow: 0 0 0 2px #fef08a, 0 0 26px rgba(253, 224, 71, 0.95), 0 0 36px rgba(234, 179, 8, 0.65), inset 0 0 16px rgba(254, 240, 138, 0.55);
+    border-color: #ffffff;
+  }
+}
+
+@keyframes pulseCelestialDiamond {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #67e8f9, 0 0 18px rgba(34, 211, 238, 0.75), inset 0 0 12px rgba(165, 243, 252, 0.38);
+    border-color: #a5f3fc;
+  }
+  50% {
+    box-shadow: 0 0 0 2px #e0f2fe, 0 0 26px rgba(103, 232, 249, 0.95), 0 0 36px rgba(129, 140, 248, 0.7), inset 0 0 16px rgba(224, 242, 254, 0.6);
+    border-color: #ffffff;
+  }
+}
+
+@keyframes pulseSovereignJade {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #6ee7b7, 0 0 18px rgba(16, 185, 129, 0.72), inset 0 0 12px rgba(253, 230, 138, 0.32);
+    border-color: #6ee7b7;
+  }
+  50% {
+    box-shadow: 0 0 0 2px #fde68a, 0 0 26px rgba(52, 211, 153, 0.95), 0 0 36px rgba(251, 191, 36, 0.65), inset 0 0 16px rgba(167, 243, 208, 0.55);
+    border-color: #fef3c7;
+  }
+}
+
+.badge-frame-imperial {
+  background: linear-gradient(135deg, #09090b 0%, #1c1917 45%, #422006 85%, #713f12 100%) !important;
+  animation: pulseImperialGold 2.4s infinite ease-in-out;
+}
+
+.badge-frame-celestial {
+  background: linear-gradient(135deg, #082f49 0%, #1e1b4b 48%, #0e7490 85%, #38bdf8 100%) !important;
+  animation: pulseCelestialDiamond 2.4s infinite ease-in-out;
+}
+
+.badge-frame-sovereign {
+  background: linear-gradient(135deg, #022c22 0%, #064e3b 48%, #115e59 82%, #78350f 100%) !important;
+  animation: pulseSovereignJade 2.4s infinite ease-in-out;
+}
+
+/* ============================================================
    MOBILE & TOUCH RESPONSIVE OPTIMIZATIONS (< 640px)
    ============================================================ */
 .overflow-x-auto,

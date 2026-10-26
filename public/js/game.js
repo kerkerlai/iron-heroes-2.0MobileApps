@@ -1739,7 +1739,8 @@ function renderHeroBadgesWall(heroName) {
     ? window.getHeroBadgeSlotProgress(heroName, gameState)
     : { unlockedSlots: 0, totalSlots: allSlots.length, slotPct: 0, unlockedTiers: 0, totalTiers: allSlots.length, tierPct: 0 };
 
-  const categories = ['ALL', ...Array.from(new Set(allSlots.map(s => s.cat)))];
+  const rawCats = Array.from(new Set(allSlots.map(s => s.cat))).sort((a, b) => (parseInt(a, 10) || 999) - (parseInt(b, 10) || 999));
+  const categories = ['ALL', ...rawCats];
   const filteredSlots = activeBadgeCategoryFilter === 'ALL'
     ? allSlots
     : allSlots.filter(s => s.cat === activeBadgeCategoryFilter);

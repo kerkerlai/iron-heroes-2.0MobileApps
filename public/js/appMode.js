@@ -644,7 +644,8 @@
       const prog = typeof window.getHeroBadgeSlotProgress === 'function'
         ? window.getHeroBadgeSlotProgress(name, s)
         : { unlockedSlots: 0, totalSlots: allSlots.length, slotPct: 0, unlockedTiers: b.unlocked, totalTiers: b.total };
-      const cats = ['ALL', ...Array.from(new Set(allSlots.map(x => x.cat)))];
+      const rawCats = Array.from(new Set(allSlots.map(x => x.cat))).sort((a, b) => (parseInt(a, 10) || 999) - (parseInt(b, 10) || 999));
+      const cats = ['ALL', ...rawCats];
       if (!cats.includes(ui.badgeCat)) ui.badgeCat = 'ALL';
       const list = ui.badgeCat === 'ALL' ? allSlots : allSlots.filter(x => x.cat === ui.badgeCat);
       const pct = prog.totalSlots ? (prog.unlockedSlots / prog.totalSlots * 100) : 0;

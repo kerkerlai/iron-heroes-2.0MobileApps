@@ -2762,7 +2762,7 @@ function renderGMBadgeEncyclopedia() {
   if (catSelect && catalog.length > 0 && catSelect.dataset.n !== String(catalog.length)) {
     catSelect.dataset.n = String(catalog.length);
     while (catSelect.options.length > 1) catSelect.remove(1);
-    const cats = Array.from(new Set(catalog.map(b => b.cat)));
+    const cats = Array.from(new Set(catalog.map(b => b.cat))).sort((a, b) => (parseInt(a, 10) || 999) - (parseInt(b, 10) || 999));
     cats.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c;
@@ -2786,16 +2786,36 @@ function renderGMBadgeEncyclopedia() {
   }
 
   const grantBadgeSel = document.getElementById('gm-grant-badge');
-  if (grantBadgeSel && grantBadgeSel.options.length !== catalog.length) {
+  if (grantBadgeSel && grantBadgeSel.dataset.n !== String(catalog.length)) {
+    grantBadgeSel.dataset.n = String(catalog.length);
     const curB = grantBadgeSel.value;
     grantBadgeSel.innerHTML = '';
-    catalog.forEach(b => {
+    const gmOnlyList = catalog.filter(b => b.rule && b.rule.type === 'gm_manual');
+    const regularList = catalog.filter(b => !b.rule || b.rule.type !== 'gm_manual');
+
+    if (gmOnlyList.length > 0) {
+      const grpGm = document.createElement('optgroup');
+      grpGm.label = '👑 GM 皇家御賜限定系列 (頒發高階將自動連同前序階級點亮)';
+      gmOnlyList.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.innerText = `[👑GM限定] #${String(b.num).padStart(3, '0')} ${b.icon} ${b.name} — ${b.desc}`;
+        if (b.id === curB) opt.selected = true;
+        grpGm.appendChild(opt);
+      });
+      grantBadgeSel.appendChild(grpGm);
+    }
+
+    const grpReg = document.createElement('optgroup');
+    grpReg.label = '🎖️ 全服運動與健康成就徽章 (依總階數由多到少排列)';
+    regularList.forEach(b => {
       const opt = document.createElement('option');
       opt.value = b.id;
       opt.innerText = `#${String(b.num).padStart(3, '0')} ${b.icon} ${b.name} — ${b.desc}`;
       if (b.id === curB) opt.selected = true;
-      grantBadgeSel.appendChild(opt);
+      grpReg.appendChild(opt);
     });
+    grantBadgeSel.appendChild(grpReg);
   }
 
   const query = (document.getElementById('gm-badge-search')?.value || '').toLowerCase().trim();
@@ -2832,7 +2852,8 @@ function renderGMBadgeEncyclopedia() {
       : `<div class="flex flex-wrap gap-1.5">
           ${holders.map(hName => {
             const info = heroBadgesAll[hName][b.id];
-            const isManualGrant = Boolean(gmOps.manualBadges?.[hName]?.[b.id]);
+            const slotDef = Array.isArray(window.SLOT_DEFINITIONS) ? window.SLOT_DEFINITIONS.find(d => d.badgeIds && d.badgeIds.includes(b.id)) : null;
+            const isManualGrant = Boolean(gmOps.manualBadges?.[hName]?.[b.id]) || Boolean(slotDef && slotDef.gmExclusive && slotDef.badgeIds.some(id => gmOps.manualBadges?.[hName]?.[id]));
             return `
               <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 border border-amber-500/40 text-amber-300" title="取得時間: ${info.unlockedAt}&#10;紀錄: ${info.actTitle || ''}">
                 <span>${hName}</span>
@@ -2873,6 +2894,12 @@ async function grantManualBadgeToHero() {
   const gmOps = ensureGMOpsState();
   if (!gmOps.manualBadges[heroName]) gmOps.manualBadges[heroName] = {};
 
+  // 若屬於 GM 皇家御賜多階系列，先清除同系列舊的手動紀錄，方便 GM 直接升降階
+  const slotDef = Array.isArray(window.SLOT_DEFINITIONS) ? window.SLOT_DEFINITIONS.find(d => d.gmExclusive && d.badgeIds && d.badgeIds.includes(badgeId)) : null;
+  if (slotDef) {
+    slotDef.badgeIds.forEach(id => { delete gmOps.manualBadges[heroName][id]; });
+  }
+
   const now = new Date();
   const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
   gmOps.manualBadges[heroName][badgeId] = {
@@ -2890,6 +2917,13 @@ async function revokeManualBadgeFromHero(heroName, badgeId) {
   const gmOps = ensureGMOpsState();
   if (gmOps.manualBadges?.[heroName]) {
     delete gmOps.manualBadges[heroName][badgeId];
+    const slotDef = Array.isArray(window.SLOT_DEFINITIONS) ? window.SLOT_DEFINITIONS.find(d => d.badgeIds && d.badgeIds.includes(badgeId)) : null;
+    if (slotDef) {
+      const idx = slotDef.badgeIds.indexOf(badgeId);
+      for (let i = idx; i < slotDef.badgeIds.length; i++) {
+        delete gmOps.manualBadges[heroName][slotDef.badgeIds[i]];
+      }
+    }
   }
   await persistGMOpsToSupabase(`🧹 已撤銷【${heroName}】的手動授勳紀錄`);
 }

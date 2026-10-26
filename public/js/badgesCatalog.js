@@ -500,6 +500,39 @@ const BADGE_RARITY_META = {
     border: 'border-2 border-rose-400 bg-gradient-to-br from-rose-900/80 via-purple-900/70 to-amber-900/80 text-amber-100 ring-1 ring-amber-300/60 shadow-[0_0_24px_rgba(244,63,94,0.6)]',
     glow: 'hover:border-amber-300 shadow-[0_0_26px_rgba(244,63,94,0.68)]',
     tagClass: 'bg-gradient-to-r from-rose-900 via-purple-900 to-amber-900 text-amber-200 border-rose-400'
+  },
+  imperial: {
+    key: 'imperial',
+    label: '黑金至尊 • 皇家御賜',
+    shortLabel: '👑黑金',
+    frameHex: '#fde047',
+    color: 'text-yellow-200',
+    bg: 'bg-zinc-950/95',
+    border: 'badge-frame-imperial border-2 border-yellow-300 bg-gradient-to-br from-zinc-950 via-neutral-900 to-amber-950/90 text-yellow-100 ring-2 ring-yellow-400/70 shadow-[0_0_28px_rgba(250,204,21,0.75),inset_0_0_14px_rgba(250,204,21,0.35)]',
+    glow: 'hover:border-yellow-200 shadow-[0_0_32px_rgba(250,204,21,0.85)]',
+    tagClass: 'bg-zinc-950 text-yellow-300 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.45)]'
+  },
+  celestial: {
+    key: 'celestial',
+    label: '星鑽極光 • 創世聖徽',
+    shortLabel: '💎星鑽',
+    frameHex: '#67e8f9',
+    color: 'text-cyan-100',
+    bg: 'bg-cyan-950/80',
+    border: 'badge-frame-celestial border-2 border-cyan-200 bg-gradient-to-br from-sky-950/95 via-indigo-950/90 to-cyan-900/85 text-cyan-50 ring-2 ring-cyan-300/75 shadow-[0_0_28px_rgba(34,211,238,0.8),inset_0_0_14px_rgba(165,243,252,0.4)]',
+    glow: 'hover:border-white shadow-[0_0_32px_rgba(56,189,248,0.9)]',
+    tagClass: 'bg-gradient-to-r from-cyan-950 via-indigo-950 to-sky-900 text-cyan-200 border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.45)]'
+  },
+  sovereign: {
+    key: 'sovereign',
+    label: '皇家翡翠 • 不朽榮光',
+    shortLabel: '✨翡翠',
+    frameHex: '#6ee7b7',
+    color: 'text-emerald-100',
+    bg: 'bg-emerald-950/85',
+    border: 'badge-frame-sovereign border-2 border-emerald-300 bg-gradient-to-br from-emerald-950/95 via-teal-950/90 to-amber-950/80 text-emerald-50 ring-2 ring-amber-300/65 shadow-[0_0_28px_rgba(16,185,129,0.78),inset_0_0_14px_rgba(253,230,138,0.35)]',
+    glow: 'hover:border-emerald-200 shadow-[0_0_32px_rgba(52,211,153,0.88)]',
+    tagClass: 'bg-gradient-to-r from-emerald-950 via-teal-900 to-amber-950 text-emerald-200 border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.45)]'
   }
 };
 
@@ -670,7 +703,52 @@ const BADGE_CATALOG = [
   { id: 'b320', num: 320, category: '10. 殿堂神話 (傳奇)', name: '五冠榮耀元勳', icon: '🛡️', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，所屬公會奪得總冠軍(或全服合作通關)且本人有出勤貢獻達 5 季', rule: { type: 'snapshot_guild_win', min: 5 } },
   { id: 'b321', num: 321, category: '10. 殿堂神話 (傳奇)', name: '賽季見證者', icon: '📜', rarity: 'common', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 1 個賽季', rule: { type: 'snapshot_veteran', min: 1 } },
   { id: 'b322', num: 322, category: '10. 殿堂神話 (傳奇)', name: '三朝鋼鐵元老', icon: '📜', rarity: 'epic', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 3 個賽季', rule: { type: 'snapshot_veteran', min: 3 } },
-  { id: 'b323', num: 323, category: '10. 殿堂神話 (傳奇)', name: '五朝不朽活化石', icon: '📜', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 5 個賽季', rule: { type: 'snapshot_veteran', min: 5 } }
+  { id: 'b323', num: 323, category: '10. 殿堂神話 (傳奇)', name: '五朝不朽活化石', icon: '📜', rarity: 'mythic', condition: '於已封存的歷代賽季快照中，累計有實際出勤參戰紀錄達 5 個賽季', rule: { type: 'snapshot_veteran', min: 5 } },
+
+  // --------------------------------------------------------------------------
+  // GM 皇家御賜限定系列 (僅限 GM 依遊戲貢獻授勳，納入全圖鑑 100% 蒐集率)
+  // --------------------------------------------------------------------------
+  // 1) 皇家科學院 (協助測試) — 星鑽極光 (celestial)
+  { id: 'b401', num: 401, category: '10. 殿堂神話 (傳奇)', name: '菜鳥工程師', icon: '💻', rarity: 'celestial', condition: '協助遊戲測試、回報問題或參與早期功能驗證 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b402', num: 402, category: '10. 殿堂神話 (傳奇)', name: '資深工程師', icon: '💻', rarity: 'celestial', condition: '持續協助系統測試、抓出關鍵 Bug 或提供具體優化回饋 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b403', num: 403, category: '10. 殿堂神話 (傳奇)', name: '主任工程師', icon: '💻', rarity: 'celestial', condition: '深入參與跨平台與手機 App 實機測試及數據校對的核心功臣 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b404', num: 404, category: '10. 殿堂神話 (傳奇)', name: '開發小主管', icon: '💻', rarity: 'celestial', condition: '主導多項功能驗證、協助隊友排除疑難雜症的研發棟樑 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b405', num: 405, category: '10. 殿堂神話 (傳奇)', name: '首席科學家', icon: '💻', rarity: 'celestial', condition: '對《鋼鐵英雄紀元》系統穩定度與技術演進有卓越貢獻之最高科學榮譽 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } },
+
+  // 2) 皇家金庫乾爹 (Donation 贊助) — 黑金至尊 (imperial)
+  { id: 'b406', num: 406, category: '10. 殿堂神話 (傳奇)', name: '小乾爹', icon: '🧧', rarity: 'imperial', condition: '熱心贊助賽事飲品、點心或公會小額獎勵基金 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b407', num: 407, category: '10. 殿堂神話 (傳奇)', name: '中乾爹', icon: '🧧', rarity: 'imperial', condition: '慷慨贊助賽季獎品、聚餐加菜金或活動物資 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b408', num: 408, category: '10. 殿堂神話 (傳奇)', name: '大乾爹', icon: '🧧', rarity: 'imperial', condition: '鼎力贊助賽季豐厚大獎或關鍵營運經費的傳奇金主 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b409', num: 409, category: '10. 殿堂神話 (傳奇)', name: '豪氣大乾爹', icon: '🧧', rarity: 'imperial', condition: '多次或大額贊助賽事獎勵、讓全服英雄滿載而歸的頂級課長 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b410', num: 410, category: '10. 殿堂神話 (傳奇)', name: '財神爺', icon: '🧧', rarity: 'imperial', condition: '富可敵國、豪氣鎮全服的《鋼鐵英雄紀元》至高榮譽財神爺 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } },
+
+  // 3) 鐵人傳教士 (招生與教學) — 皇家翡翠 (sovereign)
+  { id: 'b411', num: 411, category: '10. 殿堂神話 (傳奇)', name: '熱心推坑員', icon: '📣', rarity: 'sovereign', condition: '成功邀請新朋友加入《鋼鐵英雄紀元》或協助新手入門 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b412', num: 412, category: '10. 殿堂神話 (傳奇)', name: '公會招生官', icon: '📣', rarity: 'sovereign', condition: '積極招募新血、手把手協助隊友完成 Strava / 手機 App 綁定 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b413', num: 413, category: '10. 殿堂神話 (傳奇)', name: '王牌宣傳長', icon: '📣', rarity: 'sovereign', condition: '大力推廣運動風氣、協助多位玩家順利上軌道的社群功臣 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b414', num: 414, category: '10. 殿堂神話 (傳奇)', name: '精神領袖', icon: '📣', rarity: 'sovereign', condition: '以身作則帶動公會與全服運動熱潮、凝聚力滿點的領袖人物 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b415', num: 415, category: '10. 殿堂神話 (傳奇)', name: '傳奇大祭司', icon: '📣', rarity: 'sovereign', condition: '讓無數英雄踏上鋼鐵修行之路、功德無量的至高傳教大祭司 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } },
+
+  // 4) 榮耀主揪王 (團練與聚會) — 黑金至尊 (imperial)
+  { id: 'b416', num: 416, category: '10. 殿堂神話 (傳奇)', name: '隨揪隨到咖', icon: '🍻', rarity: 'imperial', condition: '熱情參與線下團練、路跑賽事或公會聚餐活動 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b417', num: 417, category: '10. 殿堂神話 (傳奇)', name: '團練發起人', icon: '🍻', rarity: 'imperial', condition: '主動號召隊友一起團練、夜跑、騎車或登山 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b418', num: 418, category: '10. 殿堂神話 (傳奇)', name: '康樂股長', icon: '🍻', rarity: 'imperial', condition: '熱心張羅聚會餐廳、路跑團報或活動攝影紀錄 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b419', num: 419, category: '10. 殿堂神話 (傳奇)', name: '派對總召', icon: '🍻', rarity: 'imperial', condition: '統籌大型線下團練、慶功宴或跨公會聯誼活動的靈魂總召 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b420', num: 420, category: '10. 殿堂神話 (傳奇)', name: '鐵人外交官', icon: '🍻', rarity: 'imperial', condition: '連結線上與線下所有英雄情誼、最具號召力的至高外交官 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } },
+
+  // 5) 創世策劃師 (玩法與平衡) — 星鑽極光 (celestial)
+  { id: 'b421', num: 421, category: '10. 殿堂神話 (傳奇)', name: '點子王', icon: '🧠', rarity: 'celestial', condition: '提供有趣的遊戲點子、徽章靈感或活動建議 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b422', num: 422, category: '10. 殿堂神話 (傳奇)', name: '玩法顧問', icon: '🧠', rarity: 'celestial', condition: '協助討論賽季規則、提供實用的玩家體驗回饋 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b423', num: 423, category: '10. 殿堂神話 (傳奇)', name: '平衡性設計師', icon: '🧠', rarity: 'celestial', condition: '深入協助分析計分公式與各資料片數值平衡 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b424', num: 424, category: '10. 殿堂神話 (傳奇)', name: '資料片總監', icon: '🧠', rarity: 'celestial', condition: '參與核心資料片主題企劃與新機制設計的智囊核心 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b425', num: 425, category: '10. 殿堂神話 (傳奇)', name: '創世建築師', icon: '🧠', rarity: 'celestial', condition: '與 GM 共同打造《鋼鐵英雄紀元》世界觀與玩法的殿堂級策劃師 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } },
+
+  // 6) 殿堂吟遊詩人 (氣氛與迷因) — 皇家翡翠 (sovereign)
+  { id: 'b426', num: 426, category: '10. 殿堂神話 (傳奇)', name: '群組啦啦隊', icon: '🎭', rarity: 'sovereign', condition: '常在群組為隊友加油打氣、分享運動日常活絡氣氛 (GM 榮譽授勳 Lv.1)', rule: { type: 'gm_manual' } },
+  { id: 'b427', num: 427, category: '10. 殿堂神話 (傳奇)', name: '梗圖製造機', icon: '🎭', rarity: 'sovereign', condition: '創作趣味迷因、垃圾話或搞笑戰報讓全服笑聲不斷 (GM 榮譽授勳 Lv.2)', rule: { type: 'gm_manual' } },
+  { id: 'b428', num: 428, category: '10. 殿堂神話 (傳奇)', name: '氣氛擔當', icon: '🎭', rarity: 'sovereign', condition: '無論順風逆風都能炒熱賽況、帶動群組話題的開心果 (GM 榮譽授勳 Lv.3)', rule: { type: 'gm_manual' } },
+  { id: 'b429', num: 429, category: '10. 殿堂神話 (傳奇)', name: '靈魂吟遊詩人', icon: '🎭', rarity: 'sovereign', condition: '為賽季撰寫熱血戰記、精華回顧或創意應援的傳奇詩人 (GM 榮譽授勳 Lv.4)', rule: { type: 'gm_manual' } },
+  { id: 'b430', num: 430, category: '10. 殿堂神話 (傳奇)', name: '殿堂級吉祥物', icon: '🎭', rarity: 'sovereign', condition: '全服公認不可或缺、帶來無限歡樂與熱血的至高精神圖騰 (GM 榮譽授勳 Lv.5)', rule: { type: 'gm_manual' } }
 ];
 
 BADGE_CATALOG.forEach(b => {
@@ -736,15 +814,35 @@ window.getActiveBadgeCatalog = function(state) {
   });
   const alignList = (arr) => {
     if (typeof BADGE_TO_SLOT_DEF !== 'undefined' && typeof computeSlotTierRarity === 'function') {
-      arr.forEach(b => {
+      const origOrder = new Map();
+      arr.forEach((b, idx) => {
         const def = BADGE_TO_SLOT_DEF.get(b.id);
+        const slotKey = def ? def.id : b.id;
+        if (!origOrder.has(slotKey)) origOrder.set(slotKey, idx);
         if (def) {
-          const idx = def.badgeIds.indexOf(b.id);
-          if (idx >= 0) b.rarity = computeSlotTierRarity(idx, def.badgeIds.length);
+          const tIdx = def.badgeIds.indexOf(b.id);
+          b.rarity = def.premiumRarity || (tIdx >= 0 ? computeSlotTierRarity(tIdx, def.badgeIds.length) : 'mythic');
         } else {
           b.rarity = 'mythic';
         }
       });
+      const sorted = arr.slice().sort((a, b) => {
+        const defA = BADGE_TO_SLOT_DEF.get(a.id);
+        const defB = BADGE_TO_SLOT_DEF.get(b.id);
+        const tiersA = defA ? defA.badgeIds.length : 1;
+        const tiersB = defB ? defB.badgeIds.length : 1;
+        if (tiersB !== tiersA) return tiersB - tiersA;
+        const keyA = defA ? defA.id : a.id;
+        const keyB = defB ? defB.id : b.id;
+        const ordA = origOrder.get(keyA) ?? 0;
+        const ordB = origOrder.get(keyB) ?? 0;
+        if (ordA !== ordB) return ordA - ordB;
+        const idxA = defA ? defA.badgeIds.indexOf(a.id) : 0;
+        const idxB = defB ? defB.badgeIds.indexOf(b.id) : 0;
+        return idxA - idxB;
+      });
+      sorted.forEach((b, i) => { b.num = i + 1; });
+      return sorted;
     }
     return arr;
   };
@@ -855,6 +953,29 @@ function evaluateAllHeroesBadges(state) {
         };
       }
     });
+
+    // 若 GM 手動頒發的是多階徽章格的高階徽章 (如 Lv.3 主任工程師 / 大乾爹)，自動一併點亮該系列的前序階級 (Lv.1 ~ Lv.3)
+    if (typeof SLOT_DEFINITIONS !== 'undefined' && Array.isArray(SLOT_DEFINITIONS)) {
+      SLOT_DEFINITIONS.forEach(def => {
+        if (!Array.isArray(def.badgeIds) || def.badgeIds.length <= 1) return;
+        let maxGrantedIdx = -1;
+        let grantedRec = null;
+        def.badgeIds.forEach((id, idx) => {
+          if (unlockedMap[id]) {
+            maxGrantedIdx = idx;
+            grantedRec = unlockedMap[id];
+          }
+        });
+        if (maxGrantedIdx > 0 && grantedRec) {
+          for (let i = 0; i < maxGrantedIdx; i++) {
+            const lowerId = def.badgeIds[i];
+            if (!unlockedMap[lowerId]) {
+              unlockedMap[lowerId] = { ...grantedRec };
+            }
+          }
+        }
+      });
+    }
 
     // 2. 檢查 GM 頭像特效歷史紀錄 (壽星/大太陽/淋雨/爆氣)
     const fxInfo = getHeroActiveFx(heroName, targetState);
@@ -1399,6 +1520,14 @@ const SLOT_DEFINITIONS = [
   { id: 'slot_season_guild_win', name: '冠軍公會功臣', icon: '🛡️', badgeIds: ['b318','b319','b320'] },
   { id: 'slot_season_veteran', name: '百戰元老', icon: '📜', badgeIds: ['b321','b322','b323'] },
 
+  // GM 皇家御賜限定系列 (6 個 5 階尊榮特殊色徽章格 = 30 階，納入全圖鑑 100% 蒐集率)
+  { id: 'slot_gm_dev', name: '皇家科學院', icon: '💻', premiumRarity: 'celestial', gmExclusive: true, badgeIds: ['b401','b402','b403','b404','b405'] },
+  { id: 'slot_gm_sponsor', name: '皇家金庫乾爹', icon: '🧧', premiumRarity: 'imperial', gmExclusive: true, badgeIds: ['b406','b407','b408','b409','b410'] },
+  { id: 'slot_gm_evangelist', name: '鐵人傳教士', icon: '📣', premiumRarity: 'sovereign', gmExclusive: true, badgeIds: ['b411','b412','b413','b414','b415'] },
+  { id: 'slot_gm_organizer', name: '榮耀主揪王', icon: '🍻', premiumRarity: 'imperial', gmExclusive: true, badgeIds: ['b416','b417','b418','b419','b420'] },
+  { id: 'slot_gm_planner', name: '創世策劃師', icon: '🧠', premiumRarity: 'celestial', gmExclusive: true, badgeIds: ['b421','b422','b423','b424','b425'] },
+  { id: 'slot_gm_bard', name: '殿堂吟遊詩人', icon: '🎭', premiumRarity: 'sovereign', gmExclusive: true, badgeIds: ['b426','b427','b428','b429','b430'] },
+
   // 手機健康系列 11~26 (50 個多階合併格 + 25 個獨立彩蛋格 = 75 格)
   { id: 'slot_mh_single_steps', name: '單日步數突破', icon: '👣', badgeIds: ['b101','b102','b103','b104','b105','b106','b107','b108','b109','b110','b111','b112'] },
   { id: 'slot_mh_total_steps', name: '萬里長征總步數', icon: '🗺️', badgeIds: ['b113','b114','b115','b116','b117','b118','b119','b120','b121','b122'] },
@@ -1513,7 +1642,7 @@ window.getActiveBadgeSlots = function(state, heroName) {
 
     const totalTiers = rawTiers.length;
     const tiers = rawTiers.map((tb, idx) => {
-      const alignedRarity = computeSlotTierRarity(idx, totalTiers);
+      const alignedRarity = (def && def.premiumRarity) ? def.premiumRarity : computeSlotTierRarity(idx, totalTiers);
       if (tb.rarity !== alignedRarity) tb.rarity = alignedRarity;
       return tb;
     });
@@ -1538,7 +1667,9 @@ window.getActiveBadgeSlots = function(state, heroName) {
     const currentRecord = currentTier ? heroUnlockedMap[currentTier.id] : null;
     const nextTier = highestUnlockedIdx + 1 < totalTiers ? tiers[highestUnlockedIdx + 1] : null;
     const displayBadge = currentTier || firstTier;
-    const rarity = isUnlocked ? (currentTier.rarity || 'common') : (firstTier.rarity || 'common');
+    const rarity = (def && def.premiumRarity)
+      ? def.premiumRarity
+      : (isUnlocked ? (currentTier.rarity || 'common') : (firstTier.rarity || 'common'));
     const anyGloballyRevealed = tiers.some(tb => isBadgeUnlockedByAnyone(tb.id));
 
     const seriesName = def ? def.name : firstTier.name;
@@ -1553,6 +1684,7 @@ window.getActiveBadgeSlots = function(state, heroName) {
 
     slots.push({
       id: slotId,
+      _origIdx: slots.length,
       slotNum: slots.length + 1,
       category: firstTier.category || firstTier.cat,
       cat: firstTier.cat || firstTier.category,
@@ -1562,6 +1694,7 @@ window.getActiveBadgeSlots = function(state, heroName) {
       displayName,
       icon: slotIcon,
       rarity,
+      gmExclusive: Boolean(def && def.gmExclusive),
       isMultiTier,
       totalTiers,
       tiers,
@@ -1579,6 +1712,10 @@ window.getActiveBadgeSlots = function(state, heroName) {
       desc: displayBadge.desc || displayBadge.condition || ''
     });
   });
+
+  // 依「總階數 (totalTiers) 由多到少」排序並重新編號 (等級越多的放越前面，1階彩級徽章放最後)
+  slots.sort((a, b) => (b.totalTiers - a.totalTiers) || (a._origIdx - b._origIdx));
+  slots.forEach((s, idx) => { s.slotNum = idx + 1; });
 
   return slots;
 };

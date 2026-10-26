@@ -172,6 +172,10 @@ html.in-app #app-root * { box-sizing: border-box; }
 .ia-badge.on.ia-rarity-epic { border-color: #fbbf24; background: linear-gradient(135deg, rgba(146, 64, 14, .8), rgba(120, 53, 15, .6)); box-shadow: 0 0 11px rgba(251, 191, 36, .45); }
 .ia-badge.on.ia-rarity-legendary { border-color: #c084fc; background: linear-gradient(135deg, rgba(107, 33, 168, .8), rgba(134, 25, 143, .6), rgba(120, 53, 15, .5)); box-shadow: 0 0 13px rgba(192, 132, 252, .55); }
 .ia-badge.on.ia-rarity-mythic { border-color: #fb7185; background: linear-gradient(135deg, rgba(159, 18, 57, .85), rgba(107, 33, 168, .75), rgba(146, 64, 14, .8)); box-shadow: 0 0 15px rgba(244, 63, 94, .68), inset 0 0 6px rgba(251, 191, 36, .45); }
+/* GM 御賜三大超越彩級之至尊神格外框：黑金至尊 (imperial) / 星鑽極光 (celestial) / 皇家翡翠 (sovereign) */
+.ia-badge.on.ia-rarity-imperial { border: 2px solid #fde047; background: linear-gradient(135deg, #09090b 0%, #1c1917 48%, #713f12 100%); box-shadow: 0 0 0 1px rgba(254, 240, 138, .85), 0 0 18px rgba(250, 204, 21, .88), inset 0 0 10px rgba(250, 204, 21, .45); }
+.ia-badge.on.ia-rarity-celestial { border: 2px solid #a5f3fc; background: linear-gradient(135deg, #082f49 0%, #1e1b4b 48%, #0284c7 85%, #67e8f9 100%); box-shadow: 0 0 0 1px rgba(224, 242, 254, .9), 0 0 18px rgba(34, 211, 238, .9), inset 0 0 10px rgba(165, 243, 252, .5); }
+.ia-badge.on.ia-rarity-sovereign { border: 2px solid #6ee7b7; background: linear-gradient(135deg, #022c22 0%, #064e3b 48%, #0f766e 82%, #b45309 100%); box-shadow: 0 0 0 1px rgba(253, 230, 138, .8), 0 0 18px rgba(16, 185, 129, .88), inset 0 0 10px rgba(253, 230, 138, .42); }
 .ia-badge-lv { position: absolute; right: 2px; bottom: 2px; font-style: normal; font-size: 8.5px; font-weight: 900; line-height: 1; padding: 1.5px 3.5px; border-radius: 5px; background: rgba(2, 6, 23, .85); color: #fde68a; border: 1px solid rgba(251, 191, 36, .4); }
 .ia-badge-lv-lock { color: #64748b; border-color: #334155; }
 #ia-badge-inspector > * { border-radius: 14px; }
@@ -197,6 +201,9 @@ html.in-app #app-root * { box-sizing: border-box; }
 .ia-peek-pill.ia-rarity-epic { border-color: #fbbf24; color: #fde68a; background: rgba(146, 64, 14, .65); }
 .ia-peek-pill.ia-rarity-legendary { border-color: #c084fc; color: #e9d5ff; background: rgba(107, 33, 168, .65); }
 .ia-peek-pill.ia-rarity-mythic { border-color: #fb7185; color: #fecdd3; background: linear-gradient(90deg, rgba(159, 18, 57, .75), rgba(107, 33, 168, .75)); }
+.ia-peek-pill.ia-rarity-imperial { border-color: #fde047; color: #fef08a; background: linear-gradient(90deg, #09090b, #422006); box-shadow: 0 0 10px rgba(250, 204, 21, .45); }
+.ia-peek-pill.ia-rarity-celestial { border-color: #67e8f9; color: #ecfeff; background: linear-gradient(90deg, #082f49, #312e81, #0e7490); box-shadow: 0 0 10px rgba(34, 211, 238, .45); }
+.ia-peek-pill.ia-rarity-sovereign { border-color: #6ee7b7; color: #d1fae5; background: linear-gradient(90deg, #022c22, #065f46, #78350f); box-shadow: 0 0 10px rgba(16, 185, 129, .45); }
 .ia-peek-num { font-size: 10.5px; font-weight: 800; color: #94a3b8; font-family: monospace; }
 .ia-peek-info { background: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 9px 11px; font-size: 12px; line-height: 1.45; display: flex; flex-direction: column; gap: 5px; }
 .ia-peek-info p { margin: 0; color: #cbd5e1; }
