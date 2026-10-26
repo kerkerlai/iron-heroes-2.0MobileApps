@@ -198,7 +198,7 @@
             { label: '🍖 狩獵熱量', value: `+${Math.floor(num(h.food)).toLocaleString()}` },
             { label: '🎒 搜刮物資', value: `+${Math.floor(num(h.scavenge)).toLocaleString()}` },
             { label: '☣️ 毒圈流失', value: `-${num(sv.penalty).toLocaleString()}` },
-            { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : ((sv.days || 0) + 1))} / ${h.totalDays ?? ((sv.days || 0) + 1)} 天` }
+            { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : (sv.totalDays || sv.days || 1))} / ${h.totalDays ?? (sv.totalDays || sv.days || 1)} 天` }
           ],
           bar: h.isDead ? 0 : Math.min(100, Math.max(0, (num(h.currentHp) / maxHp) * 100))
         }));
@@ -414,12 +414,16 @@
 
   function guildCardsHtml(guilds) {
     if (!guilds || !guilds.length) return '';
-    return `<div class="ia-section-title">🛡️ 公會排名</div><div class="ia-hscroll">${guilds.map((g, i) => `
-      <div class="ia-gcard" style="border-color:${uhcSafeColor(g.color, '#334155')}88">
-        <div class="ia-gcard-top"><span>${i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '#' + (i + 1)))}</span><b>${esc(g.badge || uhcFindGuild(g.name)?.badge || '🛡️')} ${esc(g.name)}</b></div>
+    return `<div class="ia-section-title">🛡️ 公會排名</div><div class="ia-hscroll">${guilds.map((g, i) => {
+      const gm = uhcFindGuild(g.name);
+      const col = uhcSafeColor(g.color || gm?.color, '#334155');
+      return `
+      <div class="ia-gcard" style="border-color:${col}88">
+        <div class="ia-gcard-top"><span>${i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '#' + (i + 1)))}</span><b>${esc(g.badge || gm?.badge || '🛡️')} ${esc(g.name)}</b></div>
         <div class="ia-gcard-val">${esc(g.value)}</div><div class="ia-gcard-sub">${esc(g.sub || '')}</div>
         ${(g.members || []).length ? renderGuildAvatarStack(g.members, 6) : ''}
-      </div>`).join('')}</div>`;
+      </div>`;
+    }).join('')}</div>`;
   }
 
   function nameCardHtml(name, extraRight = '', subLine = '') {
@@ -515,7 +519,7 @@
         <div class="ia-hscroll ia-chips">${chips}</div>
         ${model.summaryHtml ? `<div class="ia-card ia-summary">${model.summaryHtml}</div>` : ''}
         ${rules ? `<details class="ia-rules"${rulesOpen ? ' open' : ''} ontoggle="IronAppUI.rulesToggled(${arg(type)}, this.open)"><summary>📜 ${esc(meta.icon)} ${esc(meta.name)}・規則說明</summary><div class="ia-rules-body">${rules}</div></details>` : ''}
-        <div class="ia-section-title"><span>🏆 ${esc(model.primaryLabel)}排行</span><small>每人一行・點開看詳細</small></div>
+        <div class="ia-section-title"><span>🏆 ${esc(model.primaryLabel)}排行</span></div>
         <div class="ia-list">${model.rows.map(r => rowHtml(r, 'expansion', me, today.rowSafe === false ? null : today.map)).join('') || '<div class="ia-card ia-muted">目前尚無英雄資料</div>'}</div>
         ${guildCardsHtml(model.guilds)}
       </div>`;
@@ -595,25 +599,43 @@
       const sp = d.querySelectorAll('span');
       return { label: (sp[0]?.textContent || '').trim(), value: (sp[1]?.textContent || '').trim() };
     }).filter(k => k.label);
-    const zoneSegs = Array.from(document.querySelectorAll('#hero-hr-zone-card .h-3 > div')).map(d => parseFloat(d.style.width) || 0);
+    const prevCatScroll = root.querySelector('#ia-badge-cat-scroll')?.scrollLeft ?? null;
     const acts = heroActs(name);
+    const totalActsCount = acts.length;
+    let z1 = 0, z2 = 0, z3 = 0, z4 = 0, z5 = 0;
+    acts.forEach(a => {
+      const avg = num(a.avgHr);
+      if (avg < 0.60 * maxHr) z1++;
+      else if (avg <= 0.75 * maxHr) z2++;
+      else if (avg <= 0.85 * maxHr) z3++;
+      else if (avg <= 0.90 * maxHr) z4++;
+      else z5++;
+    });
+    const zPct = (cnt) => totalActsCount > 0 ? Number(((cnt / totalActsCount) * 100).toFixed(1)) : 0;
+    const zoneSegs = [zPct(z1), zPct(z2), zPct(z3), zPct(z4), zPct(z5)];
     const tabs = [['overview', '總覽'], ['badges', '徽章'], ['acts', '運動紀錄']];
     let body = '';
     if (ui.viewerTab === 'overview') {
       const hs = typeof window.getHeroHealthSummary === 'function' ? window.getHeroHealthSummary(s, name, 7) : null;
       const sleepTxt = hs?.avgSleepMin ? `${Math.floor(hs.avgSleepMin / 60)}h ${Math.round(hs.avgSleepMin % 60)}m` : '—';
       const f0 = (v) => (v === null || v === undefined) ? '—' : Math.round(v).toLocaleString();
-      const zoneColors = ['#475569', '#10b981', '#f59e0b', '#f97316', '#f43f5e'];
       body = `
         <div class="ia-kpi">${kpis.map(k => `<div class="ia-stat"><span>${esc(k.label)}</span><b>${esc(k.value)}</b></div>`).join('')}</div>
-        <div class="ia-section-title"><span>💓 心率區間</span><small>${acts.length} 次運動</small></div>
-        <div class="ia-card"><div class="ia-zonebar">${zoneSegs.map((w, i) => `<i style="width:${w}%;background:${zoneColors[i]}"></i>`).join('')}</div>
-          <div class="ia-zonelbl"><span>Z1 ${zoneSegs[0] ?? 0}%</span><span class="ia-ok">Z2 ${zoneSegs[1] ?? 0}%</span><span>Z3 ${zoneSegs[2] ?? 0}%</span><span>Z4 ${zoneSegs[3] ?? 0}%</span><span class="ia-bad">Z5 ${zoneSegs[4] ?? 0}%</span></div></div>
+        <div class="ia-section-title"><span>💓 心率區間比例</span><small>${acts.length} 次運動</small></div>
+        <div class="ia-card">
+          <div class="ia-zonegrid">
+            <div class="ia-zonecell"><span>🚶 Z1 恢復</span><b>${zoneSegs[0]}%</b></div>
+            <div class="ia-zonecell ia-z2"><span>🟢 Z2 燃脂</span><b>${zoneSegs[1]}%</b></div>
+            <div class="ia-zonecell ia-z3"><span>🟡 Z3 耐力</span><b>${zoneSegs[2]}%</b></div>
+            <div class="ia-zonecell ia-z4"><span>🟠 Z4 閾值</span><b>${zoneSegs[3]}%</b></div>
+            <div class="ia-zonecell ia-z5"><span>🔴 Z5 極限</span><b>${zoneSegs[4]}%</b></div>
+          </div>
+        </div>
         ${hs ? `<div class="ia-section-title"><span>📱 近 7 天身體狀態</span><small>手機同步</small></div>
           <div class="ia-kpi"><div class="ia-stat"><span>👣 平均步數</span><b>${f0(hs.avgSteps)}</b></div><div class="ia-stat"><span>😴 平均睡眠</span><b>${sleepTxt}</b></div>
           <div class="ia-stat"><span>💓 靜止心率</span><b>${f0(hs.avgRestingHr)} bpm</b></div><div class="ia-stat"><span>⚡ 活動分鐘</span><b>${f0(hs.avgActiveMin)} 分</b></div>
           <div class="ia-stat"><span>🌿 HRV</span><b>${hs.avgHrv != null ? Math.round(hs.avgHrv * 10) / 10 + ' ms' : '—'}</b></div><div class="ia-stat"><span>🫁 血氧</span><b>${hs.avgSpo2 != null ? Math.round(hs.avgSpo2 * 10) / 10 + '%' : '—'}</b></div></div>` : ''}
-        <div class="ia-section-title"><span>🎖️ 最近解鎖 <small style="font-weight:600;color:#94a3b8">(長按偷看條件)</small></span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('badges')">全部 ›</button></div>
+        <div class="ia-section-title"><span>🎖️ 最近解鎖 <small style="font-weight:600;color:#94a3b8">(點擊或長按查看條件)</small></span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('badges')">全部 ›</button></div>
         <div class="ia-badgegrid">${(() => { const l = latestUnlocked(name, 6); const cells = l.map(x => badgeIcon(x.slot, true, '', name)); while (cells.length < 6) cells.push('<span class="ia-badge">🔒</span>'); return cells.join(''); })()}</div>
         <div class="ia-section-title"><span>🏃 最近運動</span><button type="button" class="ia-textbtn" onclick="IronAppUI.setViewerTab('acts')">全部 ›</button></div>
         <div class="ia-list">${acts.slice(0, 3).map((a, i) => actRowHtml(a, 'ov' + i)).join('') || '<div class="ia-card ia-muted">尚無運動紀錄</div>'}</div>`;
@@ -630,9 +652,9 @@
         <div class="ia-card">
           <div class="ia-row-between"><b>🎖️ 展櫃點亮 ${prog.unlockedSlots} / ${prog.totalSlots} 格</b><b class="ia-amber">累計 ${prog.unlockedTiers} / ${prog.totalTiers} 階</b></div>
           <div class="ia-bar ia-bar-amber"><i style="width:${pct}%"></i></div>
-          <div class="ia-muted ia-small" style="margin-top:6px">💡 長按任一徽章可彈出小視窗查看條件與升框進度（放開即離開）；外框依序升級：銅 ➔ 銀 ➔ 金 ➔ 紫金 ➔ 彩！</div>
+          <div class="ia-muted ia-small" style="margin-top:6px">💡 點擊或長按任一徽章可彈出視窗查看條件與升框進度（按住時手指移開不消失）；外框依序升級：<b style="color:#fdba74">銅</b> ➔ <b style="color:#e2e8f0">銀</b> ➔ <b style="color:#fcd34d">金</b> ➔ <b style="color:#d8b4fe">紫金</b> ➔ <b style="color:#fda4af">彩</b>！</div>
         </div>
-        <div class="ia-hscroll ia-chips">${cats.map(c => { const catSlots = c === 'ALL' ? allSlots : allSlots.filter(x => x.cat === c); const tot = catSlots.length; const un = catSlots.filter(x => x.isUnlocked).length; return `<button type="button" class="ia-chip${ui.badgeCat === c ? ' ia-chip-on' : ''}" onclick="IronAppUI.setBadgeCat(${esc(JSON.stringify(c))})">${c === 'ALL' ? '🌟 全部' : esc(c)} ${un}/${tot}</button>`; }).join('')}</div>
+        <div id="ia-badge-cat-scroll" class="ia-hscroll ia-chips">${cats.map(c => { const catSlots = c === 'ALL' ? allSlots : allSlots.filter(x => x.cat === c); const tot = catSlots.length; const un = catSlots.filter(x => x.isUnlocked).length; return `<button type="button" class="ia-chip${ui.badgeCat === c ? ' ia-chip-on' : ''}" onclick="IronAppUI.setBadgeCat(${esc(JSON.stringify(c))})">${c === 'ALL' ? '🌟 全部' : esc(c)} ${un}/${tot}</button>`; }).join('')}</div>
         <div id="ia-badge-inspector">${ui.badgeInspect ? buildBadgeInspectorHtml(name, ui.badgeInspect) : ''}</div>
         <div class="ia-badgegrid">${list.map(x => badgeIcon(x, x.isUnlocked, `IronAppUI.inspectBadge(${esc(JSON.stringify(x.id))})`, name)).join('')}</div>`;
     } else {
@@ -657,6 +679,22 @@
         <div class="ia-tabs">${tabs.map(([k, l]) => `<button type="button" class="${ui.viewerTab === k ? 'on' : ''}" onclick="IronAppUI.setViewerTab('${k}')">${l}</button>`).join('')}</div>
         ${body}
       </div>`;
+    const catScroller = root.querySelector('#ia-badge-cat-scroll');
+    if (catScroller) {
+      if (prevCatScroll !== null) catScroller.scrollLeft = prevCatScroll;
+      const activeChip = catScroller.querySelector('.ia-chip-on');
+      if (activeChip) {
+        const left = activeChip.offsetLeft - catScroller.offsetLeft;
+        const right = left + activeChip.offsetWidth;
+        const viewLeft = catScroller.scrollLeft;
+        const viewRight = viewLeft + catScroller.clientWidth;
+        if (left < viewLeft) {
+          catScroller.scrollLeft = Math.max(0, left - 12);
+        } else if (right > viewRight) {
+          catScroller.scrollLeft = right - catScroller.clientWidth + 12;
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------
@@ -783,7 +821,7 @@
   }
 
   // ---------------------------------------------------------------
-  // ⑤ 手機長按徽章即時浮層小視窗 (#ia-badge-peek：按住彈出、放開即關閉，不跳轉分頁)
+  // ⑤ 手機長按 / 點擊徽章即時浮層小視窗 (#ia-badge-peek：按住滑移不消失、手指移開才關閉；點擊也可釘選)
   // ---------------------------------------------------------------
   function ensureBadgePeek() {
     let el = document.getElementById('ia-badge-peek');
@@ -791,12 +829,12 @@
     el = document.createElement('div');
     el.id = 'ia-badge-peek';
     el.className = 'ia-badge-peek';
-    el.innerHTML = `<div class="ia-badge-peek-card"></div>`;
+    el.innerHTML = `<div class="ia-badge-peek-backdrop" onclick="IronAppUI.hideBadgePeek()"></div><div class="ia-badge-peek-card"></div>`;
     document.body.appendChild(el);
     return el;
   }
 
-  function buildBadgePeekHtml(heroName, slotOrBadgeId) {
+  function buildBadgePeekHtml(heroName, slotOrBadgeId, pinned = false) {
     const s = st();
     const slot = typeof window.findBadgeSlot === 'function' ? window.findBadgeSlot(slotOrBadgeId, s, heroName) : null;
     if (!slot) return '';
@@ -804,6 +842,10 @@
     const rMeta = rarityMeta[slot.rarity] || rarityMeta.common || { label: '銅牌 • 初心者', shortLabel: '銅牌' };
     const unlockedMap = s?.heroBadges?.[heroName] || {};
     const numStr = `#${String(slot.slotNum).padStart(3, '0')}`;
+    const closeBtnHtml = `<button type="button" class="ia-peek-close" onclick="IronAppUI.hideBadgePeek()" aria-label="關閉">✕</button>`;
+    const footText = pinned
+      ? '👆 點擊右上 ✕ 或背景即可關閉（上下滑動可看全部階級）'
+      : '👆 按住時手指移到旁邊不會消失（上下滑動可捲動階級）・放開即關閉';
 
     let ladderHtml = '';
     if (slot.isMultiTier) {
@@ -833,6 +875,7 @@
             <b>${esc(slot.displayName)}</b>
             <small>${esc(slot.cat)}</small>
           </div>
+          ${closeBtnHtml}
         </div>
         <div class="ia-peek-info">
           <p><b>📜 當前取得條件：</b>${esc(curBadge.condition)}</p>
@@ -840,7 +883,7 @@
           <p><b>📅 何時取得：</b>${esc(u.unlockedAt || '')} · <b>🏃 達成紀錄：</b>${esc(u.actTitle || u.actName || '榮譽解鎖')}</p>
         </div>
         ${ladderHtml}
-        <div class="ia-peek-foot">👆 放開手指即自動關閉</div>`;
+        <div class="ia-peek-foot">${footText}</div>`;
     } else {
       const firstTier = slot.tiers[0];
       const condText = slot.anyGloballyRevealed
@@ -854,33 +897,47 @@
             <b>${slot.anyGloballyRevealed ? esc(slot.name) : '神秘未解鎖徽章'}</b>
             <small>${esc(slot.cat)}</small>
           </div>
+          ${closeBtnHtml}
         </div>
         <div class="ia-peek-info">
           <p><b>📜 取得條件：</b>${condText}</p>
         </div>
         ${slot.anyGloballyRevealed ? ladderHtml : ''}
-        <div class="ia-peek-foot">👆 放開手指即自動關閉</div>`;
+        <div class="ia-peek-foot">${footText}</div>`;
     }
   }
 
-  function showBadgePeek(slotOrBadgeId, heroName) {
+  let peekPinned = false;
+
+  function showBadgePeek(slotOrBadgeId, heroName, opts = {}) {
     const targetHero = heroName || (sheetState.name && document.getElementById('ia-sheet')?.classList.contains('open') ? sheetState.name : ((typeof selectedViewerHero !== 'undefined' && selectedViewerHero) || selfHero()));
-    const html = buildBadgePeekHtml(targetHero, slotOrBadgeId);
+    const pinned = Boolean(opts.pinned);
+    const html = buildBadgePeekHtml(targetHero, slotOrBadgeId, pinned);
     if (!html) return;
+    peekPinned = pinned;
     const el = ensureBadgePeek();
     el.querySelector('.ia-badge-peek-card').innerHTML = html;
+    el.classList.toggle('pinned', pinned);
+    const touchY = Number(opts.touchY);
+    const vh = window.innerHeight || 720;
+    el.classList.remove('pos-top', 'pos-bottom');
+    if (Number.isFinite(touchY) && touchY > 0) {
+      el.classList.add(touchY > vh * 0.50 ? 'pos-top' : 'pos-bottom');
+    }
     el.classList.add('open');
   }
 
   function hideBadgePeek() {
+    peekPinned = false;
     const el = document.getElementById('ia-badge-peek');
-    if (el) el.classList.remove('open');
+    if (el) el.classList.remove('open', 'pinned', 'pos-top', 'pos-bottom');
   }
 
   function setupBadgeLongPress() {
     let timer = null;
-    let startX = 0, startY = 0;
+    let startX = 0, startY = 0, lastY = 0;
     let activePeek = false;
+    let suppressNextClick = false;
 
     const clearTimer = () => {
       if (timer) { clearTimeout(timer); timer = null; }
@@ -889,7 +946,9 @@
       clearTimer();
       if (activePeek) {
         activePeek = false;
-        hideBadgePeek();
+        suppressNextClick = true;
+        setTimeout(() => { suppressNextClick = false; }, 350);
+        if (!peekPinned) hideBadgePeek();
       }
     };
 
@@ -901,31 +960,80 @@
       if (!slotId) return;
       startX = e.clientX || 0;
       startY = e.clientY || 0;
+      lastY = startY;
       clearTimer();
       timer = setTimeout(() => {
+        timer = null;
         activePeek = true;
-        showBadgePeek(slotId, hero);
+        showBadgePeek(slotId, hero, { touchY: startY, pinned: false });
       }, 150);
     }, { passive: true });
 
     document.addEventListener('pointermove', (e) => {
-      if (!timer) return;
-      const dx = Math.abs((e.clientX || 0) - startX);
-      const dy = Math.abs((e.clientY || 0) - startY);
-      if (dx > 12 || dy > 12) clearTimer();
+      if (timer) {
+        const dx = Math.abs((e.clientX || 0) - startX);
+        const dy = Math.abs((e.clientY || 0) - startY);
+        if (dx > 14 || dy > 14) clearTimer();
+        return;
+      }
+      if (activePeek) {
+        const curY = e.clientY || lastY;
+        const dy = curY - lastY;
+        lastY = curY;
+        const ladder = document.querySelector('#ia-badge-peek.open .ia-peek-ladder');
+        if (ladder && Math.abs(dy) > 0.5) {
+          ladder.scrollTop -= dy * 1.25;
+        }
+      }
     }, { passive: true });
 
+    // 關鍵修正：當彈窗已因長按開啟 (activePeek = true) 時，攔截 touchmove 預設滾動行為！
+    // 這樣玩家按住螢幕把手指滑開讓視線不被擋住時，瀏覽器不會觸發 pointercancel 把視窗關掉！
+    document.addEventListener('touchmove', (e) => {
+      if (!activePeek) return;
+      if (e.cancelable) e.preventDefault();
+      const t = e.touches && e.touches[0];
+      if (t) {
+        const dy = t.clientY - lastY;
+        lastY = t.clientY;
+        const ladder = document.querySelector('#ia-badge-peek.open .ia-peek-ladder');
+        if (ladder && Math.abs(dy) > 0.5) {
+          ladder.scrollTop -= dy * 1.25;
+        }
+      }
+    }, { passive: false });
+
     document.addEventListener('pointerup', onRelease, { passive: true });
-    document.addEventListener('pointercancel', onRelease, { passive: true });
     document.addEventListener('touchend', onRelease, { passive: true });
     document.addEventListener('touchcancel', onRelease, { passive: true });
+    document.addEventListener('pointercancel', (e) => {
+      // 若觸控點仍在螢幕上 (手指按著滑開)，忽略 pointercancel，等真正 touchend 放開手指才關閉
+      if (activePeek && e.pointerType === 'touch') return;
+      onRelease();
+    }, { passive: true });
+
+    // 輕點一下徽章也能直接打開釘選彈窗 (不用一直按著手指也能慢慢看長訊息)
+    document.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.ia-badge[data-slot-id]') : null;
+      if (!btn) return;
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      const slotId = btn.getAttribute('data-slot-id');
+      const hero = btn.getAttribute('data-hero') || '';
+      if (slotId) {
+        showBadgePeek(slotId, hero, { touchY: e.clientY || 0, pinned: true });
+      }
+    });
+
     document.addEventListener('contextmenu', (e) => {
       const btn = e.target && e.target.closest ? e.target.closest('.ia-badge[data-slot-id]') : null;
       if (btn) {
         e.preventDefault();
         const slotId = btn.getAttribute('data-slot-id');
         const hero = btn.getAttribute('data-hero') || '';
-        if (slotId) { activePeek = true; showBadgePeek(slotId, hero); }
+        if (slotId) { activePeek = true; showBadgePeek(slotId, hero, { touchY: e.clientY || startY, pinned: false }); }
       }
     });
   }

@@ -414,6 +414,10 @@ function mmCard(name, opts) {
 function mmStack(members) {
   return typeof window.renderGuildAvatarStack === 'function' && (members || []).length ? `<div class="pt-1.5">${window.renderGuildAvatarStack(members)}</div>` : '';
 }
+function mmGuildBadge(name) {
+  const g = typeof window.uhcFindGuild === 'function' ? window.uhcFindGuild(name) : (typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(name) : null);
+  return mmEsc(g?.badge || '🛡️');
+}
 function mmLore(meta, desc) {
   return `
     <div class="bg-slate-900 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-lg">
@@ -471,7 +475,7 @@ function renderExpeditionHtml(r) {
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🛡️ 公會遠征貢獻</h3>
-        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人，人均 ${g.perMember} km)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.km.toLocaleString()} km</span></div>${mmStack(g.members)}</div>`).join('')}
+        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmGuildBadge(g.name)} ${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人，人均 ${g.perMember} km)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.km.toLocaleString()} km</span></div>${mmStack(g.members)}</div>`).join('')}
       </div>
       <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
         <h3 class="text-sm font-bold text-amber-400">🥾 英雄里程榜</h3>
@@ -519,7 +523,7 @@ function renderDreamHtml(r) {
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🛡️ 公會守護力 (人均傷害)</h3>
-        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.perMember.toLocaleString()}</span></div>${mmStack(g.members)}</div>`).join('')}
+        ${r.guilds.map((g, i) => `<div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs"><div class="flex justify-between gap-2"><span class="font-bold text-white min-w-0">${i === 0 ? '🥇 ' : ''}${mmGuildBadge(g.name)} ${mmEsc(g.name)} <span class="text-slate-500 font-normal">(${g.members.length} 人)</span></span><span class="font-rpg font-bold text-amber-400 shrink-0">${g.perMember.toLocaleString()}</span></div>${mmStack(g.members)}</div>`).join('')}
       </div>
       <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-2">
         <h3 class="text-sm font-bold text-amber-400">🌙 守護者榜</h3>
@@ -566,7 +570,7 @@ function renderFlameHtml(r) {
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       ${r.guilds.map((g, i) => `
         <div class="bg-slate-900/80 border ${i === 0 ? 'border-amber-500/60' : 'border-slate-800'} rounded-2xl p-4 space-y-2">
-          <div class="flex items-center justify-between"><span class="font-black text-white">${i === 0 ? '👑 ' : ''}${mmEsc(g.name)}</span><span class="font-rpg text-2xl font-black text-amber-400">Lv.${g.level}</span></div>
+          <div class="flex items-center justify-between"><span class="font-black text-white">${i === 0 ? '👑 ' : ''}${mmGuildBadge(g.name)} ${mmEsc(g.name)}</span><span class="font-rpg text-2xl font-black text-amber-400">Lv.${g.level}</span></div>
           <div class="text-[11px] text-slate-400">熱度 ${g.heat} • 全員點火 ${g.fullDays} 天 • 連續 ${g.currentStreak} 天 (最佳 ${g.bestStreak}) • 火種 ${g.embers}</div>
           <div class="font-mono text-base tracking-widest">${g.history.map(h => `<span title="${h.ymd} ${h.status}">${dot(h.status)}</span>`).join('')}</div>
           <div class="uhc-list">${r.heroes.filter(h => g.members.includes(h.name)).map(h => mmCard(h.name, {

@@ -963,7 +963,10 @@ function renderHeroTable() {
       </td>
       <td class="p-3 font-mono">${h.age} 歲</td>
       <td class="p-3 font-mono text-cyan-400 font-bold">${h.maxHr} bpm</td>
-      <td class="p-3"><span class="bg-slate-800 text-amber-300 px-2 py-0.5 rounded text-[11px]">${h.guild}</span></td>
+      <td class="p-3">${(() => {
+        const gm = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(h.guild, gameState?.gmOps) : { badge: '🛡️', color: '#64748b' };
+        return `<span class="inline-flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded text-[11px] font-bold border" style="color:${gm.color};border-color:${gm.color}66;"><span>${escapeHtmlLite(gm.badge)}</span><span>${escapeHtmlLite(h.guild)}</span></span>`;
+      })()}</td>
       <td class="p-3">${classCellHtml}</td>
       <td class="p-3">${stravaIdDisplay}</td>
       <td class="p-3 text-right space-x-1.5">
@@ -974,6 +977,213 @@ function renderHeroTable() {
 
     tbody.appendChild(tr);
   });
+
+  if (typeof renderGMGuildEmblemEditor === 'function') {
+    renderGMGuildEmblemEditor();
+  }
+}
+
+// -------------------------------------------------------------
+// 🛡️ 公會徽章圖形庫與代表色編輯器 (GM 後台管理，前/後端/手機 App 同步)
+// -------------------------------------------------------------
+function getAllGuildNamesForAdmin() {
+  const set = new Set();
+  (gameState?.heroes || []).forEach(h => { if (h?.guild) set.add(h.guild); });
+  (gameState?.guilds || []).forEach(g => { if (g?.name) set.add(g.name); });
+  const gmOps = ensureGMOpsState();
+  Object.keys(gmOps.guildMeta || {}).forEach(k => { if (k) set.add(k); });
+  if (set.size === 0) {
+    ['Cake', '咪咪胡胡', '嘿喲嘿喲拔蘿蔔', '天琳琳地琳琳', '試試看', '自由英雄'].forEach(g => set.add(g));
+  }
+  return Array.from(set);
+}
+
+function renderGMGuildEmblemEditor(preferredGuild) {
+  const sel = document.getElementById('gm-guild-select');
+  const overviewEl = document.getElementById('gm-guild-overview-cards');
+  const libEl = document.getElementById('gm-guild-emblem-library');
+  const swatchesEl = document.getElementById('gm-guild-color-swatches');
+  if (!sel || !overviewEl || !libEl) return;
+
+  const gmOps = ensureGMOpsState();
+  const guildNames = getAllGuildNamesForAdmin();
+  const curGuild = preferredGuild || sel.value || guildNames[0] || '';
+
+  sel.innerHTML = guildNames.map(gName => {
+    const meta = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(gName, gmOps) : { badge: '🛡️', color: '#64748b' };
+    const cnt = (gameState?.heroes || []).filter(h => h.guild === gName).length;
+    return `<option value="${escapeHtmlLite(gName)}" ${gName === curGuild ? 'selected' : ''}>${escapeHtmlLite(meta.badge)} ${escapeHtmlLite(gName)} (${cnt}人)</option>`;
+  }).join('');
+
+  const activeGuild = sel.value || curGuild;
+
+  // 渲染上方所有公會總覽卡片
+  overviewEl.innerHTML = guildNames.map(gName => {
+    const meta = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(gName, gmOps) : { badge: '🛡️', color: '#64748b' };
+    const cnt = (gameState?.heroes || []).filter(h => h.guild === gName).length;
+    const isSel = gName === activeGuild;
+    return `
+      <button type="button" data-guild="${escapeHtmlLite(gName)}" onclick="selectGMGuildCard(this.dataset.guild)"
+        class="flex items-center justify-between gap-2 p-2.5 rounded-xl border text-left transition ${isSel ? 'bg-slate-900 ring-2 ring-amber-400 border-amber-500' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'}">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-8 h-8 rounded-lg flex items-center justify-center text-lg shrink-0 border" style="background:${meta.color}22;border-color:${meta.color}66">${escapeHtmlLite(meta.badge)}</span>
+          <div class="min-w-0">
+            <div class="font-bold text-white truncate text-xs">${escapeHtmlLite(gName)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">${cnt} 位英雄</div>
+          </div>
+        </div>
+        <span class="w-3 h-3 rounded-full shrink-0" style="background:${meta.color}" title="${meta.color}"></span>
+      </button>`;
+  }).join('');
+
+  // 渲染色票
+  if (swatchesEl && !swatchesEl.dataset.ready) {
+    swatchesEl.dataset.ready = '1';
+    const palette = window.GUILD_COLOR_PALETTE || [];
+    swatchesEl.innerHTML = palette.map(p => `
+      <button type="button" onclick="pickGMGuildColorSwatch('${p.hex}')" title="${p.label} (${p.hex})"
+        class="w-6 h-6 rounded-lg border border-white/20 hover:scale-110 transition shadow-sm" style="background:${p.hex}"></button>
+    `).join('');
+  }
+
+  // 渲染 60+ 分類圖形庫
+  const curBadgeVal = (document.getElementById('gm-guild-badge-input')?.value || '').trim();
+  const lib = window.GUILD_EMBLEM_LIBRARY || [];
+  libEl.innerHTML = lib.map(group => `
+    <div class="space-y-1">
+      <div class="text-[11px] font-bold text-slate-400">${escapeHtmlLite(group.cat)}</div>
+      <div class="flex flex-wrap gap-1.5">
+        ${(group.icons || []).map(ic => `
+          <button type="button" data-icon="${escapeHtmlLite(ic)}" onclick="pickGMGuildEmblem(this.dataset.icon)"
+            class="w-9 h-9 rounded-xl border text-lg flex items-center justify-center transition hover:scale-110 ${curBadgeVal === ic ? 'bg-amber-500/25 border-amber-400 ring-1 ring-amber-400' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}">
+            ${ic}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  if (preferredGuild || !document.getElementById('gm-guild-badge-input')?.dataset.loadedFor || document.getElementById('gm-guild-badge-input')?.dataset.loadedFor !== activeGuild) {
+    loadGMGuildInputs(activeGuild);
+  } else {
+    updateGMGuildPreview();
+  }
+}
+
+function selectGMGuildCard(guildName) {
+  const sel = document.getElementById('gm-guild-select');
+  if (sel) sel.value = guildName;
+  loadGMGuildInputs(guildName);
+  renderGMGuildEmblemEditor(guildName);
+}
+
+function onGMGuildSelectChange() {
+  const sel = document.getElementById('gm-guild-select');
+  if (!sel) return;
+  loadGMGuildInputs(sel.value);
+  renderGMGuildEmblemEditor(sel.value);
+}
+
+function loadGMGuildInputs(guildName) {
+  const gmOps = ensureGMOpsState();
+  const meta = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(guildName, gmOps) : { badge: '🛡️', color: '#64748b' };
+  const badgeInp = document.getElementById('gm-guild-badge-input');
+  const colPicker = document.getElementById('gm-guild-color-picker');
+  const colInp = document.getElementById('gm-guild-color-input');
+  if (badgeInp) {
+    badgeInp.value = meta.badge || '🛡️';
+    badgeInp.dataset.loadedFor = guildName;
+  }
+  if (colPicker && /^#[0-9a-fA-F]{6}$/.test(meta.color)) colPicker.value = meta.color;
+  if (colInp) colInp.value = meta.color || '#64748b';
+  updateGMGuildPreview();
+}
+
+function pickGMGuildEmblem(icon) {
+  const badgeInp = document.getElementById('gm-guild-badge-input');
+  if (badgeInp) badgeInp.value = icon;
+  updateGMGuildPreview();
+  // 更新圖形庫高亮狀態
+  document.querySelectorAll('#gm-guild-emblem-library button[data-icon]').forEach(btn => {
+    const on = btn.dataset.icon === icon;
+    btn.className = `w-9 h-9 rounded-xl border text-lg flex items-center justify-center transition hover:scale-110 ${on ? 'bg-amber-500/25 border-amber-400 ring-1 ring-amber-400' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}`;
+  });
+}
+
+function onGMGuildColorPickerChange(hex) {
+  const colInp = document.getElementById('gm-guild-color-input');
+  if (colInp) colInp.value = hex;
+  updateGMGuildPreview();
+}
+
+function onGMGuildColorTextChange(val) {
+  const v = String(val || '').trim();
+  const colPicker = document.getElementById('gm-guild-color-picker');
+  if (colPicker && /^#[0-9a-fA-F]{6}$/.test(v)) colPicker.value = v;
+  updateGMGuildPreview();
+}
+
+function pickGMGuildColorSwatch(hex) {
+  onGMGuildColorPickerChange(hex);
+  const colPicker = document.getElementById('gm-guild-color-picker');
+  if (colPicker) colPicker.value = hex;
+}
+
+function updateGMGuildPreview() {
+  const guildName = document.getElementById('gm-guild-select')?.value || '公會名稱';
+  const badge = (document.getElementById('gm-guild-badge-input')?.value || '🛡️').trim() || '🛡️';
+  const rawCol = (document.getElementById('gm-guild-color-input')?.value || '#64748b').trim();
+  const color = /^#[0-9a-fA-F]{3,8}$/.test(rawCol) ? rawCol : '#64748b';
+  const prev = document.getElementById('gm-guild-live-preview');
+  if (prev) {
+    prev.style.borderColor = `${color}99`;
+    prev.style.backgroundColor = `${color}22`;
+    prev.style.color = '#fff';
+    prev.innerHTML = `<span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${color}"></span><span class="text-base">${escapeHtmlLite(badge)}</span><span>${escapeHtmlLite(guildName)}</span>`;
+  }
+}
+
+async function saveGMGuildMeta() {
+  if (!assertCloudReady()) return;
+  const guildName = document.getElementById('gm-guild-select')?.value;
+  if (!guildName) return;
+  const badge = (document.getElementById('gm-guild-badge-input')?.value || '🛡️').trim() || '🛡️';
+  const rawCol = (document.getElementById('gm-guild-color-input')?.value || '#64748b').trim();
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(rawCol)) {
+    alert('⚠️ 色碼格式請填寫標準 HEX 色碼（例如 #ec4899）');
+    return;
+  }
+
+  const gmOps = ensureGMOpsState();
+  const rawGuild = typeof window.rawDbText === 'function' ? window.rawDbText(guildName) : guildName;
+  gmOps.guildMeta[guildName] = { badge, color: rawCol };
+  if (rawGuild !== guildName) gmOps.guildMeta[rawGuild] = { badge, color: rawCol };
+
+  // 立即更新記憶體中的 gameState.guilds
+  if (Array.isArray(gameState?.guilds)) {
+    gameState.guilds.forEach(g => {
+      if (g.name === guildName || g.name === rawGuild) {
+        g.badge = badge;
+        g.color = rawCol;
+      }
+    });
+  }
+
+  await persistGMOpsToSupabase(`🛡️ 已更新公會【${badge} ${guildName}】徽章與代表色！網頁前台、後台與手機 App 已全面同步！`);
+  renderGMGuildEmblemEditor(guildName);
+}
+
+async function resetGMGuildMeta() {
+  if (!assertCloudReady()) return;
+  const guildName = document.getElementById('gm-guild-select')?.value;
+  if (!guildName) return;
+  const gmOps = ensureGMOpsState();
+  const rawGuild = typeof window.rawDbText === 'function' ? window.rawDbText(guildName) : guildName;
+  delete gmOps.guildMeta[guildName];
+  delete gmOps.guildMeta[rawGuild];
+  await persistGMOpsToSupabase(`↺ 已將公會【${guildName}】恢復為預設徽章與代表色`);
+  loadGMGuildInputs(guildName);
+  renderGMGuildEmblemEditor(guildName);
 }
 
 async function randomizeAllHeroClasses() {
@@ -2052,6 +2262,7 @@ function ensureGMOpsState() {
   if (!Array.isArray(gameState.gmOps.events)) gameState.gmOps.events = [];
   if (!gameState.gmOps.heroFx) gameState.gmOps.heroFx = {};
   if (!gameState.gmOps.manualBadges) gameState.gmOps.manualBadges = {};
+  if (!gameState.gmOps.guildMeta) gameState.gmOps.guildMeta = {};
   return gameState.gmOps;
 }
 

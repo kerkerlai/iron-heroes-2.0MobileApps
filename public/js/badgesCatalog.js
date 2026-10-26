@@ -461,12 +461,12 @@ const BADGE_RARITY_META = {
     key: 'rare',
     label: '銀牌 • 精銳',
     shortLabel: '銀牌',
-    frameHex: '#22d3ee',
-    color: 'text-cyan-200',
-    bg: 'bg-cyan-950/40',
-    border: 'border-2 border-cyan-400/90 bg-gradient-to-br from-slate-800/80 via-cyan-950/60 to-slate-900/80 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.28)]',
-    glow: 'hover:border-cyan-300 shadow-[0_0_14px_rgba(6,182,212,0.32)]',
-    tagClass: 'bg-cyan-950 text-cyan-200 border-cyan-500'
+    frameHex: '#e2e8f0',
+    color: 'text-slate-100',
+    bg: 'bg-slate-700/50',
+    border: 'border-2 border-slate-200 bg-gradient-to-br from-slate-600/85 via-slate-800/85 to-slate-500/70 text-slate-100 shadow-[0_0_12px_rgba(226,232,240,0.42),inset_0_1px_2px_rgba(255,255,255,0.45)]',
+    glow: 'hover:border-white shadow-[0_0_14px_rgba(226,232,240,0.48)]',
+    tagClass: 'bg-slate-700 text-slate-100 border-slate-300'
   },
   epic: {
     key: 'epic',
@@ -734,9 +734,23 @@ window.getActiveBadgeCatalog = function(state) {
       if (Array.isArray(list) && list.length) extras.push(...list);
     } catch (e) { console.warn('[Badges] plugin getCatalog 失敗', p.id, e); }
   });
-  if (extras.length === 0) return BADGE_CATALOG;
+  const alignList = (arr) => {
+    if (typeof BADGE_TO_SLOT_DEF !== 'undefined' && typeof computeSlotTierRarity === 'function') {
+      arr.forEach(b => {
+        const def = BADGE_TO_SLOT_DEF.get(b.id);
+        if (def) {
+          const idx = def.badgeIds.indexOf(b.id);
+          if (idx >= 0) b.rarity = computeSlotTierRarity(idx, def.badgeIds.length);
+        } else {
+          b.rarity = 'mythic';
+        }
+      });
+    }
+    return arr;
+  };
+  if (extras.length === 0) return alignList(BADGE_CATALOG);
   const key = `${BADGE_CATALOG.length}|${extras.length}|${extras[0].id}|${extras[extras.length - 1].id}`;
-  if (__activeCatalogCache.key !== key) __activeCatalogCache = { key, list: BADGE_CATALOG.concat(extras) };
+  if (__activeCatalogCache.key !== key) __activeCatalogCache = { key, list: alignList(BADGE_CATALOG.concat(extras)) };
   return __activeCatalogCache.list;
 };
 
@@ -1443,6 +1457,27 @@ SLOT_DEFINITIONS.forEach(def => {
   def.badgeIds.forEach(bId => BADGE_TO_SLOT_DEF.set(bId, def));
 });
 
+const TIER_RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+
+/**
+ * 依徽章格總階數 (totalTiers) 與當前階數索引 (idx, 0-based) 計算對應外框等級：
+ * - 最高階 (全數達標 MAX) 一律為 'mythic' (彩級)，確保所有玩家完全達標後整個徽章頁面皆為彩框
+ * - 1 階：彩 (mythic)
+ * - 2 階：紫金 (legendary) ➔ 彩 (mythic)
+ * - 3 階：金 (epic) ➔ 紫金 (legendary) ➔ 彩 (mythic)
+ * - 4 階：銀 (rare) ➔ 金 (epic) ➔ 紫金 (legendary) ➔ 彩 (mythic)
+ * - 5 階：銅 (common) ➔ 銀 (rare) ➔ 金 (epic) ➔ 紫金 (legendary) ➔ 彩 (mythic)
+ * - >5 階：前段由 銅 ➔ 銀 ➔ 金 ➔ 紫金 依序推進，最高階為 彩 (mythic)
+ */
+function computeSlotTierRarity(idx, totalTiers) {
+  if (totalTiers <= 1) return 'mythic';
+  if (totalTiers <= 5) {
+    return TIER_RARITY_ORDER[5 - totalTiers + idx] || 'mythic';
+  }
+  if (idx >= totalTiers - 1) return 'mythic';
+  return TIER_RARITY_ORDER[Math.min(3, Math.floor((idx * 4) / (totalTiers - 1)))];
+}
+
 /**
  * 將目前生效的徽章圖鑑濃縮為「進階升框徽章格 (Badge Slots)」陣列。
  * - 若傳入 heroName，會一併附上該英雄在此格的已解鎖最高階級、外框稀有度、進度標籤與下一階目標。
@@ -1471,14 +1506,20 @@ window.getActiveBadgeSlots = function(state, heroName) {
     if (seenSlotIds.has(slotId)) return;
     seenSlotIds.add(slotId);
 
-    const tiers = def
+    const rawTiers = def
       ? def.badgeIds.map(id => byId.get(id)).filter(Boolean)
       : [b];
-    if (!tiers.length) return;
+    if (!rawTiers.length) return;
+
+    const totalTiers = rawTiers.length;
+    const tiers = rawTiers.map((tb, idx) => {
+      const alignedRarity = computeSlotTierRarity(idx, totalTiers);
+      if (tb.rarity !== alignedRarity) tb.rarity = alignedRarity;
+      return tb;
+    });
 
     const firstTier = tiers[0];
     const isMultiTier = tiers.length > 1;
-    const totalTiers = tiers.length;
 
     const unlockedTiers = [];
     let highestUnlockedIdx = -1;

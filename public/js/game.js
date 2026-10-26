@@ -90,8 +90,24 @@ function uhcFindGuild(guildName) {
   const st = window.gameState || gameState;
   const live = (st?.guilds || []).find(g => g.name === guildName) || null;
   const info = uhcFrozen?.guilds?.[guildName];
-  if (info) return { ...(live || {}), name: guildName, badge: info.badge || live?.badge, color: info.color || live?.color };
-  return live;
+  if (info) return { ...(live || {}), name: guildName, badge: info.badge || live?.badge || '🛡️', color: info.color || live?.color || '#64748b' };
+  const resolved = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(guildName, st?.gmOps) : null;
+  if (live) {
+    return {
+      ...live,
+      badge: resolved?.badge || live.badge || '🛡️',
+      color: resolved?.color || live.color || '#64748b'
+    };
+  }
+  if (guildName) {
+    return {
+      name: guildName,
+      badge: resolved?.badge || '🛡️',
+      color: resolved?.color || '#64748b',
+      members: []
+    };
+  }
+  return null;
 }
 
 /**
@@ -1501,22 +1517,30 @@ function loadHeroViewerData(heroOverride) {
 
     zoneCard.innerHTML = `
       <div class="flex items-center justify-between text-xs">
-        <span class="font-bold text-slate-200">💓 心率強度區間分佈分析</span>
+        <span class="font-bold text-slate-200">💓 心率強度區間比例</span>
         <span class="text-[11px] text-slate-400 font-mono">共 ${heroActs.length} 次運動</span>
       </div>
-      <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden flex">
-        <div style="width: ${p1}%;" class="bg-slate-600" title="Zone 1 恢復: ${p1}%"></div>
-        <div style="width: ${p2}%;" class="bg-emerald-500" title="Zone 2 有氧燃脂: ${p2}%"></div>
-        <div style="width: ${p3}%;" class="bg-amber-500" title="Zone 3 有氧耐力: ${p3}%"></div>
-        <div style="width: ${p4}%;" class="bg-orange-500" title="Zone 4 乳酸閾值: ${p4}%"></div>
-        <div style="width: ${p5}%;" class="bg-rose-500" title="Zone 5 極限無氧: ${p5}%"></div>
-      </div>
-      <div class="grid grid-cols-5 gap-2 text-center text-[10px] pt-1">
-        <div class="text-slate-400">🚶 Z1 恢復 (${p1}%)</div>
-        <div class="text-emerald-400 font-bold">🟢 Z2 燃脂 (${p2}%)</div>
-        <div class="text-amber-400">🟡 Z3 耐力 (${p3}%)</div>
-        <div class="text-orange-400">🟠 Z4 閾值 (${p4}%)</div>
-        <div class="text-rose-400 font-bold">🔴 Z5 極限 (${p5}%)</div>
+      <div class="grid grid-cols-5 gap-2 text-center text-[11px] pt-1">
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl py-2 px-1" title="Zone 1 恢復: ${p1}%">
+          <div class="text-[10px] text-slate-400">🚶 Z1 恢復</div>
+          <div class="font-mono font-bold text-slate-200 mt-0.5">${p1}%</div>
+        </div>
+        <div class="bg-emerald-950/30 border border-emerald-500/40 rounded-xl py-2 px-1" title="Zone 2 有氧燃脂: ${p2}%">
+          <div class="text-[10px] text-emerald-400 font-bold">🟢 Z2 燃脂</div>
+          <div class="font-mono font-black text-emerald-300 mt-0.5">${p2}%</div>
+        </div>
+        <div class="bg-amber-950/25 border border-amber-500/30 rounded-xl py-2 px-1" title="Zone 3 有氧耐力: ${p3}%">
+          <div class="text-[10px] text-amber-400">🟡 Z3 耐力</div>
+          <div class="font-mono font-bold text-amber-300 mt-0.5">${p3}%</div>
+        </div>
+        <div class="bg-orange-950/25 border border-orange-500/30 rounded-xl py-2 px-1" title="Zone 4 乳酸閾值: ${p4}%">
+          <div class="text-[10px] text-orange-400">🟠 Z4 閾值</div>
+          <div class="font-mono font-bold text-orange-300 mt-0.5">${p4}%</div>
+        </div>
+        <div class="bg-rose-950/30 border border-rose-500/40 rounded-xl py-2 px-1" title="Zone 5 極限無氧: ${p5}%">
+          <div class="text-[10px] text-rose-400 font-bold">🔴 Z5 極限</div>
+          <div class="font-mono font-black text-rose-300 mt-0.5">${p5}%</div>
+        </div>
       </div>
     `;
   }
@@ -1729,6 +1753,8 @@ function renderHeroBadgesWall(heroName) {
     ? (window.findBadgeSlot(inspectedBadgeId, gameState, heroName)?.id || inspectedBadgeId)
     : ((filteredSlots.find(s => s.isUnlocked) || filteredSlots[0])?.id || null);
 
+  const prevCatScroll = document.getElementById('web-badge-cat-scroll')?.scrollLeft ?? null;
+
   wallCard.innerHTML = `
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
       <div class="flex items-center space-x-2.5">
@@ -1751,7 +1777,7 @@ function renderHeroBadgesWall(heroName) {
             ` : ''}
           </div>
           <p class="text-[11px] text-slate-400 mt-0.5">
-            💡 同系列徽章合一進階：隨達成難度提升，外框依序升級為 <span class="text-orange-300 font-bold">銅牌</span> ➔ <span class="text-cyan-300 font-bold">銀牌</span> ➔ <span class="text-amber-300 font-bold">金牌</span> ➔ <span class="text-purple-300 font-bold">紫金</span> ➔ <span class="text-rose-300 font-bold">彩級</span>！點擊任一徽章可檢視各階目標。
+            💡 同系列徽章合一進階：隨達成難度提升，外框依序升級為 <span class="text-orange-300 font-bold">銅牌</span> ➔ <span class="text-slate-200 font-bold">銀牌</span> ➔ <span class="text-amber-300 font-bold">金牌</span> ➔ <span class="text-purple-300 font-bold">紫金</span> ➔ <span class="text-rose-300 font-bold">彩級</span>！點擊任一徽章可檢視各階目標。
           </p>
         </div>
       </div>
@@ -1769,14 +1795,14 @@ function renderHeroBadgesWall(heroName) {
     </div>
 
     <!-- 分類篩選器 -->
-    <div class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px]">
+    <div id="web-badge-cat-scroll" class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px]">
       ${categories.map(cat => {
         const isAct = activeBadgeCategoryFilter === cat;
         const catSlots = cat === 'ALL' ? allSlots : allSlots.filter(s => s.cat === cat);
         const catTotal = catSlots.length;
         const catUnlocked = catSlots.filter(s => s.isUnlocked).length;
         return `
-          <button onclick="setBadgeCategoryFilter(${jsArg(cat)})" class="px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition border ${
+          <button data-cat-active="${isAct ? '1' : '0'}" onclick="setBadgeCategoryFilter(${jsArg(cat)})" class="px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition border ${
             isAct
               ? 'bg-amber-500 text-slate-950 border-amber-400 shadow'
               : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
@@ -1850,6 +1876,23 @@ function renderHeroBadgesWall(heroName) {
       }).join('')}
     </div>
   `;
+
+  const catScroller = document.getElementById('web-badge-cat-scroll');
+  if (catScroller) {
+    if (prevCatScroll !== null) catScroller.scrollLeft = prevCatScroll;
+    const activeBtn = catScroller.querySelector('[data-cat-active="1"]');
+    if (activeBtn) {
+      const left = activeBtn.offsetLeft - catScroller.offsetLeft;
+      const right = left + activeBtn.offsetWidth;
+      const viewLeft = catScroller.scrollLeft;
+      const viewRight = viewLeft + catScroller.clientWidth;
+      if (left < viewLeft) {
+        catScroller.scrollLeft = Math.max(0, left - 12);
+      } else if (right > viewRight) {
+        catScroller.scrollLeft = right - catScroller.clientWidth + 12;
+      }
+    }
+  }
 }
 
 /**
@@ -2841,7 +2884,7 @@ function renderSurvivalHtml(view) {
           { label: '🍖 狩獵熱量', value: `+${Math.floor(h.food).toLocaleString()}`, accent: 'text-emerald-300' },
           { label: '🎒 搜刮物資', value: `+${Math.floor(h.scavenge).toLocaleString()}`, accent: 'text-amber-300' },
           { label: '☣️ 毒圈流失', value: `-${currentPenalty.toLocaleString()}`, accent: 'text-rose-300' },
-          { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : ((sv.days || 0) + 1))} / ${h.totalDays ?? ((sv.days || 0) + 1)} 天`, accent: 'text-cyan-300' }
+          { label: '⏱️ 荒野堅持天數', value: `${h.survivedDays ?? (h.isDead ? 0 : (sv.totalDays || sv.days || 1))} / ${h.totalDays ?? (sv.totalDays || sv.days || 1)} 天`, accent: 'text-cyan-300' }
         ],
         footHtml: `<div class="w-full h-2 ${h.isDead ? 'bg-slate-800' : 'bg-slate-900'} rounded-full overflow-hidden" title="HP = 初始 - 毒圈 + 熱量 + 衝力"><div class="h-full bg-gradient-to-r from-amber-500 to-orange-500" style="width:${hpPct}%"></div></div>${h.isDead ? '<span class="block mt-1 text-rose-400">去運動補血即可復活</span>' : ''}`
       });

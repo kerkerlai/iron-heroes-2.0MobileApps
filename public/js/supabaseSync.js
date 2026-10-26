@@ -187,6 +187,45 @@ const GUILD_COLOR_MAP = {
   '試試看': { badge: '🎯', color: '#10b981' },
   '自由英雄': { badge: '🛡️', color: '#64748b' }
 };
+window.GUILD_COLOR_MAP = GUILD_COLOR_MAP;
+
+/**
+ * 🛡️ 全服公會徽章圖形庫與代表色調色盤 (供 GM 後台自由編輯，前/後端/手機 App 自動同步)
+ */
+const GUILD_EMBLEM_LIBRARY = [
+  { cat: '⚔️ 武器與戰盾', icons: ['🛡️', '⚔️', '🗡️', '🏹', '🪓', '🔨', '🔱', '💣', '🪃', '⛓️'] },
+  { cat: '🐉 神獸與猛獸', icons: ['🐉', '🦅', '🦁', '🐺', '🦊', '🐯', '🐻', '🦈', '🦄', '🦉', '🐱', '🐶'] },
+  { cat: '🔥 元素與星辰', icons: ['⚡', '🔥', '❄️', '🌊', '🌪️', '☀️', '🌙', '⭐', '☄️', '🌈', '🔮', '💎'] },
+  { cat: '👑 榮耀與運動', icons: ['👑', '🏆', '🥇', '🎖️', '🎯', '🚀', '⛰️', '🏰', '🏯', '💪', '🏃', '🚴'] },
+  { cat: '🍰 趣味與美食', icons: ['🍰', '🥕', '🍕', '🍔', '🍺', '☕', '🧋', '🍎', '🌶️', '🍀', '🌸', '🎲'] }
+];
+const GUILD_COLOR_PALETTE = [
+  { label: '薔薇粉', hex: '#ec4899' },
+  { label: '奧術紫', hex: '#a855f7' },
+  { label: '烈焰橘', hex: '#f97316' },
+  { label: '雷霆藍', hex: '#3b82f6' },
+  { label: '翡翠綠', hex: '#10b981' },
+  { label: '王者金', hex: '#eab308' },
+  { label: '赤紅血', hex: '#ef4444' },
+  { label: '冰霜青', hex: '#06b6d4' },
+  { label: '星辰靛', hex: '#6366f1' },
+  { label: '鋼鐵灰', hex: '#64748b' }
+];
+window.GUILD_EMBLEM_LIBRARY = GUILD_EMBLEM_LIBRARY;
+window.GUILD_COLOR_PALETTE = GUILD_COLOR_PALETTE;
+
+function resolveGuildMeta(guildName, gmOps) {
+  const g = String(guildName || '').trim();
+  const ops = gmOps || (window.gameState && window.gameState.gmOps) || null;
+  const rawName = typeof rawDbText === 'function' ? rawDbText(g) : g;
+  const safeName = typeof safeDisplayText === 'function' ? safeDisplayText(g) : g;
+  const custom = ops?.guildMeta?.[g] || ops?.guildMeta?.[rawName] || ops?.guildMeta?.[safeName] || null;
+  const base = GUILD_COLOR_MAP[g] || GUILD_COLOR_MAP[rawName] || { badge: '🛡️', color: '#64748b' };
+  const badge = (custom && custom.badge && String(custom.badge).trim()) ? String(custom.badge).trim() : base.badge;
+  const color = (custom && custom.color && /^#[0-9a-fA-F]{3,8}$/.test(String(custom.color).trim())) ? String(custom.color).trim() : base.color;
+  return { badge, color };
+}
+window.resolveGuildMeta = resolveGuildMeta;
 
 /**
  * 計算經典競技模式 (Classic Mode) 八大指標與四冠王數據
@@ -899,12 +938,12 @@ async function syncFromDatabaseCore() {
       };
     });
 
-    // 6. Build Guilds List (公會總傷害為所屬英雄總輸出之和)
+    // 6. Build Guilds List (公會總傷害為所屬英雄總輸出之和；徽章與顏色優先讀取 GM 後台設定 gmOpsConfig.guildMeta)
     const guilds = Object.keys(guildMembers).map(gName => {
       const gHeroes = heroStatsList.filter(h => h.guild === gName);
       const gDmg = gHeroes.reduce((s, h) => s + (h.totalDamage || 0), 0);
       const gValidCount = gHeroes.reduce((s, h) => s + (h.validWorkouts || 0), 0);
-      const meta = GUILD_COLOR_MAP[gName] || { badge: '🛡️', color: '#64748b' };
+      const meta = resolveGuildMeta(gName, gmOpsConfig);
       return {
         name: gName,
         badge: meta.badge,
