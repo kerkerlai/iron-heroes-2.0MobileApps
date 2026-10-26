@@ -354,7 +354,7 @@
   // 依賴 heroStats (Boss / 雙城 / 飢餓 / 要塞 / 拼圖) 的資料片無法單獨重算 heroStats，
   // 改用「今天每筆有效運動在本資料片的得分」加總 (與戰情室運動紀錄得分欄同一個 getActivityModeScore)
   // ---------------------------------------------------------------
-  const TODAY_LABEL = { world_boss: '今日輸出', faction_war: '今日攻城', survival: '今日補血', base_builder: '今日木材', bingo: '今日 TRIMP' };
+  const TODAY_LABEL = { world_boss: '今日輸出', faction_war: '今日貢獻', survival: '今日補血', base_builder: '今日資源', bingo: '今日 TRIMP' };
   function computeTodayGains(type, curModel) {
     const s = st();
     const today = todayYMD();
@@ -373,7 +373,7 @@
       const sc = getActivityModeScore(a, mode);
       out[a.hero] = (out[a.hero] || 0) + num(sc.num);
     });
-    return { label: TODAY_LABEL[type] || '今日增加', map: out, rowSafe: type === 'world_boss' || type === 'survival' };
+    return { label: TODAY_LABEL[type] || '今日增加', map: out, rowSafe: ['world_boss', 'survival', 'faction_war', 'base_builder'].includes(type) };
   }
 
   // ---------------------------------------------------------------

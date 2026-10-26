@@ -1941,9 +1941,15 @@ function renderHeroBadgesWall(heroName) {
 function getActivityModeScore(a, activeMode) {
   if (activeMode === "classic") return { num: Math.round(a.calories || 0), text: `${Math.round(a.calories || 0)} kcal`, cls: 'text-amber-400' };
   if (activeMode === "rpg_talent" || activeMode === "rpg") { const v = Math.round(a.combatPower || a.damage || 0); return { num: v, text: `${v.toLocaleString()} CP`, cls: 'text-purple-400' }; }
-  if (activeMode === "faction_war") { const v = Math.round((a.trimp || 0) * 10 + (a.gapScore ?? a.gapVal ?? 0) * 100); return { num: v, text: `🔥 ${v.toLocaleString()}`, cls: 'text-rose-400' }; }
+  if (activeMode === "faction_war") {
+    const v = Math.round((a.trimp || 0) * 10 + (a.calories || 0) + (a.isZone2 ? (a.scoreWeight ?? 1) * 5000 : 0) + (a.isPeakGap ? (a.gapScore ?? a.gapVal ?? 0) * 100 : 0));
+    return { num: v, text: `🔥 ${v.toLocaleString()}`, cls: 'text-rose-400' };
+  }
   if (activeMode === "survival") { const v = Math.round((a.calories || 0) + (a.trimp || 0) * 1.5); return { num: v, text: `❤️ +${v.toLocaleString()}`, cls: 'text-emerald-400' }; }
-  if (activeMode === "base_builder") { const v = Math.round(a.calories || 0); return { num: v, text: `🪵 ${v.toLocaleString()}`, cls: 'text-emerald-400' }; }
+  if (activeMode === "base_builder") {
+    const v = Math.round((a.calories || 0) + (a.trimp || 0) + (a.isZone2 ? (a.scoreWeight ?? 1) * 50 : 0) + (a.isPeakGap ? (a.gapScore ?? a.gapVal ?? 0) * 10 : 0));
+    return { num: v, text: `🪵 ${v.toLocaleString()}`, cls: 'text-emerald-400' };
+  }
   if (window.isMobileMode && window.isMobileMode(activeMode)) return { num: null, text: window.getMobileModeActivityLabel(activeMode, a), cls: 'text-amber-400' };
   if (activeMode === "bingo") { const v = Math.round(a.trimp || 0); return { num: v, text: `🧩 ${v.toLocaleString()}`, cls: 'text-blue-400' }; }
   return { num: a.damage || 0, text: `⚔️ ${(a.damage || 0).toLocaleString()}`, cls: 'text-amber-400' };
@@ -2394,7 +2400,9 @@ function openHeroDetailModal(heroName) {
           const isNumericStrava = /^\d+$/.test(String(a.id));
           const idLink = isNumericStrava 
             ? `<a href="https://www.strava.com/activities/${a.id}" target="_blank" class="text-[10px] text-orange-400 hover:underline">#${a.id} ↗</a>`
-            : `<span class="text-[10px] text-amber-400">手動</span>`;
+            : (a.source === 'apple_health' || a.source === 'health_connect')
+              ? (() => { const m = window.getActivitySourceMeta ? window.getActivitySourceMeta(a) : { icon: '📱', label: '手機同步' }; return `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold" title="${escapeHtml(m.label || '')}">${m.icon || '📱'} ${escapeHtml(m.brand || m.label || '手機同步')}</span>`; })()
+              : `<span class="text-[10px] text-amber-400">手動</span>`;
           const bonusPill = (a.eventBonusPct > 0 && a.isValidAttack && !a.isExcluded)
             ? `<span class="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold" title="${a.eventBonusLabel || '活動加成'}">⚡+${a.eventBonusPct}%</span>`
             : '';

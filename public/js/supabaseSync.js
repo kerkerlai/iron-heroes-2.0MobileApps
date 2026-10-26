@@ -736,7 +736,7 @@ async function syncFromDatabaseCore() {
         else if (activeMode === 'rpg_talent' || activeMode === 'rpg') {
           const isZ2 = (0.60 * hero.maxHr) <= avgHr && avgHr <= (0.75 * hero.maxHr);
           const dens = duration > 0 ? suffer / duration : 0;
-          if (hero.rpgClass === '狂戰士') score = gap * 58 + cal * 0.6;
+          if (hero.rpgClass === '狂戰士') score = gap * 8 + cal * 0.6;
           else if (hero.rpgClass === '聖騎士') score = 150 + suffer * 1.5 + duration;
           else if (hero.rpgClass === '遊俠') score = (isZ2 ? 120 : 0) + cal * 1.2 + duration * 1.5;
           else if (hero.rpgClass === '大法師') score = trimp * 25 + duration * 2;
@@ -814,8 +814,8 @@ async function syncFromDatabaseCore() {
       let actCombatPower = 0;
       if (isValid) {
         let baseCp = 0;
-        // 單筆 CP 以原始數值計算後整筆乘上活動倍率 (與英雄總 CP 的加權方式一致)
-        if (hero.rpgClass === '狂戰士') baseCp = (gap * 50) + (gap * 8) + (rawCalories * 0.6);
+        // 單筆 CP 以原始數值計算後整筆乘上活動倍率 (狂戰士常駐貢獻為 gap*8 + rawCalories*0.6，單季最高 MaxGap*50 於下方標記於本季巔峰代表作)
+        if (hero.rpgClass === '狂戰士') baseCp = (gap * 8) + (rawCalories * 0.6);
         else if (hero.rpgClass === '聖騎士') baseCp = 150 + (rawSuffer * 1.5) + (duration * 1.0);
         else if (hero.rpgClass === '遊俠') baseCp = (isZone2 ? 120 : 0) + (rawCalories * 1.2) + (duration * 1.5);
         else if (hero.rpgClass === '大法師') baseCp = (rawTrimp * 25) + (duration * 2.0);
@@ -876,8 +876,26 @@ async function syncFromDatabaseCore() {
         combatPower: actCombatPower,
         physDmg: physDmg,
         magDmg: magDmg,
-        critDmg: singleCritDmg
+        critDmg: singleCritDmg,
+        isPeakGap: false
       });
+    });
+
+    // 標記每位英雄本季單場最高無氧落差 (MaxGap) 的代表作紀錄，使單筆 CP (狂戰士) / 雙城激戰 / 鋼鐵要塞單場貢獻加總與賽季總分完全對齊
+    const peakActByHero = {};
+    activities.forEach(a => {
+      if (!a.isValidAttack || a.isExcluded) return;
+      const curBest = peakActByHero[a.hero];
+      if (!curBest || (a.gapScore ?? a.gapVal ?? 0) > (curBest.gapScore ?? curBest.gapVal ?? 0)) {
+        peakActByHero[a.hero] = a;
+      }
+    });
+    Object.values(peakActByHero).forEach(peakAct => {
+      peakAct.isPeakGap = true;
+      const hero = heroMap[peakAct.hero];
+      if (hero && hero.rpgClass === '狂戰士') {
+        peakAct.combatPower = Math.round((peakAct.combatPower || 0) + (peakAct.gapScore ?? peakAct.gapVal ?? 0) * 50);
+      }
     });
 
     // Sort all activities chronologically (newest first)

@@ -32,13 +32,13 @@
         <h2 class="font-black text-white">① 安裝 App</h2>
         <div id="install-ios" class="hidden space-y-2 text-sm">
           <p class="text-slate-300">1. 先從 App Store 安裝 Apple 官方的「<b>TestFlight</b>」</p>
-          <a href="https://apps.apple.com/app/testflight/id899247664" class="block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">⬇️ 安裝 TestFlight</a>
+          <a href="https://apps.apple.com/app/testflight/id899247664" onclick="copyCodeSilent()" class="block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">⬇️ 安裝 TestFlight</a>
           <p class="text-slate-300">2. 點下方按鈕加入測試並安裝「鋼鐵英雄同步器」</p>
-          <a id="link-testflight" href="#" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🍎 加入 TestFlight 並安裝</a>
+          <a id="link-testflight" href="#" onclick="copyCodeSilent()" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🍎 加入 TestFlight 並安裝 (同時自動複製邀請碼)</a>
         </div>
         <div id="install-android" class="hidden space-y-2 text-sm">
-          <a id="link-play" href="#" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🤖 從 Google Play 安裝 (測試版)</a>
-          <a id="link-apk" href="#" class="hidden block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">📦 或直接下載 APK 安裝檔</a>
+          <a id="link-play" href="#" onclick="copyCodeSilent()" class="btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold">🤖 從 Google Play 安裝 (測試版)</a>
+          <a id="link-apk" href="#" onclick="copyCodeSilent()" class="hidden block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold">📦 下載 Android APK 安裝檔 (同時自動複製邀請碼)</a>
           <p class="text-[12px] text-slate-400">首次使用需安裝 Google「Health Connect」(Android 14 以上已內建)。</p>
         </div>
         <button id="toggle-platform" onclick="togglePlatform()" class="text-xs text-slate-400 underline">切換顯示另一個平台的安裝方式</button>
@@ -85,17 +85,35 @@
       ]
     };
 
-    function copyCode() { navigator.clipboard.writeText(code); }
+    function copyCodeSilent() {
+      if (code && navigator.clipboard) {
+        try { navigator.clipboard.writeText(code); } catch (e) {}
+      }
+    }
+    function copyCode() {
+      copyCodeSilent();
+      const btn = document.querySelector('button[onclick="copyCode()"]');
+      if (btn) { const orig = btn.innerText; btn.innerText = '✅ 已複製'; setTimeout(() => { btn.innerText = orig; }, 1800); }
+    }
     function togglePlatform() { showIOS = !showIOS; render(window.__cfg || {}); }
 
     function render(cfg) {
       document.getElementById('install-ios').classList.toggle('hidden', !showIOS);
       document.getElementById('install-android').classList.toggle('hidden', showIOS);
       document.getElementById('link-testflight').href = cfg.testflightUrl || '#';
-      document.getElementById('link-play').href = cfg.playUrl || '#';
+      const play = document.getElementById('link-play');
       const apk = document.getElementById('link-apk');
-      apk.classList.toggle('hidden', !cfg.apkUrl);
+      const hasPlay = Boolean(cfg.playUrl && cfg.playUrl.trim());
+      const hasApk = Boolean(cfg.apkUrl && cfg.apkUrl.trim());
+      play.classList.toggle('hidden', !hasPlay && hasApk);
+      play.href = cfg.playUrl || '#';
+      apk.classList.toggle('hidden', !hasApk);
       apk.href = cfg.apkUrl || '#';
+      if (!hasPlay && hasApk) {
+        apk.className = 'btn-solar-primary block text-center px-4 py-2.5 rounded-xl font-bold';
+      } else {
+        apk.className = (hasApk ? '' : 'hidden ') + 'block text-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold';
+      }
       document.getElementById('brand-guides').innerHTML = GUIDES[showIOS ? 'ios' : 'android']
         .map(([t, d]) => `<div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3"><div class="font-bold text-slate-100">${t}</div><div class="text-[12px] text-slate-400 mt-0.5">${d}</div></div>`).join('');
     }

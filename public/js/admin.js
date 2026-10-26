@@ -818,8 +818,7 @@ async function syncAllSettingsToSupabase(customMsg) {
 
   clearDirtyInputs();
   if (window.syncFromDatabase) await window.syncFromDatabase();
-  alert(customMsg || `🎉 資料片模式【${getModeLabel(activeMode)}】與所有遊戲條件參數已成功同步寫入 Supabase！前台看板立即生效！`);
-  showAdminToast("✅ 賽事核心參數與資料片條件已成功儲存至雲端！");
+  showAdminToast(customMsg || `✅ 資料片模式【${getModeLabel(activeMode)}】與所有遊戲條件參數已成功儲存至雲端！`);
   onExpansionModeChanged();
 }
 
@@ -828,7 +827,7 @@ async function saveGlobalGameSettings() {
     await syncAllSettingsToSupabase();
   } catch (e) {
     console.error("Save Global Settings Error:", e);
-    alert("❌ 儲存至雲端資料庫異常：" + e.message);
+    showAdminToast("❌ 儲存至雲端資料庫異常：" + e.message, true);
   }
 }
 
@@ -950,11 +949,10 @@ async function deleteSnapshot(snapId) {
     await window.supabase.insert("game_config", { key: "snapshots", value: updatedSnapshots });
     if (window.syncFromDatabase) await window.syncFromDatabase();
     renderSnapshotTable();
-    alert(`🗑️ 快照【${snapTitle}】已成功自 Supabase 雲端資料庫刪除！前後台已同步更新！`);
-    showAdminToast(`🗑️ 快照【${snapTitle}】已成功刪除！`);
+    showAdminToast(`🗑️ 快照【${snapTitle}】已成功自雲端刪除！`);
   } catch (e) {
     console.error("Delete Snapshot Error:", e);
-    alert("❌ 刪除失敗：" + e.message);
+    showAdminToast("❌ 刪除失敗：" + e.message, true);
   }
 }
 
@@ -1020,14 +1018,14 @@ async function archiveCurrentSeason() {
       await window.supabase.insert("game_config", { key: "snapshots", value: snapshots });
       if (window.syncFromDatabase) await window.syncFromDatabase();
       renderSnapshotTable();
-      alert(`🎉 成功生成賽季完整歷史快照【${snapshotTitle}】並同步寫入 Supabase 雲端資料庫！前台【過往英雄史】已永久保存！`);
+      showAdminToast(`🎉 成功生成賽季歷史快照【${snapshotTitle}】並同步至雲端！`);
     } catch (err) {
       console.error("Archive Save Error:", err);
-      alert("❌ 封存快照寫入雲端失敗：" + err.message);
+      showAdminToast("❌ 封存快照寫入雲端失敗：" + err.message, true);
     }
   } catch (e) {
     console.error("Archive error:", e);
-    alert("封存失敗：" + e.message);
+    showAdminToast("❌ 封存失敗：" + e.message, true);
   }
 }
 
@@ -1474,10 +1472,10 @@ async function randomizeAllHeroClasses() {
       });
     }
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert("🎉 隨機抽籤分配完成！所有冒險者天賦已更新並寫入 Supabase 資料庫！全服即刻生效！");
+    showAdminToast("🎉 隨機抽籤分配完成！所有冒險者職業天賦已更新並寫入雲端！");
   } catch (e) {
     console.error("Randomize Classes Error:", e);
-    alert("❌ 職業分配失敗：" + e.message);
+    showAdminToast("❌ 職業分配失敗：" + e.message, true);
   }
 }
 
@@ -1603,11 +1601,10 @@ async function saveHeroFromModal() {
     await window.supabase.insert("heroes", heroObj);
     closeHeroModal();
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(`🎉 冒險者【${name}】已成功儲存至 Supabase 雲端資料庫！全站即刻同步！`);
-    showAdminToast(`已儲存冒險者：${name}`);
+    showAdminToast(`✅ 冒險者【${name}】已成功儲存至雲端！`);
   } catch (e) {
     console.error("Save Hero Error:", e);
-    alert("❌ 儲存失敗：" + e.message);
+    showAdminToast("❌ 儲存失敗：" + e.message, true);
   }
 }
 
@@ -1640,11 +1637,10 @@ async function deleteHero(name) {
       try { await callAdminMobile('revoke_device', { device_id: dev.id }); } catch (_) {}
     }
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(`🗑️ 冒險者【${name}】已成功自雲端資料庫刪除！`);
-    showAdminToast(`已刪除冒險者：${name}`);
+    showAdminToast(`🗑️ 冒險者【${name}】已成功自雲端刪除！`);
   } catch (e) {
     console.error("Delete Hero Error:", e);
-    alert("❌ 刪除失敗：" + e.message);
+    showAdminToast("❌ 刪除失敗：" + e.message, true);
   }
 }
 
@@ -1768,12 +1764,12 @@ async function handleManualAttack(e) {
   try {
     await window.supabase.insert("activities", actObj);
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(`🎉 登錄成功！${heroName} 完成鍛鍊打卡，數據已即時同步至 Supabase 雲端資料庫並計入前台看板！`);
+    showAdminToast(`🎉 登錄成功！${heroName} 完成鍛鍊打卡，數據已即時同步至雲端！`);
     document.getElementById('form-manual-entry').reset();
     previewDamageCalculation();
   } catch (err) {
     console.error("Manual Entry Error:", err);
-    alert("❌ 補登失敗：" + err.message);
+    showAdminToast("❌ 補登失敗：" + err.message, true);
   }
 }
 
@@ -2077,10 +2073,10 @@ async function toggleExcludeActivity(actId, shouldExclude) {
     const dbId = typeof window.rawDbText === 'function' ? window.rawDbText(actId) : actId;
     await window.supabase.update("activities", `id=eq.${encodeURIComponent(dbId)}`, { is_excluded: shouldExclude });
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(shouldExclude ? `🚫 紀錄 #${actId} 已在 Supabase 資料庫設為作廢，不再計入分數！` : `✅ 紀錄 #${actId} 已在 Supabase 資料庫恢復計入分數！`);
+    showAdminToast(shouldExclude ? `🚫 紀錄 #${actId} 已設為作廢，不再計入分數！` : `✅ 紀錄 #${actId} 已恢復計入分數！`);
   } catch (e) {
     console.error("Toggle Exclude Error:", e);
-    alert("❌ 操作失敗：" + e.message);
+    showAdminToast("❌ 操作失敗：" + e.message, true);
   }
 }
 
@@ -2093,10 +2089,10 @@ async function deleteManualActivity(actId) {
     await window.supabase.delete("activities", `id=eq.${encodeURIComponent(dbId)}`);
     await recordTombstoneList('deleted_activity_ids', String(dbId));
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(`🗑️ 紀錄 #${actId} 已從 Supabase 雲端資料庫永久刪除！`);
+    showAdminToast(`🗑️ 紀錄 #${actId} 已從雲端永久刪除！`);
   } catch (e) {
     console.error("Delete Activity Error:", e);
-    alert("❌ 刪除失敗：" + e.message);
+    showAdminToast("❌ 刪除失敗：" + e.message, true);
   }
 }
 
@@ -2142,11 +2138,10 @@ async function saveActivityFromModal() {
     });
     closeActivityModal();
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert('✅ 運動紀錄已成功更新並同步至 Supabase 雲端資料庫！');
-    showAdminToast(`✅ 已更新運動紀錄 #${actId}`);
+    showAdminToast(`✅ 已更新運動紀錄 #${actId} 並同步至雲端！`);
   } catch (e) {
     console.error("Save Activity Error:", e);
-    alert('❌ 更新失敗：' + e.message);
+    showAdminToast('❌ 更新失敗：' + e.message, true);
   }
 }
 
@@ -2381,8 +2376,7 @@ function addCrawlerAthlete() {
   renderHeroTable();
   renderCrawlerUI();
 
-  alert(`🎉 成功綁定選手：${heroName} (公會: ${existingHero.guild} • 年齡: ${existingHero.age}歲/極限心率: ${existingHero.maxHr}bpm) ➔ Strava ID: #${athId}！\n請記得點擊右上角【💾 儲存爬蟲設定】以同步生效！`);
-  showAdminToast(`已加入選手：${heroName} (#${athId})`);
+  showAdminToast(`🎉 成功綁定選手：${heroName} ➔ Strava ID #${athId}（請記得點儲存爬蟲設定）`);
 }
 
 function deleteCrawlerAthlete(athId) {
@@ -2437,13 +2431,12 @@ async function saveCrawlerConfig() {
       body: JSON.stringify(crawlerConfig)
     });
     if (res.ok) {
-      alert(`✅【Strava 爬蟲設定已成功儲存並同步！】\n\n👥 目前監控的選手名單 (${athleteCount} 位)：\n${athleteSummary}\n\n🚫 排除關鍵字：${(crawlerConfig.excludeKeywords || []).join(", ") || "無"}\n📊 目標試算表：${crawlerConfig.worksheetName}\n\n⚡ 下次 GitHub Actions 雲端定時排程（每 30 分鐘）或手動 Run workflow 時，將自動爬取以上所有選手！`);
-      showAdminToast("✅ Strava 爬蟲設定已成功儲存至伺服器！");
+      showAdminToast(`✅ Strava 爬蟲設定已成功儲存並同步（共監控 ${athleteCount} 位選手）！`);
     } else {
-      alert(`✅ 爬蟲設定已保存至本地快取！\n共有 ${athleteCount} 位選手納入監控名冊。`);
+      showAdminToast(`✅ 爬蟲設定已保存至本地快取（共 ${athleteCount} 位選手）！`);
     }
   } catch (e) {
-    alert(`✅ 爬蟲設定已於本地保存！\n共有 ${athleteCount} 位選手納入監控名冊。`);
+    showAdminToast(`✅ 爬蟲設定已於本地保存（共 ${athleteCount} 位選手）！`);
   }
 }
 
@@ -2545,11 +2538,10 @@ async function saveExcludeKeywordsToSupabase() {
   try {
     await window.supabase.insert("game_config", { key: "exclude_keywords", value: rawKws });
     if (window.syncFromDatabase) await window.syncFromDatabase();
-    alert(`✅ 爬蟲剃除關鍵字已成功儲存至 Supabase 雲端資料庫！\n目前排除清單：${kws.join(', ') || '無'}`);
-    showAdminToast("✅ 已更新爬蟲剃除關鍵字設定！");
+    showAdminToast(`✅ 爬蟲剃除關鍵字已成功儲存至雲端（目前排除：${kws.join(', ') || '無'}）！`);
   } catch (e) {
     console.error("Save Exclude Keywords Error:", e);
-    alert("❌ 儲存失敗：" + e.message);
+    showAdminToast("❌ 儲存失敗：" + e.message, true);
   }
 }
 
