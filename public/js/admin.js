@@ -33,6 +33,7 @@ window.addEventListener("gameStateSynced", (e) => {
     renderActivityTable();
     renderCrawlerUI();
     if (typeof renderGMOpsCenter === "function") renderGMOpsCenter();
+    if (typeof renderGMKpiSummaryBar === "function") renderGMKpiSummaryBar();
   }
 });
 
@@ -224,14 +225,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (typeof renderGMOpsCenter === 'function') renderGMOpsCenter();
   if (typeof renderMobileSyncSection === 'function') renderMobileSyncSection();
   if (typeof refreshMobileModeOptions === 'function') refreshMobileModeOptions();
+  if (typeof renderGMKpiSummaryBar === 'function') renderGMKpiSummaryBar();
   initAdminSSE();
   if (window.lucide) lucide.createIcons();
 });
 
 function initAdminSSE() {
   const urlParams = new URLSearchParams(window.location.search);
+  const tab = urlParams.get('tab');
+  if (tab && typeof switchGMWorkspaceTab === 'function') {
+    switchGMWorkspaceTab(tab);
+  }
   const subtab = urlParams.get('subtab');
   if (subtab && typeof switchGMOpsSubTab === 'function') {
+    if (!tab) switchGMWorkspaceTab('honors');
     switchGMOpsSubTab(subtab);
   }
   if (urlParams.get('nosse')) return;
@@ -245,6 +252,122 @@ function initAdminSSE() {
       if (typeof window.syncFromDatabase === 'function') window.syncFromDatabase();
     });
   } catch (e) {}
+}
+
+// -------------------------------------------------------------
+// 🧭 GM WORKSPACE NAVIGATION & KPI SUMMARY BAR (與前台同規格)
+// -------------------------------------------------------------
+let currentGMWorkspaceTab = 'heroes';
+
+const GM_MODE_SHORT_META = {
+  classic:      { icon: '🏆', label: '資料片一 • 經典競技' },
+  rpg_talent:   { icon: '⚔️', label: '資料片二 • RPG 天賦' },
+  world_boss:   { icon: '🐉', label: '資料片三 • 世界 Boss' },
+  faction_war:  { icon: '🏰', label: '資料片四 • 雙城激戰' },
+  survival:     { icon: '☠️', label: '資料片五 • 飢餓法則' },
+  base_builder: { icon: '🔨', label: '資料片六 • 鋼鐵要塞' },
+  bingo:        { icon: '🧩', label: '資料片七 • 戰神拼圖' },
+  expedition:   { icon: '🗺️', label: '資料片八 • 萬里長征' },
+  dream:        { icon: '🌙', label: '資料片九 • 夢境守衛' },
+  flame:        { icon: '🔥', label: '資料片十 • 聖火傳承' },
+  monastery:    { icon: '🏯', label: '資料片十一 • 鐵人修行院' }
+};
+
+function switchGMWorkspaceTab(tabName) {
+  const validTabs = ['heroes', 'activities', 'honors', 'mobile', 'season', 'all'];
+  const target = validTabs.includes(tabName) ? tabName : 'heroes';
+  currentGMWorkspaceTab = target;
+
+  ['heroes', 'activities', 'honors', 'mobile', 'season'].forEach(key => {
+    const sec = document.getElementById(`gm-workspace-${key}`);
+    if (!sec) return;
+    if (target === 'all') {
+      sec.classList.remove('hidden');
+    } else {
+      sec.classList.toggle('hidden', key !== target);
+    }
+  });
+
+  document.querySelectorAll('#gm-main-nav-tabs button[data-gm-tab]').forEach(btn => {
+    const t = btn.getAttribute('data-gm-tab');
+    const isAct = t === target;
+    if (t === 'all') {
+      btn.className = isAct
+        ? 'px-3 py-2 rounded-xl text-xs font-black bg-amber-500 text-slate-950 transition shadow whitespace-nowrap flex items-center gap-1 border border-amber-400'
+        : 'px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-amber-300 hover:bg-slate-800/80 transition whitespace-nowrap flex items-center gap-1 border border-transparent hover:border-slate-700';
+    } else {
+      btn.className = isAct
+        ? 'px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 text-slate-950 transition shadow whitespace-nowrap flex items-center gap-1.5'
+        : 'px-3.5 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/80 transition whitespace-nowrap flex items-center gap-1.5';
+    }
+  });
+
+  if (target === 'honors' || target === 'all') {
+    if (typeof renderGMOpsCenter === 'function') renderGMOpsCenter();
+  }
+  if (target === 'mobile' || target === 'all') {
+    if (typeof renderMobileSyncSection === 'function') renderMobileSyncSection();
+  }
+  if (target === 'season' || target === 'all') {
+    if (typeof renderSnapshotTable === 'function') renderSnapshotTable();
+  }
+  renderGMKpiSummaryBar();
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderGMKpiSummaryBar() {
+  const heroes = Array.isArray(gameState?.heroes) ? gameState.heroes : Object.values(gameState?.heroes || {});
+  const guildsCount = typeof getAllGuildNamesForAdmin === 'function' ? getAllGuildNamesForAdmin().length : (gameState?.guilds || []).length;
+  const activeDevices = (gameState?.devices || []).filter(d => !d.revoked);
+  const boundHeroesSet = new Set(activeDevices.map(d => d.hero).filter(Boolean));
+  const stravaBoundCount = heroes.filter(h => h && h.stravaId).length;
+
+  const hMain = document.getElementById('gm-kpi-heroes-main');
+  const hSub = document.getElementById('gm-kpi-heroes-sub');
+  if (hMain) hMain.textContent = `${heroes.length} 位英雄 / ${guildsCount} 公會`;
+  if (hSub) hSub.textContent = `📱 手機綁定 ${boundHeroesSet.size} 人 • 🔗 Strava ${stravaBoundCount} 人`;
+
+  const acts = Array.isArray(allActivitiesCache) && allActivitiesCache.length ? allActivitiesCache : (gameState?.activities || []);
+  const validCount = acts.filter(a => !a.isExcluded && a.isValidAttack).length;
+  const dupCount = acts.filter(a => !a.isExcluded && a.isSuspectedDuplicate && !a.duplicateIncluded).length;
+  const exclCount = acts.filter(a => a.isExcluded).length;
+
+  const aMain = document.getElementById('gm-kpi-acts-main');
+  const aSub = document.getElementById('gm-kpi-acts-sub');
+  if (aMain) aMain.textContent = `共 ${acts.length} 筆 (有效 ${validCount})`;
+  if (aSub) aSub.textContent = `⚠️ 疑似重複 ${dupCount} 筆 • 🚫 作廢 ${exclCount} 筆`;
+
+  const gmOps = typeof ensureGMOpsState === 'function' ? ensureGMOpsState() : (gameState?.gmOps || {});
+  const gmExclusiveIds = ['gm_tester', 'gm_sponsor', 'gm_architect', 'gm_evangelist', 'gm_warden', 'gm_cheerleader'];
+  let gmExclTotal = 0;
+  Object.values(gmOps.manualBadges || {}).forEach(hMap => {
+    if (!hMap || typeof hMap !== 'object') return;
+    gmExclusiveIds.forEach(gid => {
+      if (Number(hMap[gid]) >= 1) gmExclTotal++;
+    });
+  });
+  const fxCount = Object.values(gmOps.heroFx || {}).filter(fx => fx && ((fx.frame && fx.frame !== 'none') || (fx.titleText && fx.titleText.trim()))).length;
+  const evCount = Array.isArray(gmOps.events) ? gmOps.events.length : 0;
+
+  const oMain = document.getElementById('gm-kpi-honors-main');
+  const oSub = document.getElementById('gm-kpi-honors-sub');
+  if (oMain) oMain.textContent = `👑 至尊榮譽 ${gmExclTotal} 座`;
+  if (oSub) oSub.textContent = `✨ 頭銜特效 ${fxCount} 人 • ⚡ 加倍活動 ${evCount} 檔`;
+
+  const activeMode = document.getElementById('cfg-active-mode')?.value || gameState?.activeMode || 'classic';
+  const modeMeta = GM_MODE_SHORT_META[activeMode] || { icon: '🎮', label: activeMode };
+  const sStart = gameState?.seasonStart || inputValToDate(document.getElementById('cfg-season-start')?.value || '') || '—';
+  const sEnd = gameState?.seasonEnd || inputValToDate(document.getElementById('cfg-season-end')?.value || '') || '—';
+
+  const sMain = document.getElementById('gm-kpi-season-main');
+  const sSub = document.getElementById('gm-kpi-season-sub');
+  if (sMain) sMain.textContent = `${modeMeta.icon} ${modeMeta.label}`;
+  if (sSub) sSub.textContent = `📅 ${sStart} ~ ${sEnd}`;
+
+  const headerPill = document.getElementById('gm-header-mode-pill');
+  if (headerPill) {
+    headerPill.innerHTML = `${modeMeta.icon} ${escapeHtmlLite(modeMeta.label)} <span class="text-slate-400 font-normal">(${escapeHtmlLite(sStart)} ~ ${escapeHtmlLite(sEnd)})</span>`;
+  }
 }
 
 const EMBEDDED_DEFAULT_STATE = {
@@ -537,6 +660,7 @@ function onExpansionModeChanged() {
   populateFormDropdowns();
   previewDamageCalculation();
   renderHeroTable();
+  if (typeof renderGMKpiSummaryBar === 'function') renderGMKpiSummaryBar();
   if (window.lucide) lucide.createIcons();
 }
 
@@ -918,15 +1042,72 @@ function renderHeroTable() {
   const mode = document.getElementById('cfg-active-mode')?.value || 'classic';
   tbody.innerHTML = '';
 
-    const heroesArr = Array.isArray(gameState.heroes) ? gameState.heroes : Object.values(gameState.heroes || {});
-  const sortedHeroes = heroesArr.sort((a,b) => {
-      let ag = a.guild || '', bg = b.guild || '';
-      if(ag !== bg) return ag.localeCompare(bg);
-      let ac = a.rpgClass || '', bc = b.rpgClass || '';
-      if(ac !== bc) return ac.localeCompare(bc);
-      return (a.name||'').localeCompare(b.name||'');
+  const heroesArr = Array.isArray(gameState.heroes) ? gameState.heroes : Object.values(gameState.heroes || {});
+  const sortedHeroes = [...heroesArr].sort((a, b) => {
+    const ag = a.guild || '', bg = b.guild || '';
+    if (ag !== bg) return ag.localeCompare(bg);
+    const ac = a.rpgClass || '', bc = b.rpgClass || '';
+    if (ac !== bc) return ac.localeCompare(bc);
+    return (a.name || '').localeCompare(b.name || '');
   });
-  sortedHeroes.forEach(h => {
+
+  // 更新公會篩選下拉選單
+  const guildFilterEl = document.getElementById('admin-hero-guild-filter');
+  if (guildFilterEl) {
+    const prevGuildVal = guildFilterEl.value || '';
+    const guildNames = getAllGuildNamesForAdmin();
+    const gmOps = ensureGMOpsState();
+    guildFilterEl.innerHTML = `<option value="">🛡️ 全部公會 (${guildNames.length})</option>` + guildNames.map(gName => {
+      const gm = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(gName, gmOps) : { badge: '🛡️' };
+      const cnt = sortedHeroes.filter(h => h.guild === gName).length;
+      return `<option value="${escapeHtmlLite(gName)}" ${gName === prevGuildVal ? 'selected' : ''}>${escapeHtmlLite(gm.badge)} ${escapeHtmlLite(gName)} (${cnt}人)</option>`;
+    }).join('');
+  }
+
+  const searchQuery = (document.getElementById('admin-hero-search')?.value || '').trim().toLowerCase();
+  const selectedGuild = document.getElementById('admin-hero-guild-filter')?.value || '';
+  const selectedBind = document.getElementById('admin-hero-bind-filter')?.value || '';
+
+  // 統計每位英雄的運動紀錄數與榮譽狀態
+  const acts = Array.isArray(allActivitiesCache) && allActivitiesCache.length ? allActivitiesCache : (gameState?.activities || []);
+  const actCountByHero = {};
+  acts.forEach(a => {
+    if (!a || a.isExcluded || !a.hero) return;
+    actCountByHero[a.hero] = (actCountByHero[a.hero] || 0) + 1;
+  });
+
+  const gmOps = ensureGMOpsState();
+  const gmExclusiveIds = ['gm_tester', 'gm_sponsor', 'gm_architect', 'gm_evangelist', 'gm_warden', 'gm_cheerleader'];
+
+  const filteredHeroes = sortedHeroes.filter(h => {
+    if (selectedGuild && h.guild !== selectedGuild) return false;
+    const boundDevice = (gameState?.devices || []).find(d => d.hero === h.name && !d.revoked);
+    const fx = gmOps.heroFx?.[h.name] || {};
+    const hasFx = Boolean((fx.frame && fx.frame !== 'none') || (fx.titleText && fx.titleText.trim()));
+    const mMap = gmOps.manualBadges?.[h.name] || {};
+    const hasGmExcl = gmExclusiveIds.some(gid => Number(mMap[gid]) >= 1);
+
+    if (selectedBind === 'MOBILE' && !boundDevice) return false;
+    if (selectedBind === 'STRAVA' && !h.stravaId) return false;
+    if (selectedBind === 'HONOR' && !hasFx && !hasGmExcl) return false;
+
+    if (searchQuery) {
+      const hay = `${h.name || ''} ${h.guild || ''} ${h.rpgClass || ''} ${h.stravaId || ''} ${fx.titleText || ''}`.toLowerCase();
+      if (!hay.includes(searchQuery)) return false;
+    }
+    return true;
+  });
+
+  const countPill = document.getElementById('admin-hero-count-pill');
+  if (countPill) {
+    countPill.textContent = `顯示 ${filteredHeroes.length} / ${sortedHeroes.length} 位冒險者`;
+  }
+
+  if (filteredHeroes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-500">查無符合篩選條件的冒險者</td></tr>`;
+  }
+
+  filteredHeroes.forEach(h => {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-900/60 transition';
     const heroClass = h.rpgClass || '狂戰士';
@@ -939,39 +1120,63 @@ function renderHeroTable() {
       classCellHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-bold text-rose-400 bg-rose-950/40 border border-rose-800">⚔️ 討伐先鋒</span>`;
     }
 
-    const stravaIdDisplay = h.stravaId ? 
-      `<a href="https://www.strava.com/athletes/${h.stravaId}" target="_blank" class="font-mono text-cyan-400 font-bold hover:underline">#${h.stravaId} ↗</a>` : 
+    const stravaIdDisplay = h.stravaId ?
+      `<a href="https://www.strava.com/athletes/${h.stravaId}" target="_blank" class="font-mono text-cyan-400 font-bold hover:underline">#${h.stravaId} ↗</a>` :
       `<span class="text-slate-500 italic">未綁定</span>`;
 
     const heroAvatarHtml = typeof window.renderHeroAvatarHtml === 'function'
-      ? window.renderHeroAvatarHtml(h, 'w-7 h-7', 'rounded-lg')
-      : `<div class="w-7 h-7 rounded-lg bg-slate-800 overflow-hidden border border-slate-700"><img src="${h.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${h.name}`}" class="w-full h-full object-cover"></div>`;
+      ? window.renderHeroAvatarHtml(h, 'w-8 h-8', 'rounded-lg')
+      : `<div class="w-8 h-8 rounded-lg bg-slate-800 overflow-hidden border border-slate-700"><img src="${h.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${h.name}`}" class="w-full h-full object-cover"></div>`;
     const heroCustomTitle = typeof window.renderHeroCustomTitleHtml === 'function'
       ? window.renderHeroCustomTitleHtml(h.name)
       : '';
     const unlockedCount = Object.keys(gameState?.heroBadges?.[h.name] || {}).length;
+    const actCount = actCountByHero[h.name] || 0;
     const boundDevice = (gameState?.devices || []).find(d => d.hero === h.name && !d.revoked);
-    const boundHtml = boundDevice ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-700 text-[10px] whitespace-nowrap" title="${escapeHtmlLite((boundDevice.platform || '') + ' ' + (boundDevice.device_model || ''))}">📱 已綁定</span>` : '';
+    const boundHtml = boundDevice
+      ? `<span class="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-700 text-[10px] whitespace-nowrap" title="${escapeHtmlLite((boundDevice.platform || '') + ' ' + (boundDevice.device_model || ''))}">📱 已綁定</span>`
+      : `<span class="px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 text-[10px] whitespace-nowrap">未綁App</span>`;
+
+    const safeNameAttr = escapeHtmlLite(h.name);
+    const gm = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(h.guild, gameState?.gmOps) : { badge: '🛡️', color: '#64748b' };
 
     tr.innerHTML = `
-      <td class="p-3 font-bold text-white flex items-center space-x-2">
-        ${heroAvatarHtml}
-        <span>${escapeHtmlLite(h.name)}</span>
-        ${heroCustomTitle}
-        ${boundHtml}
-        <span class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40 text-[9px] font-mono">🎖️${unlockedCount}</span>
+      <td class="p-3 font-bold text-white">
+        <div class="flex items-center flex-wrap gap-1.5">
+          ${heroAvatarHtml}
+          <span class="text-sm font-black text-white">${safeNameAttr}</span>
+          ${heroCustomTitle}
+        </div>
       </td>
-      <td class="p-3 font-mono">${h.age} 歲</td>
-      <td class="p-3 font-mono text-cyan-400 font-bold">${h.maxHr} bpm</td>
-      <td class="p-3">${(() => {
-        const gm = typeof window.resolveGuildMeta === 'function' ? window.resolveGuildMeta(h.guild, gameState?.gmOps) : { badge: '🛡️', color: '#64748b' };
-        return `<span class="inline-flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded text-[11px] font-bold border" style="color:${gm.color};border-color:${gm.color}66;"><span>${escapeHtmlLite(gm.badge)}</span><span>${escapeHtmlLite(h.guild)}</span></span>`;
-      })()}</td>
-      <td class="p-3">${classCellHtml}</td>
-      <td class="p-3">${stravaIdDisplay}</td>
-      <td class="p-3 text-right space-x-1.5">
-        <button onclick="openEditHeroModal('${h.name}')" class="px-2.5 py-1 bg-cyan-950/60 text-cyan-300 border border-cyan-800/60 hover:bg-cyan-900 rounded-lg text-xs font-bold transition">✏️ 編輯</button>
-        <button onclick="deleteHero('${h.name}')" class="px-2.5 py-1 bg-rose-950/60 text-rose-300 border border-rose-800/60 hover:bg-rose-900 rounded-lg text-xs font-bold transition">🗑️ 刪除</button>
+      <td class="p-3">
+        <button type="button" data-guild="${escapeHtmlLite(h.guild)}" onclick="selectGMGuildCard(this.dataset.guild)" title="點擊於下方編輯此公會徽章與代表色"
+          class="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition" style="color:${gm.color};border-color:${gm.color}66;">
+          <span>${escapeHtmlLite(gm.badge)}</span><span>${escapeHtmlLite(h.guild)}</span>
+        </button>
+      </td>
+      <td class="p-3 whitespace-nowrap">${classCellHtml}</td>
+      <td class="p-3 font-mono whitespace-nowrap">
+        <span class="text-slate-200">${h.age} 歲</span>
+        <span class="text-slate-600 mx-0.5">/</span>
+        <span class="text-cyan-400 font-bold">${h.maxHr} bpm</span>
+      </td>
+      <td class="p-3 whitespace-nowrap">
+        <div class="flex items-center flex-wrap gap-1">
+          <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-mono" title="有效運動打卡筆數">🏃 ${actCount}筆</span>
+          <span class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-700/40 text-[10px] font-mono" title="已解鎖徽章數">🎖️ ${unlockedCount}枚</span>
+          ${boundHtml}
+        </div>
+      </td>
+      <td class="p-3 whitespace-nowrap">${stravaIdDisplay}</td>
+      <td class="p-3 text-right whitespace-nowrap">
+        <div class="inline-flex items-center flex-wrap justify-end gap-1">
+          <button type="button" data-hero="${safeNameAttr}" onclick="jumpToHeroHonors(this.dataset.hero)" title="一鍵切換至【授勳・特效】並鎖定此英雄" class="px-2 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500 hover:text-slate-950 rounded-lg text-[11px] font-bold transition">👑 授勳/特效</button>
+          <button type="button" data-hero="${safeNameAttr}" onclick="jumpToHeroActivities(this.dataset.hero)" title="查看此英雄的所有運動打卡紀錄" class="px-2 py-1 bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 rounded-lg text-[11px] font-bold transition">📋 查運動</button>
+          <button type="button" data-hero="${safeNameAttr}" onclick="jumpToHeroManualCheckin(this.dataset.hero)" title="為此英雄手動補登運動打卡" class="px-2 py-1 bg-emerald-950/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-900 rounded-lg text-[11px] font-bold transition">✍️ 補登</button>
+          <button type="button" data-hero="${safeNameAttr}" onclick="jumpToHeroMobileInspect(this.dataset.hero)" title="查看此英雄的手機健康同步明細 (步數/睡眠/心率)" class="px-2 py-1 bg-teal-950/60 text-teal-300 border border-teal-700/60 hover:bg-teal-900 rounded-lg text-[11px] font-bold transition">📱 查手機</button>
+          <button type="button" data-hero="${safeNameAttr}" onclick="openEditHeroModal(this.dataset.hero)" class="px-2 py-1 bg-cyan-950/60 text-cyan-300 border border-cyan-800/60 hover:bg-cyan-900 rounded-lg text-[11px] font-bold transition">✏️ 編輯</button>
+          <button type="button" data-hero="${safeNameAttr}" onclick="deleteHero(this.dataset.hero)" title="刪除此英雄" class="px-2 py-1 bg-rose-950/60 text-rose-300 border border-rose-800/60 hover:bg-rose-900 rounded-lg text-[11px] font-bold transition">🗑️</button>
+        </div>
       </td>
     `;
 
@@ -981,6 +1186,67 @@ function renderHeroTable() {
   if (typeof renderGMGuildEmblemEditor === 'function') {
     renderGMGuildEmblemEditor();
   }
+  if (typeof renderGMKpiSummaryBar === 'function') {
+    renderGMKpiSummaryBar();
+  }
+}
+
+// -------------------------------------------------------------
+// ⚡ 冒險者一鍵跨分頁管理跳轉 (從英雄名冊秒跳至授勳/運動/補登/手機明細)
+// -------------------------------------------------------------
+function jumpToHeroHonors(heroName) {
+  if (!heroName) return;
+  switchGMWorkspaceTab('honors');
+  if (typeof switchGMOpsSubTab === 'function') switchGMOpsSubTab('badges');
+  ['gm-grant-hero', 'gm-fx-hero', 'gm-fx-hero-select', 'gm-badge-hero-filter', 'gm-badge-hero-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = heroName;
+  });
+  if (typeof onGMFxHeroSelect === 'function') onGMFxHeroSelect();
+  if (typeof renderGMOpsCenter === 'function') renderGMOpsCenter();
+  // Ensure gm-grant-hero is still set after renderGMOpsCenter rebuilds the quick cards
+  const grantHeroSel = document.getElementById('gm-grant-hero');
+  if (grantHeroSel && grantHeroSel.value !== heroName) {
+    grantHeroSel.value = heroName;
+    if (typeof renderGMExclusiveQuickCards === 'function') renderGMExclusiveQuickCards();
+  }
+  const sec = document.getElementById('gm-workspace-honors');
+  if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showAdminToast(`👑 已鎖定冒險者【${heroName}】的榮譽授勳與特效設定`);
+}
+
+function jumpToHeroActivities(heroName) {
+  if (!heroName) return;
+  switchGMWorkspaceTab('activities');
+  const heroFilter = document.getElementById('admin-act-hero-filter');
+  if (heroFilter) heroFilter.value = heroName;
+  const searchInp = document.getElementById('admin-act-search');
+  if (searchInp) searchInp.value = '';
+  setAdminActivityQuickFilter('ALL');
+  const sec = document.getElementById('gm-workspace-activities');
+  if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showAdminToast(`📋 已篩選【${heroName}】的運動打卡紀錄`);
+}
+
+function jumpToHeroManualCheckin(heroName) {
+  if (!heroName) return;
+  switchGMWorkspaceTab('activities');
+  const inpHero = document.getElementById('inp-hero');
+  if (inpHero) inpHero.value = heroName;
+  if (typeof previewDamageCalculation === 'function') previewDamageCalculation();
+  const card = document.getElementById('admin-manual-checkin-card');
+  if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const titleInp = document.getElementById('inp-title');
+  if (titleInp) setTimeout(() => titleInp.focus(), 250);
+  showAdminToast(`✍️ 已選擇【${heroName}】，請填寫下方手動補登表單`);
+}
+
+function jumpToHeroMobileInspect(heroName) {
+  if (!heroName) return;
+  switchGMWorkspaceTab('mobile');
+  toggleMobilePanelsForceOpen(true);
+  if (typeof inspectMobileHero === 'function') inspectMobileHero(heroName);
+  showAdminToast(`📱 已展開【${heroName}】的手機健康同步明細`);
 }
 
 // -------------------------------------------------------------
@@ -1618,6 +1884,20 @@ function renderActivityTable() {
   filterAdminActivities();
 }
 
+let adminActQuickFilter = 'ALL';
+
+function setAdminActivityQuickFilter(qMode) {
+  adminActQuickFilter = qMode || 'ALL';
+  document.querySelectorAll('.admin-act-qfilter-btn[data-act-qfilter]').forEach(btn => {
+    const k = btn.getAttribute('data-act-qfilter');
+    const isAct = k === adminActQuickFilter;
+    btn.className = isAct
+      ? 'admin-act-qfilter-btn px-3 py-1 rounded-lg text-[11px] font-bold bg-amber-500 text-slate-950 transition shadow'
+      : 'admin-act-qfilter-btn px-3 py-1 rounded-lg text-[11px] font-bold bg-slate-800 text-slate-300 hover:text-white transition';
+  });
+  filterAdminActivities();
+}
+
 function filterAdminActivities() {
   const tbody = document.getElementById('admin-activities-table-body');
   if (!tbody) return;
@@ -1627,8 +1907,28 @@ function filterAdminActivities() {
 
   tbody.innerHTML = '';
 
+  const totalCount = (allActivitiesCache || []).length;
   const filtered = (allActivitiesCache || []).filter(a => {
     if (selectedHero && a.hero !== selectedHero) return false;
+
+    // 快速篩選膠囊 (ALL / DUP / ANOMALY / EXCLUDED / MANUAL / MOBILE)
+    if (adminActQuickFilter === 'DUP') {
+      if (a.isExcluded || !a.isSuspectedDuplicate) return false;
+    } else if (adminActQuickFilter === 'ANOMALY') {
+      const heroInfo = gameState?.heroes?.find(h => h.name === a.hero);
+      const maxHrLimit = heroInfo?.maxHr || 185;
+      const isAnom = (a.avgHr > maxHrLimit || a.maxHr > 220 || a.duration > 300 || (a.rawCalories ?? a.calories) > 3000);
+      if (!isAnom) return false;
+    } else if (adminActQuickFilter === 'EXCLUDED') {
+      if (!a.isExcluded) return false;
+    } else if (adminActQuickFilter === 'MANUAL') {
+      const actId = String(a.id || '');
+      const isMan = actId.startsWith('ACT-') || actId.startsWith('manual_') || Boolean(a.isManual);
+      if (!isMan) return false;
+    } else if (adminActQuickFilter === 'MOBILE') {
+      if (a.source !== 'health_connect' && a.source !== 'apple_health') return false;
+    }
+
     if (query) {
       const matchHero = (a.hero || '').toLowerCase().includes(query);
       const matchTitle = (a.title || a.name || '').toLowerCase().includes(query);
@@ -1639,6 +1939,14 @@ function filterAdminActivities() {
     }
     return true;
   });
+
+  const countPill = document.getElementById('admin-act-count-pill');
+  if (countPill) {
+    countPill.textContent = `顯示 ${filtered.length} / ${totalCount} 筆紀錄`;
+  }
+  if (typeof renderGMKpiSummaryBar === 'function') {
+    renderGMKpiSummaryBar();
+  }
 
   // Sort BEFORE slicing so all records across all months are ordered properly
   filtered.sort((a, b) => {
@@ -2327,6 +2635,7 @@ function renderGMOpsCenter() {
   populateGMFxHeroDropdown();
   renderGMHeroFxActiveList();
   renderGMBadgeEncyclopedia();
+  renderGMExclusiveQuickCards();
 }
 
 // -------------------------------------------------------------
@@ -2555,6 +2864,12 @@ function onGMFxHeroSelect() {
   if (typeEl) typeEl.value = fx.fx || fx.type || 'none';
   if (titleEl) titleEl.value = fx.customTitle || '';
   if (expEl) expEl.value = fx.expiresAt ? dateToInputVal(fx.expiresAt) : '';
+
+  const grantHeroSel = document.getElementById('gm-grant-hero');
+  if (grantHeroSel && grantHeroSel.value !== heroName) {
+    grantHeroSel.value = heroName;
+  }
+  renderGMExclusiveQuickCards();
 }
 
 function onGMFxTypeSelect() {
@@ -2762,6 +3077,10 @@ function renderGMBadgeEncyclopedia() {
   if (catSelect && catalog.length > 0 && catSelect.dataset.n !== String(catalog.length)) {
     catSelect.dataset.n = String(catalog.length);
     while (catSelect.options.length > 1) catSelect.remove(1);
+    const gmOpt = document.createElement('option');
+    gmOpt.value = 'GM_ONLY';
+    gmOpt.innerText = '👑 GM 皇家御賜限定 (6系列 / 30階)';
+    catSelect.appendChild(gmOpt);
     const cats = Array.from(new Set(catalog.map(b => b.cat))).sort((a, b) => (parseInt(a, 10) || 999) - (parseInt(b, 10) || 999));
     cats.forEach(c => {
       const opt = document.createElement('option');
@@ -2774,7 +3093,7 @@ function renderGMBadgeEncyclopedia() {
   // Populate Manual Grant hero & badge dropdowns
   const grantHeroSel = document.getElementById('gm-grant-hero');
   if (grantHeroSel && gameState?.heroes) {
-    const curH = grantHeroSel.value;
+    const curH = grantHeroSel.value || document.getElementById('gm-fx-hero')?.value || '';
     grantHeroSel.innerHTML = '';
     gameState.heroes.forEach(h => {
       const opt = document.createElement('option');
@@ -2783,7 +3102,20 @@ function renderGMBadgeEncyclopedia() {
       if (h.name === curH) opt.selected = true;
       grantHeroSel.appendChild(opt);
     });
+    grantHeroSel.onchange = function() {
+      syncGMExclusiveHeroSelect(this.value);
+    };
   }
+
+  const formatBadgeAdminLabel = (b, isGmOnly = false) => {
+    const slotStr = `#${String(b.slotNum || b.num).padStart(3, '0')}`;
+    const tierTag = (b.totalTiers && b.totalTiers > 1) ? ` [Lv.${b.tierNum}/${b.totalTiers}]` : '';
+    const titleStr = (b.totalTiers && b.totalTiers > 1 && b.slotName && b.slotName !== b.name)
+      ? `${b.slotName}・${b.name}`
+      : b.name;
+    const prefix = isGmOnly ? '[👑GM限定] ' : '';
+    return `${prefix}${slotStr}${tierTag} ${b.icon} ${titleStr} — ${b.desc}`;
+  };
 
   const grantBadgeSel = document.getElementById('gm-grant-badge');
   if (grantBadgeSel && grantBadgeSel.dataset.n !== String(catalog.length)) {
@@ -2795,11 +3127,11 @@ function renderGMBadgeEncyclopedia() {
 
     if (gmOnlyList.length > 0) {
       const grpGm = document.createElement('optgroup');
-      grpGm.label = '👑 GM 皇家御賜限定系列 (頒發高階將自動連同前序階級點亮)';
+      grpGm.label = '👑 GM 皇家御賜限定系列 (編號與前台展櫃連動，頒發高階將自動點亮前序階級)';
       gmOnlyList.forEach(b => {
         const opt = document.createElement('option');
         opt.value = b.id;
-        opt.innerText = `[👑GM限定] #${String(b.num).padStart(3, '0')} ${b.icon} ${b.name} — ${b.desc}`;
+        opt.innerText = formatBadgeAdminLabel(b, true);
         if (b.id === curB) opt.selected = true;
         grpGm.appendChild(opt);
       });
@@ -2807,11 +3139,11 @@ function renderGMBadgeEncyclopedia() {
     }
 
     const grpReg = document.createElement('optgroup');
-    grpReg.label = '🎖️ 全服運動與健康成就徽章 (依總階數由多到少排列)';
+    grpReg.label = '🎖️ 全服運動與健康成就徽章 (依總階數由多到少排列，編號與前台展櫃連動)';
     regularList.forEach(b => {
       const opt = document.createElement('option');
       opt.value = b.id;
-      opt.innerText = `#${String(b.num).padStart(3, '0')} ${b.icon} ${b.name} — ${b.desc}`;
+      opt.innerText = formatBadgeAdminLabel(b, false);
       if (b.id === curB) opt.selected = true;
       grpReg.appendChild(opt);
     });
@@ -2825,16 +3157,21 @@ function renderGMBadgeEncyclopedia() {
   const heroBadgesAll = gameState?.heroBadges || {};
 
   const filtered = catalog.filter(b => {
-    if (catFilter !== 'ALL' && b.cat !== catFilter) return false;
+    if (catFilter === 'GM_ONLY') {
+      if (!b.rule || b.rule.type !== 'gm_manual') return false;
+    } else if (catFilter !== 'ALL' && b.cat !== catFilter) {
+      return false;
+    }
 
     const holders = Object.keys(heroBadgesAll).filter(hName => heroBadgesAll[hName]?.[b.id]);
     if (unlockFilter === 'UNLOCKED' && holders.length === 0) return false;
     if (unlockFilter === 'LOCKED' && holders.length > 0) return false;
 
     if (query) {
-      const numStr = `#${String(b.num).padStart(3, '0')}`;
-      const matchNum = numStr.includes(query);
-      const matchName = (b.name || '').toLowerCase().includes(query);
+      const slotStr = `#${String(b.slotNum || b.num).padStart(3, '0')}`.toLowerCase();
+      const numStr = `#${String(b.num).padStart(3, '0')}`.toLowerCase();
+      const matchNum = slotStr.includes(query) || numStr.includes(query);
+      const matchName = (b.name || '').toLowerCase().includes(query) || (b.slotName || '').toLowerCase().includes(query);
       const matchDesc = (b.desc || '').toLowerCase().includes(query);
       const matchHolder = holders.some(h => h.toLowerCase().includes(query));
       if (!matchNum && !matchName && !matchDesc && !matchHolder) return false;
@@ -2843,7 +3180,13 @@ function renderGMBadgeEncyclopedia() {
   });
 
   tbody.innerHTML = filtered.map(b => {
-    const numStr = `#${String(b.num).padStart(3, '0')}`;
+    const slotStr = `#${String(b.slotNum || b.num).padStart(3, '0')}`;
+    const tierBadgeHtml = (b.totalTiers && b.totalTiers > 1)
+      ? `<div class="text-[10px] font-mono text-amber-400/90 mt-0.5">Lv.${b.tierNum}/${b.totalTiers} <span class="text-slate-600">(階#${String(b.num).padStart(3, '0')})</span></div>`
+      : `<div class="text-[10px] font-mono text-slate-600 mt-0.5">單階 (階#${String(b.num).padStart(3, '0')})</div>`;
+    const displayTitle = (b.totalTiers && b.totalTiers > 1 && b.slotName && b.slotName !== b.name)
+      ? `<span class="text-slate-400 font-semibold">${b.slotName}・</span><span>${b.name}</span>`
+      : b.name;
     const rMeta = rarityMeta[b.rarity] || rarityMeta.common || { label: '普通', color: 'text-slate-300', border: 'border-slate-700', bg: 'bg-slate-900' };
     const holders = Object.keys(heroBadgesAll).filter(hName => heroBadgesAll[hName]?.[b.id]);
 
@@ -2866,11 +3209,11 @@ function renderGMBadgeEncyclopedia() {
 
     return `
       <tr class="hover:bg-slate-900/60 transition">
-        <td class="p-3 font-mono font-bold text-slate-400">${numStr}</td>
+        <td class="p-3 font-mono font-bold text-slate-300 whitespace-nowrap">${slotStr}${tierBadgeHtml}</td>
         <td class="p-3 whitespace-nowrap">
           <div class="flex items-center space-x-2">
             <span class="text-xl">${b.icon}</span>
-            <span class="font-bold ${rMeta.color}">${b.name}</span>
+            <span class="font-bold ${rMeta.color}">${displayTitle}</span>
           </div>
         </td>
         <td class="p-3 whitespace-nowrap">
@@ -2928,6 +3271,229 @@ async function revokeManualBadgeFromHero(heroName, badgeId) {
   await persistGMOpsToSupabase(`🧹 已撤銷【${heroName}】的手動授勳紀錄`);
 }
 
+function syncGMExclusiveHeroSelect(heroName) {
+  if (!heroName) return;
+  const fxSel = document.getElementById('gm-fx-hero');
+  const grantSel = document.getElementById('gm-grant-hero');
+  if (fxSel && fxSel.value !== heroName) {
+    fxSel.value = heroName;
+    onGMFxHeroSelect();
+    return;
+  }
+  if (grantSel && grantSel.value !== heroName) {
+    grantSel.value = heroName;
+  }
+  renderGMExclusiveQuickCards();
+}
+
+async function quickGrantGMExclusiveBadge(heroName, badgeId) {
+  if (!assertCloudReady()) return;
+  if (!heroName || !badgeId) return;
+
+  const gmOps = ensureGMOpsState();
+  if (!gmOps.manualBadges[heroName]) gmOps.manualBadges[heroName] = {};
+
+  const slotDef = Array.isArray(window.SLOT_DEFINITIONS)
+    ? window.SLOT_DEFINITIONS.find(d => d.gmExclusive && d.badgeIds && d.badgeIds.includes(badgeId))
+    : null;
+  if (slotDef) {
+    slotDef.badgeIds.forEach(id => { delete gmOps.manualBadges[heroName][id]; });
+  }
+
+  const reasonEl = document.getElementById('gm-grant-reason');
+  const reason = (reasonEl?.value || 'GM 皇家御賜授勳').trim();
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+  gmOps.manualBadges[heroName][badgeId] = {
+    unlockedAt: todayStr,
+    actTitle: `👑 ${reason}`
+  };
+
+  const badgeObj = (window.findBadgeById ? window.findBadgeById(badgeId) : (window.BADGE_CATALOG || []).find(b => b.id === badgeId));
+  await persistGMOpsToSupabase(`👑 已御賜【${slotDef ? slotDef.name + '・' : ''}${badgeObj?.name || badgeId}】予 ${heroName}！前台英雄名牌與展櫃已同步點亮！`);
+}
+
+async function revokeGMExclusiveSeriesFromHero(heroName, slotId) {
+  if (!assertCloudReady()) return;
+  const slotDef = Array.isArray(window.SLOT_DEFINITIONS)
+    ? window.SLOT_DEFINITIONS.find(d => (d.id || d.slotId) === slotId)
+    : null;
+  if (!slotDef || !heroName) return;
+  if (!confirm(`確定要撤銷【${heroName}】在「${slotDef.icon} ${slotDef.name}」系列的 GM 御賜獎章嗎？`)) return;
+
+  const gmOps = ensureGMOpsState();
+  if (gmOps.manualBadges?.[heroName]) {
+    (slotDef.badgeIds || []).forEach(id => {
+      delete gmOps.manualBadges[heroName][id];
+    });
+  }
+  await persistGMOpsToSupabase(`🧹 已撤銷【${heroName}】的「${slotDef.name}」御賜獎章`);
+}
+
+function renderGMExclusiveQuickCards() {
+  const containers = [
+    document.getElementById('gm-exclusive-quick-cards-fx'),
+    document.getElementById('gm-exclusive-quick-cards-badges')
+  ].filter(Boolean);
+  if (containers.length === 0) return;
+
+  if (typeof window.evaluateAllHeroesBadges === 'function') {
+    window.evaluateAllHeroesBadges(gameState);
+  }
+
+  const heroes = gameState?.heroes || [];
+  const selectedHero = document.getElementById('gm-grant-hero')?.value
+    || document.getElementById('gm-fx-hero')?.value
+    || (heroes[0]?.name || '');
+
+  const slots = (typeof window.getActiveBadgeSlots === 'function' ? window.getActiveBadgeSlots(gameState) : [])
+    .filter(s => s && s.gmExclusive);
+  const heroBadgesAll = gameState?.heroBadges || {};
+  const rarityMeta = window.BADGE_RARITY_META || {};
+
+  const seriesDescriptions = {
+    slot_gm_dev: '協助測試除錯、回報 Bug 與開發貢獻',
+    slot_gm_sponsor: '贊助伺服器、賽事獎金池或社群活動',
+    slot_gm_evangelist: '推坑新血入坑、協助新人綁定 Strava / App',
+    slot_gm_organizer: '主辦線下約跑、團練、聚餐或賽事應援',
+    slot_gm_planner: '提供玩法點子、資料片規則建議與平衡調校',
+    slot_gm_bard: '撰寫戰報、製作梗圖、炒熱公會與社群氣氛'
+  };
+
+  const heroOptionsHtml = heroes.map(h =>
+    `<option value="${escapeHtmlLite(h.name)}" ${h.name === selectedHero ? 'selected' : ''}>${escapeHtmlLite(h.name)} (${escapeHtmlLite(h.guild || '自由英雄')})</option>`
+  ).join('');
+
+  const cardsHtml = slots.map(slot => {
+    const slotId = slot.id || slot.slotId;
+    const slotNumStr = `#${String(slot.slotNum || 0).padStart(3, '0')}`;
+    const descText = seriesDescriptions[slotId] || 'GM 皇家御賜限定特殊貢獻獎章';
+    const tiers = slot.tiers || slot.badges || [];
+
+    // Find current highest tier for selectedHero
+    let heroHighestIdx = -1;
+    tiers.forEach((b, idx) => {
+      if (selectedHero && heroBadgesAll[selectedHero]?.[b.id]) heroHighestIdx = idx;
+    });
+
+    // Find all holders across server (show their highest tier in this series)
+    const seriesHolders = [];
+    Object.keys(heroBadgesAll).forEach(hName => {
+      let hi = -1;
+      tiers.forEach((b, idx) => {
+        if (heroBadgesAll[hName]?.[b.id]) hi = idx;
+      });
+      if (hi >= 0) {
+        seriesHolders.push({ heroName: hName, tierIdx: hi, badge: tiers[hi] });
+      }
+    });
+
+    const tierBtnsHtml = tiers.map((b, idx) => {
+      const rMeta = rarityMeta[b.rarity] || { label: '御賜', color: 'text-amber-200', border: 'border-amber-400/60', bg: 'bg-amber-950/60' };
+      const isCurrentHighest = idx === heroHighestIdx;
+      const isUnlockedSub = idx <= heroHighestIdx;
+      const activeRing = isCurrentHighest
+        ? 'ring-2 ring-amber-300 shadow-lg scale-[1.02]'
+        : (isUnlockedSub ? 'opacity-90 ring-1 ring-emerald-400/50' : 'opacity-80 hover:opacity-100');
+      return `
+        <button type="button"
+          onclick="quickGrantGMExclusiveBadge('${escapeHtmlLite(selectedHero)}', '${b.id}')"
+          class="w-full text-left px-2.5 py-1.5 rounded-xl border ${rMeta.border} ${rMeta.bg} ${activeRing} transition flex items-center justify-between gap-1.5 group"
+          title="點擊立即頒發【${escapeHtmlLite(slot.name)} Lv.${idx + 1}：${escapeHtmlLite(b.name)}】予 ${escapeHtmlLite(selectedHero)}（自動點亮 Lv.1~Lv.${idx + 1}）">
+          <div class="min-w-0 flex items-center gap-1.5">
+            <span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-black/40 ${rMeta.color}">Lv.${idx + 1}</span>
+            <span class="font-extrabold text-xs ${rMeta.color} truncate">${escapeHtmlLite(b.name)}</span>
+          </div>
+          <div class="flex items-center gap-1 flex-shrink-0">
+            <span class="text-[9px] px-1.5 py-0.2 rounded border ${rMeta.border} bg-black/30 ${rMeta.color} font-bold">${escapeHtmlLite(rMeta.label.replace(/^[^\s]+\s*/, ''))}</span>
+            ${isCurrentHighest
+              ? '<span class="text-[10px] font-black text-emerald-300 bg-emerald-950/90 border border-emerald-500/50 px-1.5 py-0.2 rounded">✓ 當前階級</span>'
+              : (isUnlockedSub
+                  ? '<span class="text-[10px] font-bold text-emerald-400/80">✓ 已含</span>'
+                  : '<span class="text-[10px] font-bold text-amber-300/80 group-hover:text-amber-200">⚡ 頒發</span>')}
+          </div>
+        </button>
+      `;
+    }).join('');
+
+    const holdersPillsHtml = seriesHolders.length === 0
+      ? '<span class="text-[10px] text-slate-500 italic">尚無英雄獲頒此系列</span>'
+      : seriesHolders.map(h => {
+          const rMeta = rarityMeta[h.badge.rarity] || { color: 'text-amber-300', border: 'border-amber-500/40', bg: 'bg-slate-900' };
+          return `
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${rMeta.border} ${rMeta.bg} ${rMeta.color}">
+              <span>${escapeHtmlLite(h.heroName)}</span>
+              <span class="opacity-85">Lv.${h.tierIdx + 1} ${escapeHtmlLite(h.badge.name)}</span>
+              <button type="button" onclick="revokeGMExclusiveSeriesFromHero('${escapeHtmlLite(h.heroName)}', '${slotId}')" class="ml-0.5 text-rose-300 hover:text-rose-200" title="撤銷此英雄的 ${escapeHtmlLite(slot.name)} 獎章">✖</button>
+            </span>
+          `;
+        }).join('');
+
+    return `
+      <div class="bg-slate-900/90 border border-amber-500/35 rounded-2xl p-3.5 flex flex-col justify-between space-y-2.5 shadow-lg">
+        <div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">${slot.icon}</span>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">${slotNumStr}</span>
+                  <span class="font-black text-sm text-white">${escapeHtmlLite(slot.name)}</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">${escapeHtmlLite(descText)}</p>
+              </div>
+            </div>
+            ${heroHighestIdx >= 0 ? `
+              <button type="button" onclick="revokeGMExclusiveSeriesFromHero('${escapeHtmlLite(selectedHero)}', '${slotId}')" class="px-2 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-700/50 text-[10px] font-bold whitespace-nowrap">
+                🧹 撤銷
+              </button>
+            ` : ''}
+          </div>
+
+          <div class="space-y-1.5 mt-3">
+            ${tierBtnsHtml}
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-800/90">
+          <div class="text-[10px] font-bold text-slate-400 mb-1">🏆 全服目前持有英雄：</div>
+          <div class="flex flex-wrap gap-1">
+            ${holdersPillsHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const fullHtml = `
+    <div class="bg-gradient-to-br from-slate-950 via-purple-950/25 to-amber-950/20 border-2 border-amber-500/50 rounded-2xl p-4 space-y-3.5 text-xs shadow-xl">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-500/25 pb-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">👑 GM 皇家御賜限定</span>
+            <h3 class="text-sm sm:text-base font-black text-amber-300">6 大榮譽系列 • 30 階一鍵授勳中心 (展櫃編號 #016 ~ #021)</h3>
+          </div>
+          <p class="text-[11px] text-slate-300 mt-1">
+            ✨ 選擇對象英雄後，直接點擊任一卡片的 <span class="text-cyan-300 font-bold">Lv.1~2 天星玉</span>、<span class="text-fuchsia-300 font-bold">Lv.3~4 帝王紫</span> 或 <span class="text-amber-300 font-bold">Lv.5 創世神冠</span> 即可一鍵頒發（自動解鎖前序階級），並立即顯示於<strong>前台排行榜英雄名牌旁、英雄彈窗、運動日誌與徽章展櫃頂部</strong>！
+          </p>
+        </div>
+        <div class="flex items-center gap-2 bg-slate-900/90 border border-amber-500/50 rounded-xl px-3 py-2 flex-shrink-0">
+          <label class="font-black text-amber-300 whitespace-nowrap">🎯 授勳對象：</label>
+          <select onchange="syncGMExclusiveHeroSelect(this.value)" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-extrabold outline-none focus:border-amber-400">
+            ${heroOptionsHtml}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        ${cardsHtml}
+      </div>
+    </div>
+  `;
+
+  containers.forEach(c => { c.innerHTML = fullHtml; });
+}
+
 
 
 // =====================================================================
@@ -2940,6 +3506,21 @@ function getMobileSyncConfig() {
   const gmOps = ensureGMOpsState();
   if (!gmOps.mobileSync || typeof gmOps.mobileSync !== 'object') gmOps.mobileSync = { enabled: false };
   return gmOps.mobileSync;
+}
+
+let mobilePanelsForcedOpen = false;
+
+function toggleMobilePanelsForceOpen(forceShow) {
+  if (typeof forceShow === 'boolean') {
+    mobilePanelsForcedOpen = forceShow;
+  } else {
+    const panels = document.getElementById('mobile-sync-panels');
+    mobilePanelsForcedOpen = panels ? panels.classList.contains('hidden') : !mobilePanelsForcedOpen;
+  }
+  renderMobileSyncSection();
+  if (mobilePanelsForcedOpen && typeof refreshMobilePanels === 'function') {
+    refreshMobilePanels();
+  }
 }
 
 function renderMobileSyncSection() {
@@ -2960,9 +3541,11 @@ function renderMobileSyncSection() {
     pill.className = `px-3 py-1 rounded-full text-[11px] font-bold border ${cfg.enabled ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-700'}`;
     pill.innerText = cfg.enabled ? '🟢 已啟用 (與 Strava 並行中)' : '⏸️ 未啟用 (維持 Strava 爬蟲)';
   }
+  const hasAnyMobileData = (gameState?.devices || []).length > 0 || (gameState?.dailyHealth || []).length > 0;
+  const showPanels = Boolean(cfg.enabled || mobilePanelsForcedOpen || hasAnyMobileData);
   const panels = document.getElementById('mobile-sync-panels');
-  if (panels) panels.classList.toggle('hidden', !cfg.enabled);
-  if (cfg.enabled) {
+  if (panels) panels.classList.toggle('hidden', !showPanels);
+  if (showPanels) {
     renderMobileDevices(gameState?.devices || []);
     renderMobileReconciliation();
   }

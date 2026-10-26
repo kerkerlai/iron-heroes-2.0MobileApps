@@ -649,12 +649,15 @@
       if (!cats.includes(ui.badgeCat)) ui.badgeCat = 'ALL';
       const list = ui.badgeCat === 'ALL' ? allSlots : allSlots.filter(x => x.cat === ui.badgeCat);
       const pct = prog.totalSlots ? (prog.unlockedSlots / prog.totalSlots * 100) : 0;
+      const gmUnlocked = allSlots.filter(x => x.gmExclusive && x.isUnlocked);
+      const gmBanner = gmUnlocked.length ? `<div class="ia-card" style="border-color:rgba(250,204,21,.55);background:linear-gradient(135deg,rgba(24,24,27,.95),rgba(30,27,75,.85))"><div class="ia-row-between"><b class="ia-amber">👑 GM 皇家御賜榮譽勳章 (${gmUnlocked.length})</b><small class="ia-muted">點擊查看詳情</small></div><div class="ia-badgegrid" style="margin-top:8px">${gmUnlocked.map(x => badgeIcon(x, true, `IronAppUI.inspectBadge(${esc(JSON.stringify(x.id))})`, name)).join('')}</div></div>` : '';
       body = `
         <div class="ia-card">
           <div class="ia-row-between"><b>🎖️ 展櫃點亮 ${prog.unlockedSlots} / ${prog.totalSlots} 格</b><b class="ia-amber">累計 ${prog.unlockedTiers} / ${prog.totalTiers} 階</b></div>
           <div class="ia-bar ia-bar-amber"><i style="width:${pct}%"></i></div>
           <div class="ia-muted ia-small" style="margin-top:6px">💡 點擊或長按任一徽章可彈出視窗查看條件與升框進度（按住時手指移開不消失）；外框依序升級：<b style="color:#fdba74">銅</b> ➔ <b style="color:#e2e8f0">銀</b> ➔ <b style="color:#fcd34d">金</b> ➔ <b style="color:#d8b4fe">紫金</b> ➔ <b style="color:#fda4af">彩</b>！</div>
         </div>
+        ${gmBanner}
         <div id="ia-badge-cat-scroll" class="ia-hscroll ia-chips">${cats.map(c => { const catSlots = c === 'ALL' ? allSlots : allSlots.filter(x => x.cat === c); const tot = catSlots.length; const un = catSlots.filter(x => x.isUnlocked).length; return `<button type="button" class="ia-chip${ui.badgeCat === c ? ' ia-chip-on' : ''}" onclick="IronAppUI.setBadgeCat(${esc(JSON.stringify(c))})">${c === 'ALL' ? '🌟 全部' : esc(c)} ${un}/${tot}</button>`; }).join('')}</div>
         <div id="ia-badge-inspector">${ui.badgeInspect ? buildBadgeInspectorHtml(name, ui.badgeInspect) : ''}</div>
         <div class="ia-badgegrid">${list.map(x => badgeIcon(x, x.isUnlocked, `IronAppUI.inspectBadge(${esc(JSON.stringify(x.id))})`, name)).join('')}</div>`;

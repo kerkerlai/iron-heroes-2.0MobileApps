@@ -127,14 +127,28 @@ function renderUnifiedAvatarHtml(heroName, sizeClass = 'uhc-avatar', roundedClas
     </div>`;
 }
 
-/** GM 自訂稱號 / 特效稱號小標籤 (跳脫版) */
+/** GM 自訂稱號 / 特效稱號小標籤 + GM 皇家御賜限定榮譽標籤 (跳脫版) */
 function renderUnifiedTitlePill(heroName) {
+  const parts = [];
   const fxInfo = uhcHeroFx(heroName);
-  if (!fxInfo) return '';
-  if (!fxInfo.customTitle && (!fxInfo.fx || fxInfo.fx === 'none')) return '';
-  const title = fxInfo.customTitle || fxInfo.preset?.defaultTitle;
-  if (!title) return '';
-  return `<span class="uhc-pill ${fxInfo.preset?.pillClass || ''}">${escapeHtml(title)}</span>`;
+  if (fxInfo && (fxInfo.customTitle || (fxInfo.fx && fxInfo.fx !== 'none'))) {
+    const title = fxInfo.customTitle || fxInfo.preset?.defaultTitle;
+    if (title) {
+      parts.push(`<span class="uhc-pill ${fxInfo.preset?.pillClass || ''}">${escapeHtml(title)}</span>`);
+    }
+  }
+  if (!uhcFrozen && typeof window.getHeroGmExclusiveHonors === 'function') {
+    const gmHonors = window.getHeroGmExclusiveHonors(heroName);
+    gmHonors.forEach(h => {
+      const pillTone = h.rarity === 'celestial'
+        ? 'bg-gradient-to-r from-cyan-950 via-indigo-950 to-sky-900 text-cyan-200 border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.45)]'
+        : (h.rarity === 'sovereign'
+          ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-amber-950 text-emerald-200 border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.45)]'
+          : 'bg-zinc-950 text-yellow-300 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.45)]');
+      parts.push(`<span class="uhc-pill ${pillTone}" title="👑 GM 皇家御賜【${escapeHtml(h.displayName)}】(Lv.${h.level}/${h.totalTiers})&#10;${escapeHtml(h.condition)}">${escapeHtml(h.icon)} ${escapeHtml(h.tierName)}</span>`);
+    });
+  }
+  return parts.join('');
 }
 
 /** 公會標籤 (公會徽記 + 公會色) */
@@ -1752,7 +1766,29 @@ function renderHeroBadgesWall(heroName) {
 
   const defaultInspected = (inspectedBadgeId && filteredSlots.some(s => s.id === inspectedBadgeId || s.tiers.some(t => t.id === inspectedBadgeId)))
     ? (window.findBadgeSlot(inspectedBadgeId, gameState, heroName)?.id || inspectedBadgeId)
-    : ((filteredSlots.find(s => s.isUnlocked) || filteredSlots[0])?.id || null);
+    : ((filteredSlots.find(s => s.gmExclusive && s.isUnlocked) || filteredSlots.find(s => s.isUnlocked) || filteredSlots[0])?.id || null);
+
+  const gmUnlockedSlots = allSlots.filter(s => s.gmExclusive && s.isUnlocked);
+  const gmHighlightBannerHtml = gmUnlockedSlots.length > 0 ? `
+    <div class="bg-gradient-to-r from-amber-950/60 via-slate-950/90 to-cyan-950/50 border border-amber-400/50 rounded-2xl p-3 space-y-2 shadow-[0_0_24px_rgba(251,191,36,0.18)]">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-black text-amber-300 flex items-center gap-1.5">👑 GM 皇家御賜榮譽勳章 (${gmUnlockedSlots.length} 枚尊榮授勳)</span>
+        <span class="text-[10px] text-slate-400">點擊勳章可檢視進階詳情</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${gmUnlockedSlots.map(s => {
+          const rMeta = rarityMeta[s.rarity] || rarityMeta.imperial || {};
+          return `
+            <button type="button" onclick="inspectBadgeOnWall(${jsArg(heroName)}, ${jsArg(s.id)})" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ${rMeta.border || ''} ${rMeta.glow || ''} text-xs font-black transition transform hover:scale-105">
+              <span class="text-lg">${s.icon}</span>
+              <span>${escapeHtml(s.displayName)}</span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-mono border ${rMeta.tagClass || ''}">#${String(s.slotNum).padStart(3, '0')} · ${s.isMaxed ? '★MAX' : `Lv.${s.unlockedCount}/${s.totalTiers}`}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  ` : '';
 
   const prevCatScroll = document.getElementById('web-badge-cat-scroll')?.scrollLeft ?? null;
 
@@ -1794,6 +1830,8 @@ function renderHeroBadgesWall(heroName) {
         </div>
       </div>
     </div>
+
+    ${gmHighlightBannerHtml}
 
     <!-- 分類篩選器 -->
     <div id="web-badge-cat-scroll" class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px]">

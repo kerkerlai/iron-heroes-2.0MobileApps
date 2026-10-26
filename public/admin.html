@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠️</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="/css/rpg-theme.css">
+  <link rel="stylesheet" href="/css/rpg-theme.css?v=r25">
   <script>
     tailwind.config = {
       theme: {
@@ -27,1006 +27,1172 @@
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-900 flex flex-col selection:bg-orange-500 selection:text-white lightning-bg">
 
-  <!-- GM Header (Sunny Athletic Control Header) -->
+  <!-- GM Header (與前台 index.html 同規格之頂部導覽列 + 工作區分頁切換器) -->
   <header class="sticky top-0 z-40 px-3 sm:px-4 py-2.5 sm:py-3">
     <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
-      <div class="flex items-center space-x-2.5 sm:space-x-3">
-        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-[#FC4C02] to-amber-500 flex items-center justify-center text-lg sm:text-xl shadow-md shadow-orange-500/20 text-white flex-shrink-0">
+      <!-- 1. Branding (Left) -->
+      <div class="order-1 flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+        <div onclick="switchGMWorkspaceTab('heroes')" class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-[#FC4C02] to-amber-500 flex items-center justify-center text-lg sm:text-2xl shadow-md shadow-orange-500/25 ring-1 ring-orange-400/40 flex-shrink-0 cursor-pointer text-white">
           ☀️
         </div>
-        <div>
-          <h1 class="text-sm sm:text-lg font-black text-white font-title tracking-tight">遊戲大師控制台 (GM Control Panel)</h1>
-          <p class="hidden sm:block text-xs font-medium text-slate-400">Kerker's 20% project • 陽光運動風賽事管理、限時活動與百大徽章中心</p>
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1 sm:gap-1.5">
+            <h1 onclick="switchGMWorkspaceTab('heroes')" class="text-sm sm:text-lg font-black text-white font-title tracking-tight cursor-pointer whitespace-nowrap">GM 大師控制台</h1>
+            <span id="gm-header-mode-pill" onclick="switchGMWorkspaceTab('season')" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold bg-orange-500/15 text-amber-400 border border-amber-500/40 truncate max-w-[190px] sm:max-w-none cursor-pointer hover:bg-orange-500/25 transition" title="點擊前往賽季與資料片設定">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#FC4C02] mr-1 animate-pulse flex-shrink-0"></span>讀取資料片中…
+            </span>
+          </div>
+          <p class="hidden sm:block text-[11px] font-medium text-slate-400 truncate">Kerker's 20% project • 使用者管理、運動對帳、榮譽授勳與賽季指揮中心</p>
         </div>
       </div>
 
-      <div class="w-full sm:w-auto grid grid-cols-4 sm:flex items-center gap-1.5 sm:gap-2">
-        <button onclick="logoutGM()" class="justify-center bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/40 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap">
-          <i data-lucide="log-out" class="w-3.5 h-3.5 text-rose-400 flex-shrink-0"></i>
-          <span>登出</span>
-        </button>
-
-        <button onclick="exportFullBackupJSON()" class="justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap">
+      <!-- 2. Right Action Buttons -->
+      <div class="order-2 xl:order-3 flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <button onclick="exportFullBackupJSON()" class="justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap" title="匯出完整雲端備份 JSON">
           <i data-lucide="download" class="w-3.5 h-3.5 text-amber-400 flex-shrink-0"></i>
-          <span>匯出備份</span>
+          <span class="hidden md:inline">匯出備份</span>
         </button>
 
-        <label class="justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition cursor-pointer whitespace-nowrap">
+        <label class="justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition cursor-pointer whitespace-nowrap" title="匯入備份檔還原">
           <i data-lucide="upload" class="w-3.5 h-3.5 text-amber-400 flex-shrink-0"></i>
-          <span>匯入還原</span>
+          <span class="hidden md:inline">匯入還原</span>
           <input type="file" id="backup-file-input" accept=".json" class="hidden" onchange="importFullBackupJSON(event)">
         </label>
 
-        <a href="/" target="_blank" class="justify-center bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 px-2 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap">
+        <a href="/" target="_blank" class="justify-center bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap">
           <i data-lucide="external-link" class="w-3.5 h-3.5 flex-shrink-0"></i>
-          <span class="sm:hidden">前台看板</span>
-          <span class="hidden sm:inline">開啟前台看板</span>
+          <span>前台看板</span>
         </a>
+
+        <button onclick="logoutGM()" class="justify-center bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/40 px-2 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold flex items-center space-x-1 transition whitespace-nowrap" title="安全登出">
+          <i data-lucide="log-out" class="w-3.5 h-3.5 text-rose-400 flex-shrink-0"></i>
+          <span class="hidden sm:inline">登出</span>
+        </button>
+      </div>
+
+      <!-- 3. Navigation Tabs Switcher (與前台 index.html 同規格之膠囊導覽列) -->
+      <div id="gm-main-nav-tabs" class="order-3 xl:order-2 w-full xl:w-auto grid grid-cols-3 sm:grid-cols-6 items-center bg-slate-800 p-1 rounded-xl border border-slate-700 gap-1 text-[11px] sm:text-xs">
+        <button type="button" data-gm-tab="heroes" onclick="switchGMWorkspaceTab('heroes')" class="gm-workspace-tab-btn justify-center px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg font-extrabold bg-gradient-to-r from-[#FC4C02] to-amber-500 text-white shadow transition whitespace-nowrap flex items-center gap-1">
+          <span>👥</span><span>冒險者與公會</span>
+        </button>
+        <button type="button" data-gm-tab="activities" onclick="switchGMWorkspaceTab('activities')" class="gm-workspace-tab-btn justify-center px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg font-extrabold text-slate-300 hover:text-white transition whitespace-nowrap flex items-center gap-1">
+          <span>📋</span><span>運動紀錄與補登</span>
+        </button>
+        <button type="button" data-gm-tab="honors" onclick="switchGMWorkspaceTab('honors')" class="gm-workspace-tab-btn justify-center px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg font-extrabold text-slate-300 hover:text-white transition whitespace-nowrap flex items-center gap-1">
+          <span>👑</span><span>授勳・特效・活動</span>
+        </button>
+        <button type="button" data-gm-tab="mobile" onclick="switchGMWorkspaceTab('mobile')" class="gm-workspace-tab-btn justify-center px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg font-extrabold text-slate-300 hover:text-white transition whitespace-nowrap flex items-center gap-1">
+          <span>📱</span><span>手機同步與健康</span>
+        </button>
+        <button type="button" data-gm-tab="season" onclick="switchGMWorkspaceTab('season')" class="gm-workspace-tab-btn justify-center px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg font-extrabold text-slate-300 hover:text-white transition whitespace-nowrap flex items-center gap-1">
+          <span>🎮</span><span>賽季與資料片</span>
+        </button>
+        <button type="button" data-gm-tab="all" onclick="switchGMWorkspaceTab('all')" class="gm-workspace-tab-btn justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg font-extrabold text-slate-400 hover:text-white transition whitespace-nowrap flex items-center gap-1" title="展開所有後台模組於同一頁面">
+          <span>♾️</span><span>全部展開</span>
+        </button>
       </div>
     </div>
   </header>
 
   <main class="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-    <!-- Global Expansion Pack & Season Range Settings -->
-    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="sliders" class="w-5 h-5 text-amber-400"></i>
-          <h2 class="text-base font-bold text-white">⚙️ 當前啟用的資料片與賽季時間</h2>
+    <!-- ===================================================================== -->
+    <!-- 📊 GM 戰情總覽 KPI 狀態列 (點擊卡片可一鍵切換對應工作區，與前台看板視覺同規) -->
+    <!-- ===================================================================== -->
+    <div id="gm-kpi-summary-bar" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <button type="button" onclick="switchGMWorkspaceTab('heroes')" class="text-left bg-slate-900/90 hover:bg-slate-900 border border-cyan-500/40 rounded-2xl p-3.5 sm:p-4 shadow-lg transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-cyan-400">👥 冒險者與公會名冊</span>
+          <span class="text-xs text-slate-400 group-hover:text-cyan-300 transition">管理人員 →</span>
         </div>
-        <span id="active-mode-helper-tag" class="text-xs font-bold text-amber-400">
-          當前模式：🏆 資料片一：經典競技模式
-        </span>
-      </div>
+        <div id="gm-kpi-heroes-main" class="text-lg sm:text-xl font-black text-white font-mono mt-1">— 位英雄</div>
+        <div id="gm-kpi-heroes-sub" class="text-[11px] text-slate-400 mt-0.5 truncate">載入公會與綁定狀態中…</div>
+      </button>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-xs">
-        <!-- Duration Rules -->
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">⏱️ 有效運動門檻 (分鐘)</label>
-          <input type="number" step="1" id="cfg-global-min-dur" value="30" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 text-base font-bold">
+      <button type="button" onclick="switchGMWorkspaceTab('activities')" class="text-left bg-slate-900/90 hover:bg-slate-900 border border-amber-500/40 rounded-2xl p-3.5 sm:p-4 shadow-lg transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-amber-400">📋 運動紀錄與補登</span>
+          <span class="text-xs text-slate-400 group-hover:text-amber-300 transition">查紀錄/補登 →</span>
         </div>
-        <!-- 3 Expansion Packs Switcher -->
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">選擇啟用的資料片 (Expansion Pack) *</label>
-          <select id="cfg-active-mode" onchange="onExpansionModeChanged()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-amber-400 font-bold outline-none focus:border-amber-500">
-            <option value="classic">🏆 資料片一：經典競技模式 (公會積分爭霸)</option>
-            <option value="rpg_talent">⚔️ 資料片二：RPG 職業天賦模式 (五大職業與天賦羈絆)</option>
-            <option value="world_boss">🐉 資料片三：世界 Boss 討伐戰 (PvE 全服合作打王)</option>
-            <option value="faction_war">⚔️ 資料片四：雙城激戰 (陣營大逃殺)</option>
-            <option value="survival">☠️ 資料片五：飢餓法則 (生存淘汰)</option>
-            <option value="base_builder">🏰 資料片六：鋼鐵要塞 (共同建設)</option>
-            <option value="bingo">🧩 資料片七：戰神拼圖 (全服解鎖)</option>
-            <optgroup label="📱 手機同步資料片 (需先開啟手機同步 App)">
-              <option value="expedition" data-mobile="1">🗺️ 資料片八：萬步遠征 (步數+訓練里程)</option>
-              <option value="dream" data-mobile="1">🌙 資料片九：夢境守護者 (睡眠+作息+運動)</option>
-              <option value="flame" data-mobile="1">🕯️ 資料片十：不滅之火 (每日三道火)</option>
-              <option value="monastery" data-mobile="1">🧘 資料片十一：鐵人修行院 (跟自己比)</option>
-            </optgroup>
-          </select>
-        </div>
+        <div id="gm-kpi-acts-main" class="text-lg sm:text-xl font-black text-white font-mono mt-1">— 筆紀錄</div>
+        <div id="gm-kpi-acts-sub" class="text-[11px] text-slate-400 mt-0.5 truncate">自動異常與重複偵測中…</div>
+      </button>
 
-        <!-- Season Start Date -->
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">📅 賽季開始日期 *</label>
-          <div class="relative flex items-center">
-            <input type="date" id="cfg-season-start" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" required>
-          </div>
+      <button type="button" onclick="switchGMWorkspaceTab('honors')" class="text-left bg-slate-900/90 hover:bg-slate-900 border border-purple-500/40 rounded-2xl p-3.5 sm:p-4 shadow-lg transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-purple-300">👑 授勳・特效・限時活動</span>
+          <span class="text-xs text-slate-400 group-hover:text-purple-200 transition">頒發獎章 →</span>
         </div>
+        <div id="gm-kpi-honors-main" class="text-lg sm:text-xl font-black text-white font-mono mt-1">6 大御賜系列</div>
+        <div id="gm-kpi-honors-sub" class="text-[11px] text-slate-400 mt-0.5 truncate">頭像特效與全服徽章圖鑑</div>
+      </button>
 
-        <!-- Season End Date -->
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">📅 賽季結束日期 *</label>
-          <div class="relative flex items-center">
-            <input type="date" id="cfg-season-end" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" required>
-          </div>
+      <button type="button" onclick="switchGMWorkspaceTab('season')" class="text-left bg-slate-900/90 hover:bg-slate-900 border border-emerald-500/40 rounded-2xl p-3.5 sm:p-4 shadow-lg transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-emerald-400">🎮 當前賽季與資料片</span>
+          <span class="text-xs text-slate-400 group-hover:text-emerald-300 transition">調整規則 →</span>
         </div>
-
-        <!-- Badge Calculation Start Date -->
-        <div>
-          <label class="font-bold text-amber-400 block mb-1">🎖️ 徽章計算開始時間 (選填)</label>
-          <div class="relative flex items-center">
-            <input type="date" id="cfg-badge-start-date" onclick="try{this.showPicker()}catch(e){}" oninput="const el=document.getElementById('gm-badge-start-date'); if(el) el.value=this.value;" class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" title="設定後，僅在此日期(含)之後的運動才算入徽章累計；留空代表採計全部歷史">
-          </div>
-        </div>
-      </div>
-
-      <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-800/80">
-        <button onclick="saveGlobalGameSettings()" class="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
-          <i data-lucide="save" class="w-4 h-4"></i>
-          <span>儲存資料片模式與賽季時間</span>
-        </button>
-      </div>
+        <div id="gm-kpi-season-main" class="text-sm sm:text-base font-black text-white mt-1 truncate">讀取中…</div>
+        <div id="gm-kpi-season-sub" class="text-[11px] text-slate-400 font-mono mt-0.5 truncate">—</div>
+      </button>
     </div>
 
     <!-- ===================================================================== -->
-    <!-- NEW: GM 現場活動、英雄頭像特效與 100 徽章圖鑑指揮中心                     -->
+    <!-- WORKSPACE TAB 1: 👥 冒險者與公會管理中心 (預設首頁，集中所有使用者與公會資料) -->
     <!-- ===================================================================== -->
-    <div class="bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-6">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center space-x-2.5">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 flex items-center justify-center text-slate-950 font-black text-lg shadow">
-            🎉
-          </div>
-          <div>
-            <h2 class="text-base font-bold text-white">GM 現場小活動、英雄頭像特效與全服 100 徽章圖鑑中心</h2>
-            <p class="text-xs text-slate-400">所有特效與限時加成皆採用「動態倍率渲染層」，100% 不污染底層原始熱量與心率數據，且支援事後回溯修改與預告廣播</p>
-          </div>
+    <section id="gm-workspace-heroes" class="space-y-6">
+
+      <!-- 區塊快速定位列 -->
+      <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-2.5 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="px-2.5 py-0.5 rounded-full font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">👥 使用者與公會管理中心</span>
+          <span class="text-slate-400 hidden sm:inline">在此直接管理所有參賽英雄資料、快速跳轉查看其運動/手機健康明細、或一鍵頒發御賜勳章與編輯公會徽記</span>
         </div>
-        <div class="w-full lg:w-auto grid grid-cols-3 sm:flex items-center gap-1.5 text-[11px] sm:text-xs">
-          <button type="button" id="gm-ops-tab-events" onclick="switchGMOpsSubTab('events')" class="justify-center px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl font-bold bg-amber-500 text-slate-950 transition whitespace-nowrap flex items-center">
-            <span class="sm:hidden">⚡ 限時活動</span>
-            <span class="hidden sm:inline">⚡ 限時積分加倍活動</span>
-          </button>
-          <button type="button" id="gm-ops-tab-fx" onclick="switchGMOpsSubTab('fx')" class="justify-center px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl font-bold bg-slate-800 text-slate-300 hover:text-white transition whitespace-nowrap flex items-center">
-            <span class="sm:hidden">🎨 頭像特效</span>
-            <span class="hidden sm:inline">🎨 英雄頭像特效與稱號</span>
-          </button>
-          <button type="button" id="gm-ops-tab-badges" onclick="switchGMOpsSubTab('badges')" class="justify-center px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl font-bold bg-slate-800 text-slate-300 hover:text-white transition whitespace-nowrap flex items-center">
-            <span class="sm:hidden">🎖️ 100 徽章圖鑑</span>
-            <span class="hidden sm:inline">🎖️ 全服 100 徽章圖鑑 (GM 專屬)</span>
-          </button>
+        <div class="flex items-center gap-1.5">
+          <button type="button" onclick="document.getElementById('hero-roster-card')?.scrollIntoView({behavior:'smooth',block:'start'})" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold border border-slate-700 transition">👤 冒險者名冊</button>
+          <button type="button" onclick="document.getElementById('guild-emblem-editor-card')?.scrollIntoView({behavior:'smooth',block:'start'})" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold border border-slate-700 transition">🛡️ 公會徽章編輯器</button>
         </div>
       </div>
 
-      <!-- SUB-PANEL 1: ⚡ 限時積分加倍活動日曆 (支援預告、回溯新增、隨時修改 % 與刪除) -->
-      <div id="gm-ops-panel-events" class="space-y-4">
-        <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
-          <div class="flex items-center justify-between">
-            <span id="gm-event-form-mode-label" class="font-bold text-amber-400 flex items-center space-x-1.5">
-              <span>⚡ 新增 / 排程限時積分加倍活動 (全資料片通用)</span>
-            </span>
-            <button type="button" id="btn-cancel-gm-event-edit" onclick="resetGMEventForm()" class="hidden text-xs text-rose-400 hover:text-rose-300 font-bold">
-              ✖ 取消編輯模式
-            </button>
-          </div>
-
-          <input type="hidden" id="gm-event-edit-id" value="">
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">活動主題特效 *</label>
-              <select id="gm-event-theme" onchange="onGMEventThemeSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-amber-500">
-                <option value="typhoon">🌪️ 颱風假防颱特訓</option>
-                <option value="rain">🌧️ 豪雨特報乘風破浪</option>
-                <option value="sunny">☀️ 烈日高溫戰神獎勵</option>
-                <option value="weekend">🎉 週末狂熱雙倍衝刺</option>
-                <option value="birthday">🎂 英雄壽星同慶日</option>
-                <option value="custom">⚡ GM 神秘突襲加倍</option>
-              </select>
+      <!-- Hero Roster Full Web GM Management (100% Supabase 雲端資料庫直連) -->
+      <div id="hero-roster-card" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-lg shadow">
+              👥
             </div>
-
             <div>
-              <label class="font-bold text-slate-300 block mb-1">活動公告名稱 *</label>
-              <input type="text" id="gm-event-title" placeholder="例如：10/23 颱風假防颱特訓" value="颱風假防颱特訓" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500">
-            </div>
-
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">開始日期 (支援未來預告/過去回溯) *</label>
-              <input type="date" id="gm-event-start" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
-            </div>
-
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">結束日期 (單日活動請填同日) *</label>
-              <input type="date" id="gm-event-end" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
-            </div>
-
-            <div>
-              <label class="font-bold text-amber-400 block mb-1">全資料片積分加成 (%) *</label>
-              <div class="relative flex items-center">
-                <input type="number" step="1" min="1" max="500" id="gm-event-pct" value="20" class="w-full bg-slate-900 border border-amber-500/60 rounded-xl px-3 py-2 text-amber-300 font-mono font-black text-sm outline-none focus:border-amber-400 pr-8">
-                <span class="absolute right-3 text-amber-400 font-bold">%</span>
+              <div class="flex items-center gap-2">
+                <h2 id="hero-roster-title" class="text-base font-bold text-white">👥 冒險者名冊與小隊天賦管理 (Supabase 雲端直連)</h2>
+                <span id="admin-hero-count-pill" class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40">共 0 位</span>
               </div>
+              <p class="text-xs text-slate-400 mt-0.5">直接新增、修改或刪除參賽者；亦可從右側「⚡ 快速管理」一鍵查看該玩家的運動紀錄、手機數據或頒發榮譽勳章。</p>
             </div>
           </div>
-
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <input type="text" id="gm-event-note" placeholder="選填廣播副標題，例如：颱風天在家超慢跑或核心訓練滿30分鐘，當日生存補血與全模式積分全面 +20%！" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500">
-            <button type="button" onclick="saveGMEvent()" class="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md whitespace-nowrap">
-              💾 儲存 / 發布限時活動
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="btn-random-classes" onclick="randomizeAllHeroClasses()" class="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5" title="以洗牌演算法平衡隨機分配五大職業">
+              <i data-lucide="dices" class="w-4 h-4"></i>
+              <span>🎲 隨機抽籤分配全體職業</span>
+            </button>
+            <button onclick="openAddHeroModal()" class="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
+              <i data-lucide="user-plus" class="w-4 h-4"></i>
+              <span>➕ 新增冒險者</span>
             </button>
           </div>
         </div>
 
-        <!-- 活動歷史與排程紀錄表 -->
+        <!-- 🔍 冒險者快速搜尋與公會篩選工具列 -->
+        <div class="flex flex-wrap items-center gap-2.5 bg-slate-950/70 border border-slate-800 rounded-2xl p-3 text-xs">
+          <div class="flex-1 min-w-[220px] flex items-center gap-2">
+            <span class="text-slate-400 font-bold">🔍 搜尋玩家：</span>
+            <input type="text" id="admin-hero-search" oninput="renderHeroTable()" placeholder="輸入英雄姓名、公會、職業、稱號或 Strava ID..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-cyan-500">
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400 font-bold">🛡️ 公會篩選：</span>
+            <select id="admin-hero-guild-filter" onchange="renderHeroTable()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-bold outline-none focus:border-cyan-500">
+              <option value="">全部公會</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400 font-bold">📱 綁定狀態：</span>
+            <select id="admin-hero-bind-filter" onchange="renderHeroTable()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-cyan-500">
+              <option value="">全部狀態</option>
+              <option value="MOBILE">📱 已綁定手機 App</option>
+              <option value="STRAVA">🟠 已綁定 Strava ID</option>
+              <option value="HONOR">👑 持有御賜勳章/特效</option>
+            </select>
+          </div>
+        </div>
+
         <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-xs">
               <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
                 <tr>
-                  <th class="p-3">📡 狀態</th>
-                  <th class="p-3">🎉 活動名稱與廣播備註</th>
-                  <th class="p-3">📅 生效日期區間</th>
-                  <th class="p-3">⚡ 分數加成 %</th>
-                  <th class="p-3">🏃 受惠打卡數</th>
-                  <th class="p-3 text-right">⚙️ 回溯修改 / 刪除</th>
+                  <th class="p-3">👤 冒險者與榮譽頭銜</th>
+                  <th class="p-3">🛡️ 所屬公會</th>
+                  <th class="p-3" id="th-hero-class-col">⚔️ RPG 天賦職業</th>
+                  <th class="p-3">🎂 年齡 / 💓 最大心率</th>
+                  <th class="p-3">📊 打卡 / 徽章 / 裝置</th>
+                  <th class="p-3">🔗 Strava ID</th>
+                  <th class="p-3 text-right">⚡ 快速管理與資料跳轉</th>
                 </tr>
               </thead>
-              <tbody id="admin-gm-events-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tbody id="admin-heroes-table-body" class="divide-y divide-slate-800/60 text-slate-300">
               </tbody>
             </table>
           </div>
         </div>
-      </div>
 
-      <!-- SUB-PANEL 2: 🎨 英雄頭像特效與自訂稱號管理 -->
-      <div id="gm-ops-panel-fx" class="hidden space-y-4">
-        <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
-          <span class="font-bold text-cyan-400 block">🎨 為英雄掛載專屬頭像氣候特效 / 壽星金框與小稱號</span>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+        <!-- 🛡️ 公會徽章圖形庫與代表色管理 (前/後端/手機 App 自動同步) -->
+        <div id="guild-emblem-editor-card" class="bg-slate-950/75 border border-amber-500/40 rounded-2xl p-4 space-y-3 text-xs">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
             <div>
-              <label class="font-bold text-slate-300 block mb-1">選擇英雄 *</label>
-              <select id="gm-fx-hero" onchange="onGMFxHeroSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-cyan-500">
-              </select>
+              <span class="font-bold text-amber-400 flex items-center gap-1.5 text-sm">🛡️ 公會徽章圖形庫與代表色編輯器 (全平台即時同步)</span>
+              <p class="text-[11px] text-slate-400 mt-0.5">點擊下方既有公會卡片或從圖形庫挑選徽章與代表色，儲存後網頁前台、GM 後台與手機 App 所有資料片的公會徽記將自動同步更新！</p>
             </div>
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">頭像特效款式 *</label>
-              <select id="gm-fx-type" onchange="onGMFxTypeSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-amber-300 font-bold outline-none focus:border-cyan-500">
-                <option value="none">✨ 無特效 (一般狀態)</option>
-                <option value="birthday">🎂 壽星慶典金框 (彩帶禮花)</option>
-                <option value="sunny">☀️ 大太陽烈日戰神 (金陽日冕)</option>
-                <option value="rainy">🌧️ 風雨行者淋雨特效 (霓虹雨滴)</option>
-                <option value="aura">🔥 超級賽亞人爆氣 (紫金鬥氣)</option>
-              </select>
-            </div>
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">自訂頭銜小稱號 (顯示於名字旁)</label>
-              <input type="text" id="gm-fx-title" placeholder="例如：🎂 生日快樂壽星" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-500">
-            </div>
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">特效到期日 (空白=永久生效)</label>
-              <input type="date" id="gm-fx-expires" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-cyan-500 cursor-pointer">
-            </div>
-            <div class="flex space-x-2">
-              <button type="button" onclick="saveGMHeroFx()" class="flex-1 py-2 px-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl transition shadow-md">
-                ✨ 儲存特效
-              </button>
-              <button type="button" onclick="clearGMHeroFx()" class="py-2 px-3 bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 rounded-xl font-bold transition" title="清除該英雄特效">
-                🧹
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div id="admin-gm-fx-active-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-        </div>
-      </div>
-
-      <!-- SUB-PANEL 3: 🎖️ GM 專屬全服 100 徽章圖鑑與蒐集條件總覽 (含開始時間設定 & 手動授勳) -->
-      <div id="gm-ops-panel-badges" class="hidden space-y-4">
-        <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span class="font-bold text-amber-400 block">🎖️ GM 專屬全服徽章總圖鑑 (共 <span id="gm-badge-total-count">100</span> 枚，支援無縫擴充至 500 枚)</span>
-              <p class="text-[11px] text-slate-400 mt-0.5">
-                🔒 前台已啟動「迷霧探索保護」：玩家在前台不會看到未解鎖徽章的名稱與條件（僅能透過偷看別人的已解鎖徽章推敲線索）。GM 在此可設定「徽章計算開始時間」、查閱所有條件與達成名單，或手動頒發徽章。
-              </p>
-            </div>
-            <span id="gm-badge-start-status-text" class="px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">
-              📅 徽章起算範圍：採計全部歷史紀錄
-            </span>
+            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">✨ 內建 60+ 圖形庫 + 自訂符號</span>
           </div>
 
-          <!-- ⏰ 徽章計算開始時間設定列 -->
-          <div class="bg-slate-900/90 border border-amber-500/40 rounded-xl p-3.5 space-y-2.5">
-            <div class="flex flex-wrap items-center justify-between gap-2">
+          <!-- 目前所有公會總覽卡片 (點選即載入編輯) -->
+          <div>
+            <label class="font-bold text-slate-300 block mb-1.5">📌 點選要編輯的公會（或於下方選擇）：</label>
+            <div id="gm-guild-overview-cards" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"></div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start pt-2 border-t border-slate-800/70">
+            <!-- 左側：選擇公會 + 目前預覽 + 自訂輸入 + 儲存 -->
+            <div class="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-3">
               <div>
-                <span class="font-bold text-amber-400 flex items-center space-x-1.5">
-                  <span>⏰ 徽章累計「開始時間」設定 (在此日期之後的運動才開始計算徽章)</span>
-                </span>
-                <p class="text-[11px] text-slate-400 mt-0.5">設定開始時間後，早於該日期的舊運動紀錄將不列入徽章條件計算，讓所有英雄從指定日期起重新展開徽章蒐集挑戰！</p>
+                <label class="font-bold text-slate-300 block mb-1">1️⃣ 目標公會</label>
+                <select id="gm-guild-select" onchange="onGMGuildSelectChange()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-amber-500"></select>
               </div>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button type="button" onclick="setBadgeStartToSeasonStart()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-[11px] transition">
-                  📅 同步本賽季開始日
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="font-bold text-slate-300 block mb-1">2️⃣ 公會徽章圖案</label>
+                  <input type="text" id="gm-guild-badge-input" maxlength="6" oninput="updateGMGuildPreview()" placeholder="🛡️" class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2 text-center text-xl outline-none focus:border-amber-400">
+                </div>
+                <div>
+                  <label class="font-bold text-slate-300 block mb-1">3️⃣ 公會代表色</label>
+                  <div class="flex items-center gap-1.5">
+                    <input type="color" id="gm-guild-color-picker" oninput="onGMGuildColorPickerChange(this.value)" value="#ec4899" class="w-9 h-9 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer p-0.5 shrink-0">
+                    <input type="text" id="gm-guild-color-input" oninput="onGMGuildColorTextChange(this.value)" value="#ec4899" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-2 text-white font-mono text-[11px] outline-none focus:border-amber-500">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 快速色票 -->
+              <div>
+                <span class="text-[10px] text-slate-400 block mb-1">🎨 快速主題色票：</span>
+                <div id="gm-guild-color-swatches" class="flex flex-wrap gap-1.5"></div>
+              </div>
+
+              <!-- 即時預覽 -->
+              <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                <span class="text-[11px] text-slate-400 font-bold">即時預覽：</span>
+                <div id="gm-guild-live-preview" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border"></div>
+              </div>
+
+              <div class="flex gap-2 pt-1">
+                <button type="button" onclick="saveGMGuildMeta()" class="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md">
+                  💾 儲存公會徽章並同步全服
                 </button>
-                <button type="button" onclick="setBadgeStartToToday()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-[11px] transition">
-                  ☀️ 設為今日起算
-                </button>
-                <button type="button" onclick="clearGMBadgeStartDate()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 font-bold text-[11px] transition">
-                  ♾️ 清空限制 (採計全部歷史)
+                <button type="button" onclick="resetGMGuildMeta()" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition" title="恢復此公會預設徽章">
+                  ↺ 預設
                 </button>
               </div>
             </div>
 
-            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <div class="flex-1 flex items-center space-x-2">
-                <label class="text-slate-300 font-bold whitespace-nowrap">開始計算日期：</label>
-                <input type="date" id="gm-badge-start-date" onclick="try{this.showPicker()}catch(e){}" oninput="const el=document.getElementById('cfg-badge-start-date'); if(el) el.value=this.value;" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
+            <!-- 右側：分類圖形庫 -->
+            <div class="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-amber-300">🖼️ 公會徽章圖形庫（點擊圖示立即套用）</span>
+                <span class="text-[10px] text-slate-400">也可在左方輸入框貼上任何自訂 Emoji</span>
               </div>
-              <button type="button" onclick="saveGMBadgeStartDate()" class="px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md whitespace-nowrap">
-                💾 儲存徽章開始時間並重算
-              </button>
+              <div id="gm-guild-emblem-library" class="space-y-2.5 max-h-[260px] overflow-y-auto pr-1"></div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
 
-          <!-- 手動授勳工具列 -->
-          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-800/80 items-end">
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">🏅 手動授勳對象英雄</label>
-              <select id="gm-grant-hero" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none">
-              </select>
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE TAB 2: 📋 運動紀錄管理、手動補登與爬蟲排除設定                   -->
+    <!-- ===================================================================== -->
+    <section id="gm-workspace-activities" class="hidden space-y-6">
+
+      <!-- Activity Log CRUD Management (運動紀錄管理與異常檢測) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-lg shadow">
+              📋
             </div>
             <div>
-              <label class="font-bold text-slate-300 block mb-1">選擇要頒發的徽章</label>
-              <select id="gm-grant-badge" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-amber-300 font-bold outline-none">
-              </select>
-            </div>
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">頒發原因 / 紀念備註</label>
-              <input type="text" id="gm-grant-reason" placeholder="例如：GM 特別活動全勤表揚" value="GM 榮譽授勳" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
-            </div>
-            <div>
-              <button type="button" onclick="grantManualBadgeToHero()" class="w-full py-2 px-4 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-xl transition shadow-md">
-                🏅 手動頒發永久徽章
-              </button>
+              <div class="flex items-center gap-2">
+                <h2 class="text-base font-bold text-white">📋 運動紀錄管理與異常檢測 (Activity Records CRUD)</h2>
+                <span id="admin-act-count-pill" class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">0 筆</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">點擊表頭可依日期、時長、心率、熱量或輸出值排序；可一鍵篩選疑似重複或心率/熱量異常紀錄。</p>
             </div>
           </div>
-
-          <!-- 搜尋與篩選 -->
-          <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
-            <input type="text" id="gm-badge-search" oninput="renderGMBadgeEncyclopedia()" placeholder="🔍 搜尋徽章編號、名稱、條件或英雄..." class="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-amber-500">
-            <select id="gm-badge-cat-filter" onchange="renderGMBadgeEncyclopedia()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none">
-              <option value="ALL">全部 10 大分類</option>
+          <div class="w-full sm:w-auto flex flex-wrap items-center gap-2 text-xs">
+            <input type="text" id="admin-act-search" placeholder="🔍 搜尋英雄、運動名稱，或輸入「重複」..." oninput="filterAdminActivities()" class="flex-1 min-w-[200px] bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-amber-500">
+            <select id="admin-act-hero-filter" onchange="filterAdminActivities()" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-bold outline-none focus:border-amber-500">
+              <option value="">全部英雄</option>
             </select>
-            <select id="gm-badge-unlock-filter" onchange="renderGMBadgeEncyclopedia()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none">
-              <option value="ALL">全部狀態</option>
-              <option value="UNLOCKED">✅ 已有英雄解鎖</option>
-              <option value="LOCKED">🔒 全服尚無人解鎖</option>
-            </select>
           </div>
+        </div>
+
+        <!-- ⚡ 一鍵快篩膠囊列 (Quick Filter Pills) -->
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-950/70 border border-slate-800 rounded-2xl px-3.5 py-2 text-xs">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-slate-400 font-bold mr-1">⚡ 快速篩選：</span>
+            <button type="button" data-act-qfilter="ALL" onclick="setAdminActivityQuickFilter('ALL')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-amber-500 text-slate-950 transition">全部紀錄</button>
+            <button type="button" data-act-qfilter="DUP" onclick="setAdminActivityQuickFilter('DUP')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-slate-800 text-slate-300 hover:text-white transition">⚠️ 疑似重複</button>
+            <button type="button" data-act-qfilter="ANOMALY" onclick="setAdminActivityQuickFilter('ANOMALY')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-slate-800 text-slate-300 hover:text-white transition">🚨 數據異常</button>
+            <button type="button" data-act-qfilter="EXCLUDED" onclick="setAdminActivityQuickFilter('EXCLUDED')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-slate-800 text-slate-300 hover:text-white transition">🚫 GM 已作廢</button>
+            <button type="button" data-act-qfilter="MANUAL" onclick="setAdminActivityQuickFilter('MANUAL')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-slate-800 text-slate-300 hover:text-white transition">✍️ 手動補登</button>
+            <button type="button" data-act-qfilter="MOBILE" onclick="setAdminActivityQuickFilter('MOBILE')" class="admin-act-qfilter-btn px-2.5 py-1 rounded-lg font-bold bg-slate-800 text-slate-300 hover:text-white transition">📱 手機來源</button>
+          </div>
+          <button type="button" onclick="document.getElementById('manual-checkin-card')?.scrollIntoView({behavior:'smooth',block:'start'})" class="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold transition">
+            ➕ 前往下方手動補登打卡
+          </button>
         </div>
 
         <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
-          <div class="overflow-x-auto max-h-[420px]">
+          <div class="overflow-x-auto max-h-[460px]">
             <table class="w-full text-left text-xs">
               <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800 sticky top-0 z-10">
                 <tr>
-                  <th class="p-3 w-16">#編號</th>
-                  <th class="p-3">🎖️ 徽章名稱</th>
-                  <th class="p-3">📂 分類 / 稀有度</th>
-                  <th class="p-3">📜 取得條件 (GM 完整檢視)</th>
-                  <th class="p-3">🏆 全服已取得英雄 (滑鼠移上查看取得時間)</th>
+                  <th class="p-3">🔗 來源 ID</th>
+                  <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('date')">📅 日期 <span id="admin-sort-date" class="text-amber-400">▼</span></th>
+                  <th class="p-3">👤 英雄</th>
+                  <th class="p-3">🏃 運動項目</th>
+                  <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('duration')">⏱️ 時長 <span id="admin-sort-duration" class="text-slate-600">↕</span></th>
+                  <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('avgHr')">💓 心率 (均/大) <span id="admin-sort-avgHr" class="text-slate-600">↕</span></th>
+                  <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('calories')">🔥 熱量 <span id="admin-sort-calories" class="text-slate-600">↕</span></th>
+                  <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('damage')">⚔️ 輸出值 <span id="admin-sort-damage" class="text-slate-600">↕</span></th>
+                  <th class="p-3">狀態 / 異常檢測</th>
+                  <th class="p-3 text-right">⚙️ 操作</th>
                 </tr>
               </thead>
-              <tbody id="admin-gm-badges-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tbody id="admin-activities-table-body" class="divide-y border-slate-800/60 text-slate-300">
               </tbody>
             </table>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Snapshots CRUD Management (歷史快照管理) -->
-    <!-- 🛰️ 資料來源開關 (鋼鐵英雄紀元 2.0)：鏡像舊資料庫 ↔ 自己抓 Strava -->
-    <div id="data-source-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 class="text-base font-bold text-white">🛰️ 資料來源 (Strava 資料從哪裡來)</h2>
-          <p class="text-[11px] text-slate-400 mt-0.5">平行測試期用「鏡像舊資料庫」；正式搬家當天切到「自己抓 Strava」。這個開關不會改 GitHub 設定，GitHub 兩個排程每次執行前會先讀這裡。</p>
-        </div>
-        <span id="data-source-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">讀取中…</span>
-      </div>
-      <div id="data-source-body" class="space-y-3"></div>
-    </div>
-
-    <!-- ===================================================================== -->
-    <!-- 📱 手機同步 App (預備功能)：預設關閉，不影響現行 Strava 爬蟲玩法             -->
-    <!-- ===================================================================== -->
-    <div id="mobile-sync-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 class="text-base font-bold text-white">📱 手機同步 App 管理中心 <span class="text-[11px] font-bold text-amber-400">(預備功能)</span></h2>
-          <p class="text-[11px] text-slate-400 mt-0.5">開啟前請先完成：① Supabase 執行 <code>scripts/supabase_migration_mobile_v1.sql</code>　② 部署 <code>supabase/functions</code> 三個 Edge Function　③ 發佈 iPhone / Android App。關閉時前台與爬蟲完全照舊。</p>
-        </div>
-        <span id="mobile-sync-status-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">⏸️ 未啟用</span>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
-        <label class="flex items-center gap-2 font-bold text-slate-200 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2.5 cursor-pointer">
-          <input type="checkbox" id="mobile-sync-enabled" class="accent-amber-500 w-4 h-4">
-          <span>啟用手機同步 App</span>
-        </label>
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">🍎 TestFlight 邀請連結</label>
-          <input type="text" id="mobile-sync-testflight" placeholder="https://testflight.apple.com/join/XXXX" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
-        </div>
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">🤖 Google Play 測試連結</label>
-          <input type="text" id="mobile-sync-play" placeholder="https://play.google.com/apps/internaltest/..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
-        </div>
-        <div>
-          <label class="font-bold text-slate-300 block mb-1">📦 Android APK 下載連結 (選填)</label>
-          <input type="text" id="mobile-sync-apk" placeholder="https://drive.google.com/..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
-        </div>
-      </div>
-      <div class="flex justify-end">
-        <button type="button" onclick="saveMobileSyncSettings()" class="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition shadow-md">💾 儲存手機同步設定</button>
-      </div>
-
-      <div id="mobile-sync-panels" class="hidden space-y-4">
-        <!-- 邀請碼 -->
-        <div class="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div class="flex flex-wrap items-end gap-2">
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">賽季代號</label>
-              <input type="text" id="mobile-invite-season" value="S6" class="w-28 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+      <!-- 下方雙欄：手動補登運動打卡 + Strava 雲端爬蟲自動剃除關鍵字 -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Col 1 (2-spans): Dynamic Manual Check-in / Attack Form -->
+        <div id="manual-checkin-card" class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
+          <div class="border-b border-slate-800 pb-3 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <i id="manual-form-icon" data-lucide="dumbbell" class="w-5 h-5 text-amber-400"></i>
+              <h2 id="manual-form-title" class="text-base font-bold text-white">🏋️ 手動補登運動打卡</h2>
             </div>
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">可使用次數</label>
-              <input type="number" id="mobile-invite-max" value="30" min="1" class="w-24 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
-            </div>
-            <button type="button" onclick="createMobileInvite()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold rounded-xl">🎟️ 產生邀請碼</button>
-            <button type="button" onclick="refreshMobilePanels()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold rounded-xl">🔄 重新整理</button>
-          </div>
-          <div id="mobile-invite-list" class="space-y-1.5"></div>
-        </div>
-        <!-- 裝置連線健康度 -->
-        <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div class="font-bold text-slate-200">📡 裝置連線健康度 <span class="text-[11px] text-slate-400 font-normal">(顯示距最後同步時間；超過 48 小時未同步顯示紅燈)</span></div>
-              <div class="text-[11px] text-slate-500 mt-0.5">💡 手機系統 (Android/iOS) 基於隱私限制，刪除 App 時不會主動通知伺服器；若玩家已重灌或換機，可直接點右側「🗑️ 移除」或一鍵清理舊紀錄。</div>
-            </div>
-            <button type="button" onclick="pruneMobileDevices()" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-bold rounded-xl transition">🧹 清理已停用 / 重複 / 逾期裝置</button>
-          </div>
-          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">平台 / 型號</th><th class="p-3">最後同步</th><th class="p-3">App 版本</th><th class="p-3">連線健康度 (距最後同步)</th><th class="p-3 text-right">操作</th></tr></thead><tbody id="mobile-devices-tbody"></tbody></table></div>
-        </div>
-        <!-- 來源對帳 -->
-        <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-800 font-bold text-slate-200">⚖️ Strava × 手機 App 來源對帳 <span class="text-[11px] text-slate-500 font-normal">(近 14 天運動對帳＋每日健康連線診斷；點「🔍 查看明細」可看該英雄傳上雲端的每一筆原始資料)</span></div>
-          <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">🟠 Strava 運動(14天)</th><th class="p-3">📱 手機運動(14天/累計)</th><th class="p-3">兩邊都有</th><th class="p-3">📅 每日健康(14天步數/睡眠)</th><th class="p-3">狀態與排查診斷</th><th class="p-3 text-right">原始資料</th></tr></thead><tbody id="mobile-recon-tbody"></tbody></table></div>
-        </div>
-        <!-- 🔬 手機健康資料接收明細 & 診斷檢視器 -->
-        <div id="mobile-raw-inspector" class="bg-slate-950/60 border border-cyan-500/30 rounded-2xl p-4 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <div>
-              <div class="font-bold text-cyan-300 text-xs flex items-center gap-1.5">🔬 手機健康資料接收明細 (Health Connect / Apple Health 雲端原始紀錄)</div>
-              <p class="text-[11px] text-slate-400 mt-0.5">直接檢視手機 App 已傳進 Supabase 雲端的「每日健康 (`daily_health`)」與「手機運動 (`activities`)」，一眼判斷哪些項目有通、哪些項目沒寫入。</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <label class="text-[11px] text-slate-400 font-bold">檢視英雄：</label>
-              <select id="mobile-inspect-hero-select" onchange="renderMobileDataInspector(this.value)" class="bg-slate-900 border border-cyan-500/40 rounded-xl px-3 py-1.5 text-xs font-bold text-white outline-none"></select>
-            </div>
-          </div>
-          <div id="mobile-inspect-diag-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs"></div>
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
-              <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
-                <span>📅 已收到的每日健康數據 (`daily_health`)</span>
-                <span id="mobile-inspect-daily-count" class="text-[11px] font-mono text-cyan-300"></span>
-              </div>
-              <div class="overflow-x-auto max-h-72">
-                <table class="w-full text-left text-[11px]">
-                  <thead class="bg-slate-950 text-slate-400 sticky top-0">
-                    <tr>
-                      <th class="p-2">日期</th>
-                      <th class="p-2">👣 步數</th>
-                      <th class="p-2">🔥 熱量</th>
-                      <th class="p-2">⚡ 活動分</th>
-                      <th class="p-2">😴 睡眠 (入睡~起床)</th>
-                      <th class="p-2">💓 靜止心率</th>
-                      <th class="p-2">🌿 HRV</th>
-                      <th class="p-2">🫁 血氧</th>
-                    </tr>
-                  </thead>
-                  <tbody id="mobile-inspect-daily-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
-              <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
-                <span>🏃 已收到的手機運動紀錄 (`health_connect` / `apple_health`)</span>
-                <span id="mobile-inspect-act-count" class="text-[11px] font-mono text-amber-300"></span>
-              </div>
-              <div class="overflow-x-auto max-h-72">
-                <table class="w-full text-left text-[11px]">
-                  <thead class="bg-slate-950 text-slate-400 sticky top-0">
-                    <tr>
-                      <th class="p-2">日期時間</th>
-                      <th class="p-2">類型 / 名稱</th>
-                      <th class="p-2">⏱️ 時長</th>
-                      <th class="p-2">💓 均/峰</th>
-                      <th class="p-2">🔥 熱量</th>
-                      <th class="p-2">來源 / 對帳</th>
-                    </tr>
-                  </thead>
-                  <tbody id="mobile-inspect-act-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="camera" class="w-5 h-5 text-purple-400"></i>
-          <h2 class="text-base font-bold text-white">📸 賽季歷史快照管理 (Snapshots Management)</h2>
-        </div>
-        <button onclick="archiveCurrentSeason()" class="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
-          <i data-lucide="plus-circle" class="w-4 h-4"></i>
-          <span>📦 建立當前賽季快照 (Snapshot)</span>
-        </button>
-      </div>
-
-      <p class="text-xs text-slate-400">
-        管理歷代封存的歷史戰役快照。點擊建立快照可凍結當前戰況，前台【過往英雄史】將 1:1 還原與歷史戰役完全相同的完整介面與數據。
-      </p>
-
-      <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
-              <tr>
-                <th class="p-3">🏆 快照名稱</th>
-                <th class="p-3">🎮 資料片類型</th>
-                <th class="p-3">📅 賽季期間</th>
-                <th class="p-3">⏰ 封存建立時間</th>
-                <th class="p-3">狀態</th>
-                <th class="p-3 text-right">⚙️ 操作</th>
-              </tr>
-            </thead>
-            <tbody id="admin-snapshots-table-body" class="divide-y divide-slate-800/60 text-slate-300">
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dynamic Contextual Expansion Settings & Check-in Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-      <!-- Col 1 (2-spans): Dynamic Manual Check-in / Attack Form -->
-      <div class="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
-        <div class="border-b border-slate-800 pb-3 flex items-center justify-between">
-          <div class="flex items-center space-x-2">
-            <i id="manual-form-icon" data-lucide="dumbbell" class="w-5 h-5 text-amber-400"></i>
-            <h2 id="manual-form-title" class="text-base font-bold text-white">🏋️ 手動補登運動打卡</h2>
-          </div>
-          <span id="manual-form-subtitle" class="text-xs text-slate-400">系統即時試算並登記至歷程</span>
-        </div>
-
-        <form id="form-manual-entry" onsubmit="handleManualAttack(event)" class="space-y-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">冒險者英雄 *</label>
-              <select id="inp-hero" onchange="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none" required>
-              </select>
-            </div>
-
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">運動項目 *</label>
-              <select id="inp-type" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none">
-                <option value="Workout">Workout (一般鍛鍊)</option>
-                <option value="WeightTraining" selected>WeightTraining (重量訓練)</option>
-                <option value="Run">Run (跑步)</option>
-                <option value="Ride">Ride (自行車騎乘)</option>
-                <option value="Swim">Swim (游泳)</option>
-              </select>
-            </div>
+            <span id="manual-form-subtitle" class="text-xs text-slate-400">系統即時試算並登記至歷程</span>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">運動時長 (分鐘) *</label>
-              <input type="number" step="0.1" id="inp-duration" placeholder="例如: 50" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono" required oninput="previewDamageCalculation()">
-            </div>
-
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">平均心率 (bpm) *</label>
-              <input type="number" id="inp-avg-hr" placeholder="例如: 120" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono text-amber-400 font-bold" required oninput="previewDamageCalculation()">
-            </div>
-
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">最高心率 (bpm) *</label>
-              <input type="number" id="inp-max-hr" placeholder="例如: 170" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono text-rose-400 font-bold" required oninput="previewDamageCalculation()">
-            </div>
-
-            <div>
-              <label class="text-xs font-bold text-slate-300 block mb-1">消耗熱量 (kcal) *</label>
-              <input type="number" id="inp-calories" placeholder="例如: 350" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono" required oninput="previewDamageCalculation()">
-            </div>
-          </div>
-
-          <div>
-            <label class="text-xs font-bold text-slate-300 block mb-1">運動名稱 / 備註</label>
-            <input type="text" id="inp-title" placeholder="例如：傍晚胸背力量訓練" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500">
-          </div>
-
-          <!-- Realtime Contextual Preview Box -->
-          <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-2">
-            <span class="text-xs font-bold text-slate-400 flex items-center space-x-1">
-              <i data-lucide="calculator" class="w-3.5 h-3.5 text-amber-400"></i>
-              <span id="prev-box-title">數值即時試算預覽</span>
-            </span>
-            <div id="prev-cards-grid" class="grid grid-cols-4 gap-2 text-center text-xs font-mono">
-              <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
-                <span class="text-[10px] text-slate-400 block" id="prev-lbl-1">🗡️ 普攻 (熱量)</span>
-                <span class="font-bold text-amber-400" id="prev-phys">0</span>
-              </div>
-              <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
-                <span class="text-[10px] text-slate-400 block" id="prev-lbl-2">🔮 魔攻 (TRIMP)</span>
-                <span class="font-bold text-cyan-400" id="prev-mag">0</span>
-              </div>
-              <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
-                <span class="text-[10px] text-slate-400 block" id="prev-lbl-3">💥 爆擊 (Gap)</span>
-                <span class="font-bold text-rose-400" id="prev-crit">0</span>
-              </div>
-              <div class="bg-slate-900 p-2 rounded-xl border border-amber-500/40">
-                <span class="text-[10px] text-slate-400 block" id="prev-lbl-4">⚔️ 綜合輸出</span>
-                <span class="font-bold text-amber-300 text-sm" id="prev-total">0</span>
-              </div>
-            </div>
-          </div>
-
-          <button id="btn-manual-submit" type="submit" class="w-full py-3.5 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold rounded-2xl shadow-xl shadow-rose-900/30 flex items-center justify-center space-x-2 transition active:scale-[0.99]">
-            <i data-lucide="zap" class="w-4 h-4"></i>
-            <span id="btn-manual-submit-text">發動攻擊並登記打卡 (扣除 Boss 血量)</span>
-          </button>
-        </form>
-      </div>
-
-      <!-- Col 2: Contextual Mode-Specific Settings Panel -->
-      <div class="space-y-6">
-
-        <!-- PANEL A: Expansion 1 (Classic Mode Config) -->
-        <div id="panel-settings-classic" class="bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="trophy" class="w-5 h-5 text-amber-400"></i>
-            <h2 class="text-base font-bold text-white">🏆 資料片一 • 經典競技設定</h2>
-          </div>
-
-          <div class="space-y-3 text-xs">
-            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <span class="font-bold text-slate-200">📊 100 分制相對高標評分權重</span>
-              <p class="text-[11px] text-slate-400">• 有氧總冠軍：衝力 40% + 熱量 30% + Zone2 30%</p>
-              <p class="text-[11px] text-slate-400">• 無氧總冠軍：落差 50% + 密度 30% + 出勤 20%</p>
-              <p class="text-[11px] text-slate-400">• 團隊計分：小隊總數值 ÷ 名單總人數 (確保公平)</p>
-            </div>
-
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">有效出勤時長門檻 (分鐘)</label>
-              <input type="number" id="cfg-classic-min-dur" value="30" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
-              <span class="text-[10px] text-slate-500 mt-1 block">未達此時長之紀錄將完全不計入出勤與分數</span>
-            </div>
-
-            <button onclick="saveClassicSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 font-bold rounded-xl text-xs transition">
-              儲存經典競技參數
-            </button>
-          </div>
-        </div>
-
-        <!-- PANEL B: Expansion 2 (RPG Class & Talent Config) -->
-        <div id="panel-settings-rpg" class="hidden bg-slate-900/80 border border-purple-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="sword" class="w-5 h-5 text-purple-400"></i>
-            <h2 class="text-base font-bold text-white">⚔️ 資料片二 • 職業天賦設定</h2>
-          </div>
-
-          <div class="space-y-3 text-xs">
-            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-300">
-              <p class="font-bold text-purple-300">🛡️ 公會多職業羈絆加成：</p>
-              <p>• 2 種不同職業：雙重協同羈絆 (+5% 全隊戰力)</p>
-              <p>• 3 種不同職業：三重戰術羈絆 (+10% 全隊戰力)</p>
-              <p>• 4 種以上職業：全能四職業羈絆 (+15% 全隊戰力)</p>
-            </div>
-
-            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-400">
-              <p class="font-bold text-slate-200">✨ 五大天賦被動：</p>
-              <p>• 狂戰士：無氧落差 Gap +30%</p>
-              <p>• 聖騎士：出勤 ×150 + Suffer ×1.5</p>
-              <p>• 遊俠：Zone 2 次數 ×120 + 熱量 +35%</p>
-              <p>• 大法師：TRIMP 衝力 × 1.5 倍增幅</p>
-              <p>• 刺客：訓練密度 Density × 2.0 倍</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- PANEL C: Expansion 3 (World Boss Config) -->
-        <div id="panel-settings-boss" class="hidden bg-slate-900/80 border border-rose-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="settings-2" class="w-5 h-5 text-rose-400"></i>
-            <h2 class="text-base font-bold text-white">🌩️ 資料片三 • 世界 Boss 設定</h2>
-          </div>
-
-          <div class="space-y-3 text-xs">
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">Boss 名稱</label>
-              <input type="text" id="cfg-boss-name" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none">
-            </div>
-
-            <div>
-              <label class="font-bold text-slate-300 block mb-1">🖼️ Boss 形象 (由可愛 → 兇悍，點選套用)</label>
-              <div id="cfg-boss-gallery" class="grid grid-cols-5 gap-2"></div>
-              <label class="flex items-center gap-2 mt-2 text-[11px] text-slate-400"><input type="checkbox" id="cfg-boss-gallery-apply-name" checked class="accent-amber-500"> 點選圖片時，同時把 Boss 名稱換成該圖的名字</label>
-              <input type="hidden" id="cfg-boss-avatar">
-              <p id="cfg-boss-gallery-note" class="text-[11px] text-slate-500 mt-1"></p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
+          <form id="form-manual-entry" onsubmit="handleManualAttack(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="font-bold text-slate-300 block mb-1">總血量 (Max HP)</label>
-                <input type="number" id="cfg-boss-maxhp" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                <label class="text-xs font-bold text-slate-300 block mb-1">冒險者英雄 *</label>
+                <select id="inp-hero" onchange="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none" required>
+                </select>
               </div>
+
               <div>
-                <label class="font-bold text-slate-300 block mb-1">目前剩餘血量 (自動結算)</label>
-                <input type="text" disabled value="隨玩家傷害自動扣減" class="w-full bg-slate-900 border border-slate-700/50 rounded-xl px-3 py-2 text-slate-500 font-bold outline-none cursor-not-allowed">
-                <input type="hidden" id="cfg-boss-currhp">
+                <label class="text-xs font-bold text-slate-300 block mb-1">運動項目 *</label>
+                <select id="inp-type" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none">
+                  <option value="Workout">Workout (一般鍛鍊)</option>
+                  <option value="WeightTraining" selected>WeightTraining (重量訓練)</option>
+                  <option value="Run">Run (跑步)</option>
+                  <option value="Ride">Ride (自行車騎乘)</option>
+                  <option value="Swim">Swim (游泳)</option>
+                </select>
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-2">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label class="font-bold text-slate-300 block mb-1">魔攻倍率 (TRIMP ×)</label>
-                <input type="number" id="cfg-mag-mult" value="15" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                <label class="text-xs font-bold text-slate-300 block mb-1">運動時長 (分鐘) *</label>
+                <input type="number" step="0.1" id="inp-duration" placeholder="例如: 50" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono" required oninput="previewDamageCalculation()">
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-300 block mb-1">平均心率 (bpm) *</label>
+                <input type="number" id="inp-avg-hr" placeholder="例如: 120" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono text-amber-400 font-bold" required oninput="previewDamageCalculation()">
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-300 block mb-1">最高心率 (bpm) *</label>
+                <input type="number" id="inp-max-hr" placeholder="例如: 170" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono text-rose-400 font-bold" required oninput="previewDamageCalculation()">
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-300 block mb-1">消耗熱量 (kcal) *</label>
+                <input type="number" id="inp-calories" placeholder="例如: 350" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 font-mono" required oninput="previewDamageCalculation()">
               </div>
             </div>
 
-            <button onclick="saveBossSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 font-bold rounded-xl text-xs transition">
-              儲存 Boss 參數
-            </button>
-          </div>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- Expansion 4: Faction War Config                -->
-        <!-- ============================================== -->
-        <div id="panel-settings-faction" class="hidden bg-slate-900/80 border border-emerald-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="swords" class="w-5 h-5 text-emerald-400"></i>
-            <h2 class="text-base font-bold text-white">⚔️ 資料片四 • 雙城激戰設定</h2>
-          </div>
-          <div class="space-y-3 text-xs">
-            <label class="font-bold text-slate-300 block mb-1">🏰 守護陣營名稱</label>
-            <input type="text" id="cfg-faction1-name" value="🟢 均衡聯盟" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-bold outline-none">
-            <label class="font-bold text-slate-300 block mb-1">🏰 狂怒陣營名稱</label>
-            <input type="text" id="cfg-faction2-name" value="🔴 狂怒部落" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-rose-400 font-bold outline-none">
-            <label class="font-bold text-slate-300 block mb-1">❤️ 主城初始血量 (Base HP)</label>
-            <input type="number" id="cfg-faction-basehp" value="500000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
-            <label class="font-bold text-slate-300 block mb-1">⚔️ 陣營分配 (以公會為單位)</label>
-            <div id="cfg-faction-assign" class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-2"></div>
-            <p class="text-[11px] text-slate-400 leading-relaxed">💡 選「自動」的公會照舊規則分配：依公會順序 (公會中最早註冊英雄的先後) 第 1、3、5… 個進守護陣營，第 2、4… 個進狂怒陣營。全部選自動 = 與舊版相同。儲存後前台立即生效。</p>
-            <button onclick="saveFactionSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 font-bold rounded-xl text-xs transition">儲存陣營參數</button>
-          </div>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- Expansion 5: Survival Config                   -->
-        <!-- ============================================== -->
-        <div id="panel-settings-survival" class="hidden bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="skull" class="w-5 h-5 text-amber-500"></i>
-            <h2 class="text-base font-bold text-white">☠️ 資料片五 • 飢餓法則設定</h2>
-          </div>
-          <div class="space-y-3 text-xs">
-            <label class="font-bold text-slate-300 block mb-1">❤️ 初始生存值 (Max HP)</label>
-            <input type="number" min="1" id="cfg-survival-maxhp" value="3000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
-            <label class="font-bold text-slate-300 block mb-1">每天衰減生命 (Decay/Day)</label>
-            <input type="number" min="0" id="cfg-survival-decay" value="200" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
-            <p class="text-[11px] text-slate-400 leading-relaxed">💡 賽季中途調整「每天衰減」時，新數值會從<strong class="text-amber-300">明天</strong>開始生效，已經過去的天數仍以舊數值計算（不會回溯一次扣一大筆血）。</p>
-            <div id="cfg-survival-schedule-note" class="text-[11px] font-mono text-amber-300 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2"></div>
-            <button onclick="saveSurvivalSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-500 font-bold rounded-xl text-xs transition">儲存生存參數</button>
-          </div>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- Expansion 6: Base Builder Config               -->
-        <!-- ============================================== -->
-        <div id="panel-settings-base" class="hidden bg-slate-900/80 border border-blue-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="castle" class="w-5 h-5 text-blue-400"></i>
-            <h2 class="text-base font-bold text-white">🏰 資料片六 • 鋼鐵要塞設定</h2>
-          </div>
-          <div class="space-y-3 text-xs">
-            <label class="font-bold text-slate-300 block mb-1">🌳 木材升級需求</label>
-            <input type="number" id="cfg-base-wood" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-mono outline-none">
-            <label class="font-bold text-slate-300 block mb-1">⚙️ 鋼鐵升級需求</label>
-            <input type="number" id="cfg-base-steel" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-blue-400 font-mono outline-none">
-            <label class="font-bold text-slate-300 block mb-1">🔮 魔法原石升級需求</label>
-            <input type="number" id="cfg-base-mana" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-purple-400 font-mono outline-none">
-            <button onclick="saveBaseSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-400 font-bold rounded-xl text-xs transition">儲存要塞參數</button>
-          </div>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- Expansion 7: Bingo Config                      -->
-        <!-- ============================================== -->
-        <div id="panel-settings-bingo" class="hidden bg-slate-900/80 border border-fuchsia-500/40 rounded-3xl p-6 shadow-xl space-y-4">
-          <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
-            <i data-lucide="grid" class="w-5 h-5 text-fuchsia-400"></i>
-            <h2 class="text-base font-bold text-white">🧩 資料片七 • 戰神拼圖</h2>
-          </div>
-          <div class="space-y-3 text-xs">
-            <label class="font-bold text-slate-300 block mb-1">任務難度倍率</label>
-            <input type="number" step="0.1" id="cfg-bingo-multiplier" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
-            <button onclick="saveBingoSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-fuchsia-400 font-bold rounded-xl text-xs transition">儲存拼圖參數</button>
-          </div>
-        </div>
-
-        <!-- ============================================== -->
-        <!-- 📱 手機同步資料片 (八/九/十/十一) 參數面板        -->
-        <!-- 由 admin.js renderMobileModePanel() 依目前選擇的資料片動態產生 -->
-        <!-- ============================================== -->
-        <div id="panel-settings-mobile-mode" class="hidden lg:col-span-2 bg-slate-900/80 border border-emerald-500/40 rounded-3xl p-6 shadow-xl space-y-4"></div>
-
-      </div>
-
-    </div>
-
-    <!-- Activity Log CRUD Management (運動紀錄管理與異常檢測) -->
-    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="list-filter" class="w-5 h-5 text-amber-400"></i>
-          <h2 class="text-base font-bold text-white">📋 運動紀錄管理與異常檢測 (Activity Records CRUD)</h2>
-        </div>
-        <div class="w-full sm:w-auto flex items-center gap-2 text-xs">
-          <input type="text" id="admin-act-search" placeholder="🔍 搜尋英雄、運動名稱，或輸入「重複」篩選疑似重複..." oninput="filterAdminActivities()" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-amber-500">
-          <select id="admin-act-hero-filter" onchange="filterAdminActivities()" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none">
-            <option value="">全部英雄</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
-        <div class="overflow-x-auto max-h-96">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800 sticky top-0">
-              <tr>
-                <th class="p-3">🔗 來源 ID</th>
-                <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('date')">📅 日期 <span id="admin-sort-date" class="text-amber-400">▼</span></th>
-                <th class="p-3">👤 英雄</th>
-                <th class="p-3">🏃 運動項目</th>
-                <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('duration')">⏱️ 時長 <span id="admin-sort-duration" class="text-slate-600">↕</span></th>
-                <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('avgHr')">💓 心率 (均/大) <span id="admin-sort-avgHr" class="text-slate-600">↕</span></th>
-                <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('calories')">🔥 熱量 <span id="admin-sort-calories" class="text-slate-600">↕</span></th>
-                <th class="p-3 cursor-pointer hover:text-amber-400 transition select-none" onclick="sortAdminActivities('damage')">⚔️ 輸出值 <span id="admin-sort-damage" class="text-slate-600">↕</span></th>
-                <th class="p-3">狀態 / 異常檢測</th>
-                <th class="p-3 text-right">⚙️ 操作</th>
-              </tr>
-            </thead>
-            <tbody id="admin-activities-table-body" class="divide-y border-slate-800/60 text-slate-300">
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Hero Roster Full Web GM Management (100% Supabase 雲端資料庫直連) -->
-    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="users" class="w-5 h-5 text-cyan-400"></i>
-          <div>
-            <h2 id="hero-roster-title" class="text-base font-bold text-white">👥 冒險者名冊與小隊天賦管理 (Supabase 雲端直連)</h2>
-            <p class="text-xs text-slate-400 mt-0.5">直接在此新增、修改或刪除參賽者，包含姓名、年齡、公會、RPG職業與 Strava 數字 ID，即時跨裝置全服同步。</p>
-          </div>
-        </div>
-        <div class="flex items-center space-x-2">
-          <button id="btn-random-classes" onclick="randomizeAllHeroClasses()" class="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5" title="以洗牌演算法平衡隨機分配五大職業">
-            <i data-lucide="dices" class="w-4 h-4"></i>
-            <span>🎲 隨機抽籤分配全體職業</span>
-          </button>
-          <button onclick="openAddHeroModal()" class="px-3.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
-            <i data-lucide="user-plus" class="w-4 h-4"></i>
-            <span>➕ 新增冒險者</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
-              <tr>
-                <th class="p-3">👤 冒險者姓名</th>
-                <th class="p-3">🎂 年齡</th>
-                <th class="p-3">💓 極限心率</th>
-                <th class="p-3">🛡️ 所屬公會</th>
-                <th class="p-3" id="th-hero-class-col">⚔️ RPG 天賦職業</th>
-                <th class="p-3">🔗 Strava 數字 ID</th>
-                <th class="p-3 text-right">⚙️ 操作</th>
-              </tr>
-            </thead>
-            <tbody id="admin-heroes-table-body" class="divide-y divide-slate-800/60 text-slate-300">
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- 🛡️ 公會徽章圖形庫與代表色管理 (前/後端/手機 App 自動同步) -->
-      <div id="guild-emblem-editor-card" class="bg-slate-950/75 border border-amber-500/40 rounded-2xl p-4 space-y-3 text-xs">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
-          <div>
-            <span class="font-bold text-amber-400 flex items-center gap-1.5 text-sm">🛡️ 公會徽章圖形庫與代表色編輯器 (全平台即時同步)</span>
-            <p class="text-[11px] text-slate-400 mt-0.5">點擊下方既有公會卡片或從圖形庫挑選徽章與代表色，儲存後網頁前台、GM 後台與手機 App 所有資料片的公會徽記將自動同步更新！</p>
-          </div>
-          <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">✨ 內建 60+ 圖形庫 + 自訂符號</span>
-        </div>
-
-        <!-- 目前所有公會總覽卡片 (點選即載入編輯) -->
-        <div>
-          <label class="font-bold text-slate-300 block mb-1.5">📌 點選要編輯的公會（或於下方選擇）：</label>
-          <div id="gm-guild-overview-cards" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"></div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start pt-2 border-t border-slate-800/70">
-          <!-- 左側：選擇公會 + 目前預覽 + 自訂輸入 + 儲存 -->
-          <div class="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-3">
             <div>
-              <label class="font-bold text-slate-300 block mb-1">1️⃣ 目標公會</label>
-              <select id="gm-guild-select" onchange="onGMGuildSelectChange()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-amber-500"></select>
+              <label class="text-xs font-bold text-slate-300 block mb-1">運動名稱 / 備註</label>
+              <input type="text" id="inp-title" placeholder="例如：傍晚胸背力量訓練" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500">
             </div>
 
-            <div class="grid grid-cols-2 gap-2.5">
-              <div>
-                <label class="font-bold text-slate-300 block mb-1">2️⃣ 公會徽章圖案</label>
-                <input type="text" id="gm-guild-badge-input" maxlength="6" oninput="updateGMGuildPreview()" placeholder="🛡️" class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2 text-center text-xl outline-none focus:border-amber-400">
-              </div>
-              <div>
-                <label class="font-bold text-slate-300 block mb-1">3️⃣ 公會代表色</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="color" id="gm-guild-color-picker" oninput="onGMGuildColorPickerChange(this.value)" value="#ec4899" class="w-9 h-9 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer p-0.5 shrink-0">
-                  <input type="text" id="gm-guild-color-input" oninput="onGMGuildColorTextChange(this.value)" value="#ec4899" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-2 text-white font-mono text-[11px] outline-none focus:border-amber-500">
+            <!-- Realtime Contextual Preview Box -->
+            <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <span class="text-xs font-bold text-slate-400 flex items-center space-x-1">
+                <i data-lucide="calculator" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span id="prev-box-title">數值即時試算預覽</span>
+              </span>
+              <div id="prev-cards-grid" class="grid grid-cols-4 gap-2 text-center text-xs font-mono">
+                <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <span class="text-[10px] text-slate-400 block" id="prev-lbl-1">🗡️ 普攻 (熱量)</span>
+                  <span class="font-bold text-amber-400" id="prev-phys">0</span>
+                </div>
+                <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <span class="text-[10px] text-slate-400 block" id="prev-lbl-2">🔮 魔攻 (TRIMP)</span>
+                  <span class="font-bold text-cyan-400" id="prev-mag">0</span>
+                </div>
+                <div class="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                  <span class="text-[10px] text-slate-400 block" id="prev-lbl-3">💥 爆擊 (Gap)</span>
+                  <span class="font-bold text-rose-400" id="prev-crit">0</span>
+                </div>
+                <div class="bg-slate-900 p-2 rounded-xl border border-amber-500/40">
+                  <span class="text-[10px] text-slate-400 block" id="prev-lbl-4">⚔️ 綜合輸出</span>
+                  <span class="font-bold text-amber-300 text-sm" id="prev-total">0</span>
                 </div>
               </div>
             </div>
 
-            <!-- 快速色票 -->
+            <button id="btn-manual-submit" type="submit" class="w-full py-3.5 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold rounded-2xl shadow-xl shadow-rose-900/30 flex items-center justify-center space-x-2 transition active:scale-[0.99]">
+              <i data-lucide="zap" class="w-4 h-4"></i>
+              <span id="btn-manual-submit-text">發動攻擊並登記打卡 (扣除 Boss 血量)</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Col 2: Strava Cloud Crawler Exclude Keywords Config & Anomaly Rules -->
+        <div class="space-y-6">
+          <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="bot" class="w-5 h-5 text-emerald-400"></i>
+              <div>
+                <h2 class="text-base font-bold text-white">🤖 爬蟲自動剃除關鍵字</h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">每 30 分鐘執行時自動略過包含以下字詞的運動</p>
+              </div>
+            </div>
+            <div class="space-y-3 text-xs">
+              <label class="font-bold text-slate-300 block">排除關鍵字清單 (以逗號分隔)</label>
+              <input type="text" id="cfg-exclude-keywords" placeholder="例如：羽球, Badminton, 散步" value="羽球, Badminton" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-mono outline-none focus:border-emerald-500">
+              <button onclick="saveExcludeKeywordsToSupabase()" class="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl transition shadow-md">
+                💾 儲存排除關鍵字至雲端
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-3 text-xs">
+            <div class="font-bold text-amber-400 flex items-center gap-1.5 text-sm">🛡️ 運動數據異常與去重規則說明</div>
+            <ul class="space-y-2 text-slate-300 leading-relaxed text-[11px]">
+              <li>• <strong class="text-emerald-300">自動時間重疊去重：</strong>當同一英雄的 Strava 與手機健康紀錄時間重疊時，系統自動保留分數較高的一筆；若 GM 確認為不同場運動，可直接勾選「納入計算」。</li>
+              <li>• <strong class="text-rose-300">⚠️ 心率異常標記：</strong>平均心率超過個人極限心率 (`220 - 年齡`) 或最高心率 `> 220 bpm`。</li>
+              <li>• <strong class="text-amber-300">⚠️ 時長 / 熱量異常標記：</strong>單次運動時長 `> 300 分鐘` 或單次消耗熱量 `> 3,000 kcal`。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE TAB 3: 👑 GM 榮譽授勳、英雄頭像特效與限時加倍活動指揮中心        -->
+    <!-- ===================================================================== -->
+    <section id="gm-workspace-honors" class="hidden space-y-6">
+      <div class="bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-6">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 flex items-center justify-center text-slate-950 font-black text-lg shadow">
+              👑
+            </div>
             <div>
-              <span class="text-[10px] text-slate-400 block mb-1">🎨 快速主題色票：</span>
-              <div id="gm-guild-color-swatches" class="flex flex-wrap gap-1.5"></div>
-            </div>
-
-            <!-- 即時預覽 -->
-            <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-              <span class="text-[11px] text-slate-400 font-bold">即時預覽：</span>
-              <div id="gm-guild-live-preview" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border"></div>
-            </div>
-
-            <div class="flex gap-2 pt-1">
-              <button type="button" onclick="saveGMGuildMeta()" class="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md">
-                💾 儲存公會徽章並同步全服
-              </button>
-              <button type="button" onclick="resetGMGuildMeta()" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition" title="恢復此公會預設徽章">
-                ↺ 預設
-              </button>
+              <h2 class="text-base font-bold text-white">GM 榮譽授勳、英雄頭像特效與限時活動指揮中心</h2>
+              <p class="text-xs text-slate-400">一鍵頒發 6 大皇家御賜限定獎章、掛載壽星/天氣頭像特效，或排程全服限時積分加倍活動（100% 不污染底層原始運動數據）</p>
             </div>
           </div>
+          <div class="w-full lg:w-auto grid grid-cols-3 sm:flex items-center gap-1.5 text-[11px] sm:text-xs">
+            <button type="button" id="gm-ops-tab-badges" onclick="switchGMOpsSubTab('badges')" class="justify-center px-2 sm:px-3.5 py-2 sm:py-1.5 rounded-xl font-bold bg-amber-500 text-slate-950 transition whitespace-nowrap flex items-center">
+              <span class="sm:hidden">👑 授勳/圖鑑</span>
+              <span class="hidden sm:inline">👑 御賜授勳 & 🎖️ 全服徽章圖鑑</span>
+            </button>
+            <button type="button" id="gm-ops-tab-fx" onclick="switchGMOpsSubTab('fx')" class="justify-center px-2 sm:px-3.5 py-2 sm:py-1.5 rounded-xl font-bold bg-slate-800 text-slate-300 hover:text-white transition whitespace-nowrap flex items-center">
+              <span class="sm:hidden">🎨 頭像特效</span>
+              <span class="hidden sm:inline">🎨 英雄頭像特效 & 自訂稱號</span>
+            </button>
+            <button type="button" id="gm-ops-tab-events" onclick="switchGMOpsSubTab('events')" class="justify-center px-2 sm:px-3.5 py-2 sm:py-1.5 rounded-xl font-bold bg-slate-800 text-slate-300 hover:text-white transition whitespace-nowrap flex items-center">
+              <span class="sm:hidden">⚡ 限時活動</span>
+              <span class="hidden sm:inline">⚡ 限時積分加倍活動</span>
+            </button>
+          </div>
+        </div>
 
-          <!-- 右側：分類圖形庫 -->
-          <div class="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+        <!-- SUB-PANEL 1: ⚡ 限時積分加倍活動日曆 (支援預告、回溯新增、隨時修改 % 與刪除) -->
+        <div id="gm-ops-panel-events" class="hidden space-y-4">
+          <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
             <div class="flex items-center justify-between">
-              <span class="font-bold text-amber-300">🖼️ 公會徽章圖形庫（點擊圖示立即套用）</span>
-              <span class="text-[10px] text-slate-400">也可在左方輸入框貼上任何自訂 Emoji</span>
+              <span id="gm-event-form-mode-label" class="font-bold text-amber-400 flex items-center space-x-1.5">
+                <span>⚡ 新增 / 排程限時積分加倍活動 (全資料片通用)</span>
+              </span>
+              <button type="button" id="btn-cancel-gm-event-edit" onclick="resetGMEventForm()" class="hidden text-xs text-rose-400 hover:text-rose-300 font-bold">
+                ✖ 取消編輯模式
+              </button>
             </div>
-            <div id="gm-guild-emblem-library" class="space-y-2.5 max-h-[260px] overflow-y-auto pr-1"></div>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Strava Cloud Crawler Exclude Keywords Config -->
-    <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-      <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="bot" class="w-5 h-5 text-emerald-400"></i>
-          <div>
-            <h2 class="text-base font-bold text-white">🤖 Strava 雲端爬蟲 • 自動剃除運動關鍵字設定</h2>
-            <p class="text-xs text-slate-400 mt-0.5">爬蟲每 30 分鐘執行時，若運動「名稱」或「類型 (如 Badminton)」包含以下關鍵字將自動略過不寫入資料庫。</p>
+            <input type="hidden" id="gm-event-edit-id" value="">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">活動主題特效 *</label>
+                <select id="gm-event-theme" onchange="onGMEventThemeSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-amber-500">
+                  <option value="typhoon">🌪️ 颱風假防颱特訓</option>
+                  <option value="rain">🌧️ 豪雨特報乘風破浪</option>
+                  <option value="sunny">☀️ 烈日高溫戰神獎勵</option>
+                  <option value="weekend">🎉 週末狂熱雙倍衝刺</option>
+                  <option value="birthday">🎂 英雄壽星同慶日</option>
+                  <option value="custom">⚡ GM 神秘突襲加倍</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">活動公告名稱 *</label>
+                <input type="text" id="gm-event-title" placeholder="例如：10/23 颱風假防颱特訓" value="颱風假防颱特訓" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500">
+              </div>
+
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">開始日期 (支援未來預告/過去回溯) *</label>
+                <input type="date" id="gm-event-start" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
+              </div>
+
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">結束日期 (單日活動請填同日) *</label>
+                <input type="date" id="gm-event-end" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
+              </div>
+
+              <div>
+                <label class="font-bold text-amber-400 block mb-1">全資料片積分加成 (%) *</label>
+                <div class="relative flex items-center">
+                  <input type="number" step="1" min="1" max="500" id="gm-event-pct" value="20" class="w-full bg-slate-900 border border-amber-500/60 rounded-xl px-3 py-2 text-amber-300 font-mono font-black text-sm outline-none focus:border-amber-400 pr-8">
+                  <span class="absolute right-3 text-amber-400 font-bold">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <input type="text" id="gm-event-note" placeholder="選填廣播副標題，例如：颱風天在家超慢跑或核心訓練滿30分鐘，當日生存補血與全模式積分全面 +20%！" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500">
+              <button type="button" onclick="saveGMEvent()" class="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md whitespace-nowrap">
+                💾 儲存 / 發布限時活動
+              </button>
+            </div>
+          </div>
+
+          <!-- 活動歷史與排程紀錄表 -->
+          <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
+                  <tr>
+                    <th class="p-3">📡 狀態</th>
+                    <th class="p-3">🎉 活動名稱與廣播備註</th>
+                    <th class="p-3">📅 生效日期區間</th>
+                    <th class="p-3">⚡ 分數加成 %</th>
+                    <th class="p-3">🏃 受惠打卡數</th>
+                    <th class="p-3 text-right">⚙️ 回溯修改 / 刪除</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-gm-events-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUB-PANEL 2: 🎨 英雄頭像特效與自訂稱號管理 -->
+        <div id="gm-ops-panel-fx" class="hidden space-y-4">
+          <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
+            <span class="font-bold text-cyan-400 block">🎨 為英雄掛載專屬頭像氣候特效 / 壽星金框與小稱號</span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">選擇英雄 *</label>
+                <select id="gm-fx-hero" onchange="onGMFxHeroSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-cyan-500">
+                </select>
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">頭像特效款式 *</label>
+                <select id="gm-fx-type" onchange="onGMFxTypeSelect()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-amber-300 font-bold outline-none focus:border-cyan-500">
+                  <option value="none">✨ 無特效 (一般狀態)</option>
+                  <option value="birthday">🎂 壽星慶典金框 (彩帶禮花)</option>
+                  <option value="sunny">☀️ 大太陽烈日戰神 (金陽日冕)</option>
+                  <option value="rainy">🌧️ 風雨行者淋雨特效 (霓虹雨滴)</option>
+                  <option value="aura">🔥 超級賽亞人爆氣 (紫金鬥氣)</option>
+                </select>
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">自訂頭銜小稱號 (顯示於名字旁)</label>
+                <input type="text" id="gm-fx-title" placeholder="例如：🎂 生日快樂壽星" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-500">
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">特效到期日 (空白=永久生效)</label>
+                <input type="date" id="gm-fx-expires" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-cyan-500 cursor-pointer">
+              </div>
+              <div class="flex space-x-2">
+                <button type="button" onclick="saveGMHeroFx()" class="flex-1 py-2 px-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl transition shadow-md">
+                  ✨ 儲存特效
+                </button>
+                <button type="button" onclick="clearGMHeroFx()" class="py-2 px-3 bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 rounded-xl font-bold transition" title="清除該英雄特效">
+                  🧹
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="admin-gm-fx-active-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          </div>
+
+          <!-- 👑 GM 皇家御賜限定獎章 (6 大系列 • 30 階) 專屬視覺化快速授勳面板 -->
+          <div id="gm-exclusive-quick-cards-fx"></div>
+        </div>
+
+        <!-- SUB-PANEL 3 (預設展開): 🎖️ GM 專屬全服徽章圖鑑與御賜授勳 -->
+        <div id="gm-ops-panel-badges" class="space-y-4">
+          <!-- 👑 GM 皇家御賜限定獎章 (6 大系列 • 30 階) 專屬視覺化快速授勳面板 -->
+          <div id="gm-exclusive-quick-cards-badges"></div>
+
+          <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-bold text-amber-400 block">🎖️ GM 專屬全服徽章總圖鑑 (共 <span id="gm-badge-total-count">100</span> 枚，支援無縫擴充至 500 枚)</span>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                  🔒 前台已啟動「迷霧探索保護」：玩家在前台不會看到未解鎖徽章的名稱與條件（僅能透過偷看別人的已解鎖徽章推敲線索）。GM 在此可設定「徽章計算開始時間」、查閱所有條件與達成名單，或手動頒發徽章。
+                </p>
+              </div>
+              <span id="gm-badge-start-status-text" class="px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">
+                📅 徽章起算範圍：採計全部歷史紀錄
+              </span>
+            </div>
+
+            <!-- ⏰ 徽章計算開始時間設定列 -->
+            <div class="bg-slate-900/90 border border-amber-500/40 rounded-xl p-3.5 space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span class="font-bold text-amber-400 flex items-center space-x-1.5">
+                    <span>⏰ 徽章累計「開始時間」設定 (在此日期之後的運動才開始計算徽章)</span>
+                  </span>
+                  <p class="text-[11px] text-slate-400 mt-0.5">設定開始時間後，早於該日期的舊運動紀錄將不列入徽章條件計算，讓所有英雄從指定日期起重新展開徽章蒐集挑戰！</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button type="button" onclick="setBadgeStartToSeasonStart()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-[11px] transition">
+                    📅 同步本賽季開始日
+                  </button>
+                  <button type="button" onclick="setBadgeStartToToday()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-[11px] transition">
+                    ☀️ 設為今日起算
+                  </button>
+                  <button type="button" onclick="clearGMBadgeStartDate()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 font-bold text-[11px] transition">
+                    ♾️ 清空限制 (採計全部歷史)
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <div class="flex-1 flex items-center space-x-2">
+                  <label class="text-slate-300 font-bold whitespace-nowrap">開始計算日期：</label>
+                  <input type="date" id="gm-badge-start-date" onclick="try{this.showPicker()}catch(e){}" oninput="const el=document.getElementById('cfg-badge-start-date'); if(el) el.value=this.value;" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 cursor-pointer">
+                </div>
+                <button type="button" onclick="saveGMBadgeStartDate()" class="px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl transition shadow-md whitespace-nowrap">
+                  💾 儲存徽章開始時間並重算
+                </button>
+              </div>
+            </div>
+
+            <!-- 手動授勳工具列 -->
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-800/80 items-end">
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">🏅 手動授勳對象英雄</label>
+                <select id="gm-grant-hero" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none">
+                </select>
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">選擇要頒發的徽章</label>
+                <select id="gm-grant-badge" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-amber-300 font-bold outline-none">
+                </select>
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">頒發原因 / 紀念備註</label>
+                <input type="text" id="gm-grant-reason" placeholder="例如：GM 特別活動全勤表揚" value="GM 榮譽授勳" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+              </div>
+              <div>
+                <button type="button" onclick="grantManualBadgeToHero()" class="w-full py-2 px-4 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-xl transition shadow-md">
+                  🏅 手動頒發永久徽章
+                </button>
+              </div>
+            </div>
+
+            <!-- 搜尋與篩選 -->
+            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+              <input type="text" id="gm-badge-search" oninput="renderGMBadgeEncyclopedia()" placeholder="🔍 搜尋徽章編號、名稱、條件或英雄..." class="flex-1 min-w-[200px] bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none focus:border-amber-500">
+              <select id="gm-badge-cat-filter" onchange="renderGMBadgeEncyclopedia()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none">
+                <option value="ALL">全部 10 大分類</option>
+                <option value="GM_ONLY">👑 GM 皇家御賜限定 (6系列 / 30階)</option>
+              </select>
+              <select id="gm-badge-unlock-filter" onchange="renderGMBadgeEncyclopedia()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white outline-none">
+                <option value="ALL">全部狀態</option>
+                <option value="UNLOCKED">✅ 已有英雄解鎖</option>
+                <option value="LOCKED">🔒 全服尚無人解鎖</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
+            <div class="overflow-x-auto max-h-[420px]">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800 sticky top-0 z-10">
+                  <tr>
+                    <th class="p-3 w-16">#編號</th>
+                    <th class="p-3">🎖️ 徽章名稱</th>
+                    <th class="p-3">📂 分類 / 稀有度</th>
+                    <th class="p-3">📜 取得條件 (GM 完整檢視)</th>
+                    <th class="p-3">🏆 全服已取得英雄 (滑鼠移上查看取得時間)</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-gm-badges-tbody" class="divide-y divide-slate-800/60 text-slate-300">
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 text-xs">
-        <input type="text" id="cfg-exclude-keywords" placeholder="例如：羽球, Badminton, 散步 (以逗號分隔)" value="羽球, Badminton" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-mono outline-none focus:border-emerald-500">
-        <button onclick="saveExcludeKeywordsToSupabase()" class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl transition shadow-md whitespace-nowrap">
-          💾 儲存排除關鍵字至雲端
-        </button>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE TAB 4: 📱 手機同步 App、裝置管理、來源對帳與每日健康明細         -->
+    <!-- ===================================================================== -->
+    <section id="gm-workspace-mobile" class="hidden space-y-6">
+      <div id="mobile-sync-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-white">📱 手機同步 App 管理與健康數據對帳中心</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">管理玩家邀請碼、檢視手機裝置連線狀態、比對 Strava × 手機 App 運動紀錄，以及直接查閱每位英雄上傳的每日步數/睡眠/心率/HRV/血氧原始資料。</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="mobile-sync-status-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">⏸️ 未啟用</span>
+            <button type="button" onclick="toggleMobilePanelsForceOpen()" class="px-3 py-1 rounded-xl bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 font-bold text-[11px] transition">
+              🔍 展開/重新整理裝置與健康明細
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
+          <label class="flex items-center gap-2 font-bold text-slate-200 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2.5 cursor-pointer">
+            <input type="checkbox" id="mobile-sync-enabled" class="accent-amber-500 w-4 h-4">
+            <span>啟用手機同步 App</span>
+          </label>
+          <div>
+            <label class="font-bold text-slate-300 block mb-1">🍎 TestFlight 邀請連結</label>
+            <input type="text" id="mobile-sync-testflight" placeholder="https://testflight.apple.com/join/XXXX" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+          </div>
+          <div>
+            <label class="font-bold text-slate-300 block mb-1">🤖 Google Play 測試連結</label>
+            <input type="text" id="mobile-sync-play" placeholder="https://play.google.com/apps/internaltest/..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+          </div>
+          <div>
+            <label class="font-bold text-slate-300 block mb-1">📦 Android APK 下載連結 (選填)</label>
+            <input type="text" id="mobile-sync-apk" placeholder="https://drive.google.com/..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button type="button" onclick="saveMobileSyncSettings()" class="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition shadow-md">💾 儲存手機同步設定</button>
+        </div>
+
+        <div id="mobile-sync-panels" class="hidden space-y-4">
+          <!-- 邀請碼 -->
+          <div class="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div class="flex flex-wrap items-end gap-2">
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">賽季代號</label>
+                <input type="text" id="mobile-invite-season" value="S6" class="w-28 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+              </div>
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">可使用次數</label>
+                <input type="number" id="mobile-invite-max" value="30" min="1" class="w-24 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+              </div>
+              <button type="button" onclick="createMobileInvite()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold rounded-xl">🎟️ 產生邀請碼</button>
+              <button type="button" onclick="refreshMobilePanels()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold rounded-xl">🔄 重新整理</button>
+            </div>
+            <div id="mobile-invite-list" class="space-y-1.5"></div>
+          </div>
+          <!-- 裝置連線健康度 -->
+          <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
+            <div class="px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div class="font-bold text-slate-200">📡 裝置連線健康度 <span class="text-[11px] text-slate-400 font-normal">(顯示距最後同步時間；超過 48 小時未同步顯示紅燈)</span></div>
+                <div class="text-[11px] text-slate-500 mt-0.5">💡 手機系統 (Android/iOS) 基於隱私限制，刪除 App 時不會主動通知伺服器；若玩家已重灌或換機，可直接點右側「🗑️ 移除」或一鍵清理舊紀錄。</div>
+              </div>
+              <button type="button" onclick="pruneMobileDevices()" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-bold rounded-xl transition">🧹 清理已停用 / 重複 / 逾期裝置</button>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">平台 / 型號</th><th class="p-3">最後同步</th><th class="p-3">App 版本</th><th class="p-3">連線健康度 (距最後同步)</th><th class="p-3 text-right">操作</th></tr></thead><tbody id="mobile-devices-tbody"></tbody></table></div>
+          </div>
+          <!-- 來源對帳 -->
+          <div class="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
+            <div class="px-4 py-2.5 border-b border-slate-800 font-bold text-slate-200">⚖️ Strava × 手機 App 來源對帳 <span class="text-[11px] text-slate-500 font-normal">(近 14 天運動對帳＋每日健康連線診斷；點「🔍 查看明細」可看該英雄傳上雲端的每一筆原始資料)</span></div>
+            <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr><th class="p-3">英雄</th><th class="p-3">🟠 Strava 運動(14天)</th><th class="p-3">📱 手機運動(14天/累計)</th><th class="p-3">兩邊都有</th><th class="p-3">📅 每日健康(14天步數/睡眠)</th><th class="p-3">狀態與排查診斷</th><th class="p-3 text-right">原始資料</th></tr></thead><tbody id="mobile-recon-tbody"></tbody></table></div>
+          </div>
+          <!-- 🔬 手機健康資料接收明細 & 診斷檢視器 -->
+          <div id="mobile-raw-inspector" class="bg-slate-950/60 border border-cyan-500/30 rounded-2xl p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <div class="font-bold text-cyan-300 text-xs flex items-center gap-1.5">🔬 手機健康資料接收明細 (Health Connect / Apple Health 雲端原始紀錄)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">直接檢視手機 App 已傳進 Supabase 雲端的「每日健康 (`daily_health`)」與「手機運動 (`activities`)」，一眼判斷哪些項目有通、哪些項目沒寫入。</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-[11px] text-slate-400 font-bold">檢視英雄：</label>
+                <select id="mobile-inspect-hero-select" onchange="renderMobileDataInspector(this.value)" class="bg-slate-900 border border-cyan-500/40 rounded-xl px-3 py-1.5 text-xs font-bold text-white outline-none"></select>
+              </div>
+            </div>
+            <div id="mobile-inspect-diag-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
+                  <span>📅 已收到的每日健康數據 (`daily_health`)</span>
+                  <span id="mobile-inspect-daily-count" class="text-[11px] font-mono text-cyan-300"></span>
+                </div>
+                <div class="overflow-x-auto max-h-72">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-950 text-slate-400 sticky top-0">
+                      <tr>
+                        <th class="p-2">日期</th>
+                        <th class="p-2">👣 步數</th>
+                        <th class="p-2">🔥 熱量</th>
+                        <th class="p-2">⚡ 活動分</th>
+                        <th class="p-2">😴 睡眠 (入睡~起床)</th>
+                        <th class="p-2">💓 靜止心率</th>
+                        <th class="p-2">🌿 HRV</th>
+                        <th class="p-2">🫁 血氧</th>
+                      </tr>
+                    </thead>
+                    <tbody id="mobile-inspect-daily-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="px-3 py-2 border-b border-slate-800 font-bold text-slate-200 text-xs flex items-center justify-between">
+                  <span>🏃 已收到的手機運動紀錄 (`health_connect` / `apple_health`)</span>
+                  <span id="mobile-inspect-act-count" class="text-[11px] font-mono text-amber-300"></span>
+                </div>
+                <div class="overflow-x-auto max-h-72">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-950 text-slate-400 sticky top-0">
+                      <tr>
+                        <th class="p-2">日期時間</th>
+                        <th class="p-2">類型 / 名稱</th>
+                        <th class="p-2">⏱️ 時長</th>
+                        <th class="p-2">💓 均/峰</th>
+                        <th class="p-2">🔥 熱量</th>
+                        <th class="p-2">來源 / 對帳</th>
+                      </tr>
+                    </thead>
+                    <tbody id="mobile-inspect-act-tbody" class="divide-y divide-slate-800/60 text-slate-300 font-mono"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- WORKSPACE TAB 5: 🎮 賽季時間、資料片專屬參數、歷史快照與資料來源設定       -->
+    <!-- ===================================================================== -->
+    <section id="gm-workspace-season" class="hidden space-y-6">
+
+      <!-- 頂部左右連動：左欄「賽季與啟用資料片選擇」 + 右欄「該資料片專屬規則與參數設定」 -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- 左欄 (7 cols): Global Expansion Pack & Season Range Settings -->
+        <div class="lg:col-span-7 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="sliders" class="w-5 h-5 text-amber-400"></i>
+              <h2 class="text-base font-bold text-white">⚙️ 當前啟用的資料片與賽季時間</h2>
+            </div>
+            <span id="active-mode-helper-tag" class="text-xs font-bold text-amber-400">
+              當前模式：🏆 資料片一：經典競技模式
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <!-- Expansion Packs Switcher -->
+            <div class="sm:col-span-2">
+              <label class="font-bold text-slate-300 block mb-1">1️⃣ 選擇啟用的資料片 (切換後右方將即時顯示該資料片專屬設定) *</label>
+              <select id="cfg-active-mode" onchange="onExpansionModeChanged()" class="w-full bg-slate-950 border border-amber-500/60 rounded-xl px-3.5 py-2.5 text-amber-400 font-bold outline-none focus:border-amber-400 text-sm">
+                <option value="classic">🏆 資料片一：經典競技模式 (公會積分爭霸)</option>
+                <option value="rpg_talent">⚔️ 資料片二：RPG 職業天賦模式 (五大職業與天賦羈絆)</option>
+                <option value="world_boss">🐉 資料片三：世界 Boss 討伐戰 (PvE 全服合作打王)</option>
+                <option value="faction_war">⚔️ 資料片四：雙城激戰 (陣營大逃殺)</option>
+                <option value="survival">☠️ 資料片五：飢餓法則 (生存淘汰)</option>
+                <option value="base_builder">🏰 資料片六：鋼鐵要塞 (共同建設)</option>
+                <option value="bingo">🧩 資料片七：戰神拼圖 (全服解鎖)</option>
+                <optgroup label="📱 手機同步資料片 (需先開啟手機同步 App)">
+                  <option value="expedition" data-mobile="1">🗺️ 資料片八：萬步遠征 (步數+訓練里程)</option>
+                  <option value="dream" data-mobile="1">🌙 資料片九：夢境守護者 (睡眠+作息+運動)</option>
+                  <option value="flame" data-mobile="1">🕯️ 資料片十：不滅之火 (每日三道火)</option>
+                  <option value="monastery" data-mobile="1">🧘 資料片十一：鐵人修行院 (跟自己比)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- Season Start Date -->
+            <div>
+              <label class="font-bold text-slate-300 block mb-1">2️⃣ 📅 賽季開始日期 *</label>
+              <input type="date" id="cfg-season-start" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" required>
+            </div>
+
+            <!-- Season End Date -->
+            <div>
+              <label class="font-bold text-slate-300 block mb-1">3️⃣ 📅 賽季結束日期 *</label>
+              <input type="date" id="cfg-season-end" onclick="try{this.showPicker()}catch(e){}" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" required>
+            </div>
+
+            <!-- Duration Rules -->
+            <div>
+              <label class="font-bold text-slate-300 block mb-1">4️⃣ ⏱️ 有效運動門檻 (分鐘)</label>
+              <input type="number" step="1" id="cfg-global-min-dur" value="30" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-amber-500 text-base font-bold">
+            </div>
+
+            <!-- Badge Calculation Start Date -->
+            <div>
+              <label class="font-bold text-amber-400 block mb-1">5️⃣ 🎖️ 徽章計算開始時間 (選填)</label>
+              <input type="date" id="cfg-badge-start-date" onclick="try{this.showPicker()}catch(e){}" oninput="const el=document.getElementById('gm-badge-start-date'); if(el) el.value=this.value;" class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2.5 text-white font-mono outline-none focus:border-amber-500 cursor-pointer" title="設定後，僅在此日期(含)之後的運動才算入徽章累計；留空代表採計全部歷史">
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
+            <span class="text-[11px] text-slate-400">💡 儲存後前台看板將立即切換至所選資料片與賽季時間</span>
+            <button onclick="saveGlobalGameSettings()" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
+              <i data-lucide="save" class="w-4 h-4"></i>
+              <span>💾 儲存資料片模式與賽季時間</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 右欄 (5 cols): Contextual Mode-Specific Settings Panel (隨左欄選擇即時切換) -->
+        <div class="lg:col-span-5 space-y-6">
+
+          <!-- PANEL A: Expansion 1 (Classic Mode Config) -->
+          <div id="panel-settings-classic" class="bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="trophy" class="w-5 h-5 text-amber-400"></i>
+              <h2 class="text-base font-bold text-white">🏆 資料片一 • 經典競技設定</h2>
+            </div>
+
+            <div class="space-y-3 text-xs">
+              <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                <span class="font-bold text-slate-200">📊 100 分制相對高標評分權重</span>
+                <p class="text-[11px] text-slate-400">• 有氧總冠軍：衝力 40% + 熱量 30% + Zone2 30%</p>
+                <p class="text-[11px] text-slate-400">• 無氧總冠軍：落差 50% + 密度 30% + 出勤 20%</p>
+                <p class="text-[11px] text-slate-400">• 團隊計分：小隊總數值 ÷ 名單總人數 (確保公平)</p>
+              </div>
+
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">有效出勤時長門檻 (分鐘)</label>
+                <input type="number" id="cfg-classic-min-dur" value="30" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                <span class="text-[10px] text-slate-500 mt-1 block">未達此時長之紀錄將完全不計入出勤與分數</span>
+              </div>
+
+              <button onclick="saveClassicSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 font-bold rounded-xl text-xs transition">
+                儲存經典競技參數
+              </button>
+            </div>
+          </div>
+
+          <!-- PANEL B: Expansion 2 (RPG Class & Talent Config) -->
+          <div id="panel-settings-rpg" class="hidden bg-slate-900/80 border border-purple-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="sword" class="w-5 h-5 text-purple-400"></i>
+              <h2 class="text-base font-bold text-white">⚔️ 資料片二 • 職業天賦設定</h2>
+            </div>
+
+            <div class="space-y-3 text-xs">
+              <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-300">
+                <p class="font-bold text-purple-300">🛡️ 公會多職業羈絆加成：</p>
+                <p>• 2 種不同職業：雙重協同羈絆 (+5% 全隊戰力)</p>
+                <p>• 3 種不同職業：三重戰術羈絆 (+10% 全隊戰力)</p>
+                <p>• 4 種以上職業：全能四職業羈絆 (+15% 全隊戰力)</p>
+              </div>
+
+              <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-400">
+                <p class="font-bold text-slate-200">✨ 五大天賦被動：</p>
+                <p>• 狂戰士：無氧落差 Gap +30%</p>
+                <p>• 聖騎士：出勤 ×150 + Suffer ×1.5</p>
+                <p>• 遊俠：Zone 2 次數 ×120 + 熱量 +35%</p>
+                <p>• 大法師：TRIMP 衝力 × 1.5 倍增幅</p>
+                <p>• 刺客：訓練密度 Density × 2.0 倍</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANEL C: Expansion 3 (World Boss Config) -->
+          <div id="panel-settings-boss" class="hidden bg-slate-900/80 border border-rose-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="settings-2" class="w-5 h-5 text-rose-400"></i>
+              <h2 class="text-base font-bold text-white">🌩️ 資料片三 • 世界 Boss 設定</h2>
+            </div>
+
+            <div class="space-y-3 text-xs">
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">Boss 名稱</label>
+                <input type="text" id="cfg-boss-name" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none">
+              </div>
+
+              <div>
+                <label class="font-bold text-slate-300 block mb-1">🖼️ Boss 形象 (由可愛 → 兇悍，點選套用)</label>
+                <div id="cfg-boss-gallery" class="grid grid-cols-5 gap-2"></div>
+                <label class="flex items-center gap-2 mt-2 text-[11px] text-slate-400"><input type="checkbox" id="cfg-boss-gallery-apply-name" checked class="accent-amber-500"> 點選圖片時，同時把 Boss 名稱換成該圖的名字</label>
+                <input type="hidden" id="cfg-boss-avatar">
+                <p id="cfg-boss-gallery-note" class="text-[11px] text-slate-500 mt-1"></p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-bold text-slate-300 block mb-1">總血量 (Max HP)</label>
+                  <input type="number" id="cfg-boss-maxhp" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                </div>
+                <div>
+                  <label class="font-bold text-slate-300 block mb-1">目前剩餘血量 (自動結算)</label>
+                  <input type="text" disabled value="隨玩家傷害自動扣減" class="w-full bg-slate-900 border border-slate-700/50 rounded-xl px-3 py-2 text-slate-500 font-bold outline-none cursor-not-allowed">
+                  <input type="hidden" id="cfg-boss-currhp">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2">
+                <div>
+                  <label class="font-bold text-slate-300 block mb-1">魔攻倍率 (TRIMP ×)</label>
+                  <input type="number" id="cfg-mag-mult" value="15" oninput="previewDamageCalculation()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+                </div>
+              </div>
+
+              <button onclick="saveBossSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 font-bold rounded-xl text-xs transition">
+                儲存 Boss 參數
+              </button>
+            </div>
+          </div>
+
+          <!-- Expansion 4: Faction War Config -->
+          <div id="panel-settings-faction" class="hidden bg-slate-900/80 border border-emerald-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="swords" class="w-5 h-5 text-emerald-400"></i>
+              <h2 class="text-base font-bold text-white">⚔️ 資料片四 • 雙城激戰設定</h2>
+            </div>
+            <div class="space-y-3 text-xs">
+              <label class="font-bold text-slate-300 block mb-1">🏰 守護陣營名稱</label>
+              <input type="text" id="cfg-faction1-name" value="🟢 均衡聯盟" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-bold outline-none">
+              <label class="font-bold text-slate-300 block mb-1">🏰 狂怒陣營名稱</label>
+              <input type="text" id="cfg-faction2-name" value="🔴 狂怒部落" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-rose-400 font-bold outline-none">
+              <label class="font-bold text-slate-300 block mb-1">❤️ 主城初始血量 (Base HP)</label>
+              <input type="number" id="cfg-faction-basehp" value="500000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+              <label class="font-bold text-slate-300 block mb-1">⚔️ 陣營分配 (以公會為單位)</label>
+              <div id="cfg-faction-assign" class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-2"></div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">💡 選「自動」的公會照舊規則分配：依公會順序第 1、3、5… 個進守護陣營，第 2、4… 個進狂怒陣營。</p>
+              <button onclick="saveFactionSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 font-bold rounded-xl text-xs transition">儲存陣營參數</button>
+            </div>
+          </div>
+
+          <!-- Expansion 5: Survival Config -->
+          <div id="panel-settings-survival" class="hidden bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="skull" class="w-5 h-5 text-amber-500"></i>
+              <h2 class="text-base font-bold text-white">☠️ 資料片五 • 飢餓法則設定</h2>
+            </div>
+            <div class="space-y-3 text-xs">
+              <label class="font-bold text-slate-300 block mb-1">❤️ 初始生存值 (Max HP)</label>
+              <input type="number" min="1" id="cfg-survival-maxhp" value="3000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+              <label class="font-bold text-slate-300 block mb-1">每天衰減生命 (Decay/Day)</label>
+              <input type="number" min="0" id="cfg-survival-decay" value="200" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+              <p class="text-[11px] text-slate-400 leading-relaxed">💡 賽季中途調整「每天衰減」時，新數值會從<strong class="text-amber-300">明天</strong>開始生效，不回溯扣血。</p>
+              <div id="cfg-survival-schedule-note" class="text-[11px] font-mono text-amber-300 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2"></div>
+              <button onclick="saveSurvivalSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-500 font-bold rounded-xl text-xs transition">儲存生存參數</button>
+            </div>
+          </div>
+
+          <!-- Expansion 6: Base Builder Config -->
+          <div id="panel-settings-base" class="hidden bg-slate-900/80 border border-blue-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="castle" class="w-5 h-5 text-blue-400"></i>
+              <h2 class="text-base font-bold text-white">🏰 資料片六 • 鋼鐵要塞設定</h2>
+            </div>
+            <div class="space-y-3 text-xs">
+              <label class="font-bold text-slate-300 block mb-1">🌳 木材升級需求</label>
+              <input type="number" id="cfg-base-wood" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-mono outline-none">
+              <label class="font-bold text-slate-300 block mb-1">⚙️ 鋼鐵升級需求</label>
+              <input type="number" id="cfg-base-steel" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-blue-400 font-mono outline-none">
+              <label class="font-bold text-slate-300 block mb-1">🔮 魔法原石升級需求</label>
+              <input type="number" id="cfg-base-mana" value="50000" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-purple-400 font-mono outline-none">
+              <button onclick="saveBaseSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-400 font-bold rounded-xl text-xs transition">儲存要塞參數</button>
+            </div>
+          </div>
+
+          <!-- Expansion 7: Bingo Config -->
+          <div id="panel-settings-bingo" class="hidden bg-slate-900/80 border border-fuchsia-500/40 rounded-3xl p-6 shadow-xl space-y-4">
+            <div class="border-b border-slate-800 pb-3 flex items-center space-x-2">
+              <i data-lucide="grid" class="w-5 h-5 text-fuchsia-400"></i>
+              <h2 class="text-base font-bold text-white">🧩 資料片七 • 戰神拼圖</h2>
+            </div>
+            <div class="space-y-3 text-xs">
+              <label class="font-bold text-slate-300 block mb-1">任務難度倍率</label>
+              <input type="number" step="0.1" id="cfg-bingo-multiplier" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none">
+              <button onclick="saveBingoSettings()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-fuchsia-400 font-bold rounded-xl text-xs transition">儲存拼圖參數</button>
+            </div>
+          </div>
+
+          <!-- 📱 手機同步資料片 (八/九/十/十一) 參數面板 -->
+          <div id="panel-settings-mobile-mode" class="hidden bg-slate-900/80 border border-emerald-500/40 rounded-3xl p-6 shadow-xl space-y-4"></div>
+
+        </div>
+      </div>
+
+      <!-- 📸 賽季歷史快照管理 (Snapshots Management) -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="camera" class="w-5 h-5 text-purple-400"></i>
+            <h2 class="text-base font-bold text-white">📸 賽季歷史快照管理 (Snapshots Management)</h2>
+          </div>
+          <button onclick="archiveCurrentSeason()" class="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span>📦 建立當前賽季快照 (Snapshot)</span>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          管理歷代封存的歷史戰役快照。點擊建立快照可凍結當前戰況，前台【過往英雄史】將 1:1 還原與歷史戰役完全相同的完整介面與數據。
+        </p>
+
+        <div class="bg-slate-950/60 rounded-2xl border border-slate-800 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
+                <tr>
+                  <th class="p-3">🏆 快照名稱</th>
+                  <th class="p-3">🎮 資料片類型</th>
+                  <th class="p-3">📅 賽季期間</th>
+                  <th class="p-3">⏰ 封存建立時間</th>
+                  <th class="p-3">狀態</th>
+                  <th class="p-3 text-right">⚙️ 操作</th>
+                </tr>
+              </thead>
+              <tbody id="admin-snapshots-table-body" class="divide-y divide-slate-800/60 text-slate-300">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🛰️ 資料來源開關 (鋼鐵英雄紀元 2.0)：鏡像舊資料庫 ↔ 自己抓 Strava -->
+      <div id="data-source-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-white">🛰️ 資料來源 (Strava 資料從哪裡來)</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">平行測試期用「鏡像舊資料庫」；正式搬家當天切到「自己抓 Strava」。這個開關不會改 GitHub 設定，GitHub 兩個排程每次執行前會先讀這裡。</p>
+          </div>
+          <span id="data-source-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">讀取中…</span>
+        </div>
+        <div id="data-source-body" class="space-y-3"></div>
+      </div>
+
+    </section>
+
   </main>
 
   <!-- Add/Edit Hero Modal -->
@@ -1119,19 +1285,18 @@
     </div>
   </div>
 
-  <script src="/js/env.js"></script>
-  <script src="/js/supabaseClient.js"></script>
-  <script src="/js/badgesCatalog.js"></script>
-  <script src="/js/mobileBadges.js"></script>
-  <script src="/js/mobileModes.js"></script>
-  <script src="/js/seasonSnapshot.js"></script>
-  <script src="/js/supabaseSync.js"></script>
-  <script src="/js/dataSource.js"></script>
-  <script src="/js/admin.js"></script>
+  <script src="/js/env.js?v=r25"></script>
+  <script src="/js/supabaseClient.js?v=r25"></script>
+  <script src="/js/badgesCatalog.js?v=r25"></script>
+  <script src="/js/mobileBadges.js?v=r25"></script>
+  <script src="/js/mobileModes.js?v=r25"></script>
+  <script src="/js/seasonSnapshot.js?v=r25"></script>
+  <script src="/js/supabaseSync.js?v=r25"></script>
+  <script src="/js/dataSource.js?v=r25"></script>
+  <script src="/js/admin.js?v=r25"></script>
   <script>
     if (window.lucide) lucide.createIcons();
-  </script></div>
-
+  </script>
 
   <!-- GM Authentication Gatekeeper Overlay (密碼保護: 800402) -->
   <div id="admin-login-overlay" class="fixed inset-0 bg-black/95 backdrop-blur-md z-[100] flex items-center justify-center p-4">

@@ -389,14 +389,75 @@ function renderHeroAvatarHtml(heroOrName, avatarUrlOrSize, sizeClass = 'w-10 h-1
 window.renderHeroAvatarHtml = renderHeroAvatarHtml;
 
 /**
- * 渲染英雄自訂小稱號標籤 HTML
+ * 取得某位英雄已獲得的「GM 皇家御賜限定系列」最高階榮譽清單
  */
-function renderHeroCustomTitleHtml(heroName) {
-  const fxInfo = getHeroActiveFx(heroName);
-  if (!fxInfo.customTitle && (!fxInfo.fx || fxInfo.fx === 'none')) return '';
-  const displayTitle = fxInfo.customTitle || fxInfo.preset.defaultTitle;
-  if (!displayTitle) return '';
-  return `<span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-black border ${fxInfo.preset.pillClass} ml-1 whitespace-nowrap">${bcEsc(displayTitle)}</span>`;
+function getHeroGmExclusiveHonors(heroName, state) {
+  const cleanName = typeof heroName === 'object' && heroName !== null ? (heroName.name || '') : String(heroName || '').trim();
+  if (!cleanName) return [];
+  const st = state || window.gameState || {};
+  const manualMap = st?.gmOps?.manualBadges?.[cleanName] || {};
+  const evalMap = st?.heroBadges?.[cleanName] || {};
+  if (typeof SLOT_DEFINITIONS === 'undefined' || !Array.isArray(SLOT_DEFINITIONS)) return [];
+
+  const honors = [];
+  SLOT_DEFINITIONS.forEach(def => {
+    if (!def.gmExclusive || !Array.isArray(def.badgeIds)) return;
+    let highestIdx = -1;
+    let rec = null;
+    def.badgeIds.forEach((bId, idx) => {
+      if (manualMap[bId] || evalMap[bId]) {
+        highestIdx = idx;
+        rec = manualMap[bId] || evalMap[bId];
+      }
+    });
+    if (highestIdx >= 0) {
+      const badgeId = def.badgeIds[highestIdx];
+      const badgeObj = BADGE_CATALOG.find(b => b.id === badgeId) || { id: badgeId, name: def.name, icon: def.icon, condition: '' };
+      const rMeta = BADGE_RARITY_META[def.premiumRarity] || BADGE_RARITY_META.imperial;
+      honors.push({
+        slotId: def.id,
+        seriesName: def.name,
+        badgeId,
+        tierName: badgeObj.name,
+        displayName: `${def.name}・${badgeObj.name}`,
+        icon: def.icon || badgeObj.icon || '👑',
+        rarity: def.premiumRarity || 'imperial',
+        rarityMeta: rMeta,
+        level: highestIdx + 1,
+        totalTiers: def.badgeIds.length,
+        condition: badgeObj.condition || '',
+        unlockedAt: rec?.unlockedAt || '',
+        reason: rec?.actTitle || rec?.reason || 'GM 榮譽授勳'
+      });
+    }
+  });
+  return honors;
+}
+
+window.getHeroGmExclusiveHonors = getHeroGmExclusiveHonors;
+
+/**
+ * 渲染英雄自訂小稱號標籤 + GM 皇家御賜限定榮譽徽章標籤 HTML
+ */
+function renderHeroCustomTitleHtml(heroName, state) {
+  const fxInfo = getHeroActiveFx(heroName, state);
+  const parts = [];
+  if (fxInfo && (fxInfo.customTitle || (fxInfo.fx && fxInfo.fx !== 'none'))) {
+    const displayTitle = fxInfo.customTitle || fxInfo.preset.defaultTitle;
+    if (displayTitle) {
+      parts.push(`<span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-black border ${fxInfo.preset.pillClass} ml-1 whitespace-nowrap">${bcEsc(displayTitle)}</span>`);
+    }
+  }
+  const gmHonors = getHeroGmExclusiveHonors(heroName, state);
+  gmHonors.forEach(h => {
+    const pillTone = h.rarity === 'celestial'
+      ? 'bg-gradient-to-r from-cyan-950 via-indigo-950 to-sky-900 text-cyan-200 border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.45)]'
+      : (h.rarity === 'sovereign'
+        ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-amber-950 text-emerald-200 border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.45)]'
+        : 'bg-zinc-950 text-yellow-300 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.45)]');
+    parts.push(`<span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[10px] font-black border ${pillTone} ml-1 whitespace-nowrap" title="👑 GM 皇家御賜【${bcEsc(h.displayName)}】(Lv.${h.level}/${h.totalTiers})&#10;${bcEsc(h.condition)}">${bcEsc(h.icon)} ${bcEsc(h.tierName)}</span>`);
+  });
+  return parts.join('');
 }
 
 window.renderHeroCustomTitleHtml = renderHeroCustomTitleHtml;
@@ -841,7 +902,22 @@ window.getActiveBadgeCatalog = function(state) {
         const idxB = defB ? defB.badgeIds.indexOf(b.id) : 0;
         return idxA - idxB;
       });
-      sorted.forEach((b, i) => { b.num = i + 1; });
+      let currentSlotNum = 0;
+      const slotNumMap = new Map();
+      sorted.forEach((b, i) => {
+        b.num = i + 1;
+        const def = BADGE_TO_SLOT_DEF.get(b.id);
+        const slotKey = def ? def.id : b.id;
+        if (!slotNumMap.has(slotKey)) {
+          currentSlotNum += 1;
+          slotNumMap.set(slotKey, currentSlotNum);
+        }
+        b.slotId = slotKey;
+        b.slotNum = slotNumMap.get(slotKey);
+        b.slotName = def ? def.name : b.name;
+        b.totalTiers = def ? def.badgeIds.length : 1;
+        b.tierNum = def ? (def.badgeIds.indexOf(b.id) + 1) : 1;
+      });
       return sorted;
     }
     return arr;
@@ -1585,6 +1661,7 @@ const BADGE_TO_SLOT_DEF = new Map();
 SLOT_DEFINITIONS.forEach(def => {
   def.badgeIds.forEach(bId => BADGE_TO_SLOT_DEF.set(bId, def));
 });
+window.SLOT_DEFINITIONS = SLOT_DEFINITIONS;
 
 const TIER_RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -1642,7 +1719,9 @@ window.getActiveBadgeSlots = function(state, heroName) {
 
     const totalTiers = rawTiers.length;
     const tiers = rawTiers.map((tb, idx) => {
-      const alignedRarity = (def && def.premiumRarity) ? def.premiumRarity : computeSlotTierRarity(idx, totalTiers);
+      const alignedRarity = (def && def.gmExclusive)
+        ? (tb.rarity || def.premiumRarity || 'sovereign')
+        : ((def && def.premiumRarity) ? def.premiumRarity : computeSlotTierRarity(idx, totalTiers));
       if (tb.rarity !== alignedRarity) tb.rarity = alignedRarity;
       return tb;
     });
