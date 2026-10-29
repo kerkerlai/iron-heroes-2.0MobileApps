@@ -719,7 +719,8 @@ async function syncFromDatabaseCore() {
       const duration = cleanNumber(a.duration);
       const avgHr = cleanNumber(a.avg_hr);
       const maxHr = cleanNumber(a.max_hr);
-      const cal = cleanNumber(a.calories);
+      const rawDbCal = cleanNumber(a.calories);
+      const cal = rawDbCal > 0 ? rawDbCal : (duration > 0 ? Math.max(1, Math.round(duration * 4)) : 0);
       const gap = Math.max(0, maxHr - avgHr);
       const ratio = (hero.maxHr > 0 && avgHr > 0) ? avgHr / hero.maxHr : 0;
       const trimp = ratio > 0 ? duration * ratio * Math.exp(1.92 * ratio) : 0;
@@ -761,7 +762,14 @@ async function syncFromDatabaseCore() {
       const elevation = cleanNumber(a.elevation);
       const avgHr = cleanNumber(a.avg_hr);
       const maxHr = cleanNumber(a.max_hr);
-      const rawCalories = cleanNumber(a.calories);
+      const dbCalories = cleanNumber(a.calories);
+      const isZeroCalFallback = dbCalories <= 0 && duration > 0;
+      const rawCalories = isZeroCalFallback ? Math.max(1, Math.round(duration * 4)) : dbCalories;
+      if (isZeroCalFallback && supabaseClient && a.id) {
+        // 自動將舊版 App 上傳的 0 kcal 紀錄回寫補上「時間 × 4 kcal」保底，並標記為保底值以便日後真實熱量覆蓋
+        const nextExtra = Object.assign({}, (a.extra && typeof a.extra === 'object') ? a.extra : {}, { calories_is_fallback: true });
+        supabaseClient.from('activities').update({ calories: rawCalories, extra: nextExtra }).eq('id', a.id).then(() => {}).catch(() => {});
+      }
 
       const dupInfo = duplicateMap[actId] || null;
       const isSuspectedDuplicate = Boolean(dupInfo);

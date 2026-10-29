@@ -592,7 +592,10 @@ if __name__ == "__main__":
         if mode is None:
             raise SystemExit("❌ 無法讀取資料來源開關 (新資料庫連不上？)，為安全起見本次不抓取。")
         if mode != "strava":
-            print("⏸️ 資料來源 = 鏡像舊資料庫 (平行測試期)，本次只報到、不抓 Strava。")
+            if mode == "mobile_only":
+                print("🛑 資料來源 = 純手機 App 模式 (已停止鏡像並關閉 Strava 爬蟲)，本次只報到、不抓 Strava。")
+            else:
+                print("⏸️ 資料來源 = 鏡像舊資料庫 (平行測試期)，本次只報到、不抓 Strava。")
             write_status(SUPABASE_URL, SUPABASE_KEY, "crawler", {"result": "skipped", "mode": mode,
                          "cookie": bool(os.environ.get("STRAVA_COOKIE", "").strip())})
             raise SystemExit(0)

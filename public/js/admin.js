@@ -3530,8 +3530,12 @@ function renderMobileSyncSection() {
 
   const pill = document.getElementById('mobile-sync-status-pill');
   if (pill) {
-    pill.className = `px-3 py-1 rounded-full text-[11px] font-bold border ${cfg.enabled ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-700'}`;
-    pill.innerText = cfg.enabled ? '🟢 已啟用 (與 Strava 並行中)' : '⏸️ 未啟用 (維持 Strava 爬蟲)';
+    if (window.DataSourceGM && typeof window.DataSourceGM.syncMobileTopPill === 'function' && window.DataSourceGM._state?.loaded) {
+      window.DataSourceGM.syncMobileTopPill();
+    } else {
+      pill.className = `px-3 py-1 rounded-full text-[11px] font-bold border cursor-pointer ${cfg.enabled ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-slate-800 text-slate-300 border-slate-700'}`;
+      pill.innerText = cfg.enabled ? '🟢 已啟用 (點此切換鏡像 / Strava 爬蟲開關)' : '⏸️ 未啟用 (維持 Strava 爬蟲)';
+    }
   }
   const hasAnyMobileData = (gameState?.devices || []).length > 0 || (gameState?.dailyHealth || []).length > 0;
   const showPanels = Boolean(cfg.enabled || mobilePanelsForcedOpen || hasAnyMobileData);

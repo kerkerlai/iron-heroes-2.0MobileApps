@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠️</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="/css/rpg-theme.css?v=r26">
+  <link rel="stylesheet" href="/css/rpg-theme.css?v=r27">
   <script>
     tailwind.config = {
       theme: {
@@ -759,6 +759,18 @@
     <!-- WORKSPACE TAB 4: 📱 手機同步 App、裝置管理、來源對帳與每日健康明細         -->
     <!-- ===================================================================== -->
     <section id="gm-workspace-mobile" class="hidden space-y-6">
+      <!-- 🛰️ 資料來源與 Strava 爬蟲開關 (支援停止鏡像、開關雲端 Strava 爬蟲、切換純手機 App 模式) -->
+      <div id="data-source-section" class="bg-slate-900/80 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
+        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-white">🛰️ 資料來源與雲端 Strava 爬蟲開關 (停止鏡像 / 爬蟲 ON・OFF / 純手機 App)</h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">在此一鍵切換「🔁 鏡像舊資料庫」、「🏃 開啟雲端 Strava 爬蟲 (停止鏡像)」、或「🛑 關閉雲端 Strava 爬蟲 (100% 純手機 App 同步)」。隨時可自由來回切換！</p>
+          </div>
+          <span id="data-source-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">讀取中…</span>
+        </div>
+        <div id="data-source-body" class="space-y-3"></div>
+      </div>
+
       <div id="mobile-sync-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
         <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -766,7 +778,7 @@
             <p class="text-[11px] text-slate-400 mt-0.5">管理玩家邀請碼、檢視手機裝置連線狀態、比對 Strava × 手機 App 運動紀錄，以及直接查閱每位英雄上傳的每日步數/睡眠/心率/HRV/血氧原始資料。</p>
           </div>
           <div class="flex items-center gap-2">
-            <span id="mobile-sync-status-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">⏸️ 未啟用</span>
+            <span id="mobile-sync-status-pill" onclick="document.getElementById('data-source-section')?.scrollIntoView({behavior:'smooth',block:'center'})" title="點擊捲動至上方「資料來源與 Strava 爬蟲開關」" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer">⏸️ 未啟用</span>
             <button type="button" onclick="toggleMobilePanelsForceOpen()" class="px-3 py-1 rounded-xl bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 font-bold text-[11px] transition">
               🔍 展開/重新整理裝置與健康明細
             </button>
@@ -1179,16 +1191,15 @@
         </div>
       </div>
 
-      <!-- 🛰️ 資料來源開關 (鋼鐵英雄紀元 2.0)：鏡像舊資料庫 ↔ 自己抓 Strava -->
-      <div id="data-source-section" class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-xs">
-        <div class="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 class="text-base font-bold text-white">🛰️ 資料來源 (Strava 資料從哪裡來)</h2>
-            <p class="text-[11px] text-slate-400 mt-0.5">平行測試期用「鏡像舊資料庫」；正式搬家當天切到「自己抓 Strava」。這個開關不會改 GitHub 設定，GitHub 兩個排程每次執行前會先讀這裡。</p>
-          </div>
-          <span id="data-source-pill" class="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">讀取中…</span>
+      <!-- 🛰️ 資料來源開關快捷跳轉 (已移至「📱 手機同步與健康」分頁最上方) -->
+      <div class="bg-slate-900/80 border border-amber-500/30 rounded-3xl p-5 shadow-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div>
+          <h2 class="text-sm font-bold text-white">🛰️ 資料來源與雲端 Strava 爬蟲開關 (停止鏡像 / 爬蟲 ON・OFF / 純手機 App)</h2>
+          <p class="text-[11px] text-slate-400 mt-0.5">此控制面板已整合至「📱 手機同步與健康」分頁最上方，方便對帳時一鍵切換。</p>
         </div>
-        <div id="data-source-body" class="space-y-3"></div>
+        <button type="button" onclick="switchGMWorkspaceTab('mobile'); setTimeout(() => document.getElementById('data-source-section')?.scrollIntoView({behavior:'smooth',block:'start'}), 80);" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl transition">
+          🛰️ 前往切換資料來源 / 爬蟲開關 →
+        </button>
       </div>
 
     </section>
@@ -1285,15 +1296,15 @@
     </div>
   </div>
 
-  <script src="/js/env.js?v=r26"></script>
-  <script src="/js/supabaseClient.js?v=r26"></script>
-  <script src="/js/badgesCatalog.js?v=r26"></script>
-  <script src="/js/mobileBadges.js?v=r26"></script>
-  <script src="/js/mobileModes.js?v=r26"></script>
-  <script src="/js/seasonSnapshot.js?v=r26"></script>
-  <script src="/js/supabaseSync.js?v=r26"></script>
-  <script src="/js/dataSource.js?v=r26"></script>
-  <script src="/js/admin.js?v=r26"></script>
+  <script src="/js/env.js?v=r27"></script>
+  <script src="/js/supabaseClient.js?v=r27"></script>
+  <script src="/js/badgesCatalog.js?v=r27"></script>
+  <script src="/js/mobileBadges.js?v=r27"></script>
+  <script src="/js/mobileModes.js?v=r27"></script>
+  <script src="/js/seasonSnapshot.js?v=r27"></script>
+  <script src="/js/supabaseSync.js?v=r27"></script>
+  <script src="/js/dataSource.js?v=r27"></script>
+  <script src="/js/admin.js?v=r27"></script>
   <script>
     if (window.lucide) lucide.createIcons();
   </script>

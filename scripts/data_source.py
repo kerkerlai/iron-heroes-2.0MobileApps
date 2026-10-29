@@ -2,9 +2,10 @@
 鋼鐵英雄紀元 2.0 — 資料來源開關 (GM 後台「🛰️ 資料來源」)
 =====================================================================
 新資料庫 game_config 內：
-  data_source_config           {"mode": "mirror" | "strava", "changedAt": "...", "history": [...]}
+  data_source_config           {"mode": "mirror" | "strava" | "mobile_only", "changedAt": "...", "history": [...]}
       mirror (預設)：鏡像舊資料庫，新 repo 的 Strava 爬蟲只報到不抓
-      strava       ：新 repo 自己抓 Strava，鏡像同步只報到不複製
+      strava       ：停止鏡像，新 repo 自己抓 Strava（與手機 App 並行）
+      mobile_only  ：停止鏡像，且關閉雲端 Strava 爬蟲（100% 純手機 App 同步模式）
   data_source_status_mirror    鏡像同步最後一次執行狀態 (給 GM 後台顯示)
   data_source_status_crawler   Strava 爬蟲最後一次執行狀態 (給 GM 後台顯示)
 兩個 GitHub 排程都會一直跑，但每次執行前先讀這個開關，只有輪到的那一個會真的動作。
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 CONFIG_KEY = "data_source_config"
+VALID_MODES = ("mirror", "strava", "mobile_only")
 TAIPEI = timezone(timedelta(hours=8))
 
 
@@ -28,7 +30,7 @@ def _headers(key):
 
 
 def get_mode(url, key):
-    """回傳 'mirror' / 'strava'；讀取失敗回傳 None (呼叫端應中止，不要猜)。"""
+    """回傳 'mirror' / 'strava' / 'mobile_only'；讀取失敗回傳 None (呼叫端應中止，不要猜)。"""
     try:
         r = requests.get(f"{url}/rest/v1/game_config?key=eq.{CONFIG_KEY}&select=value", headers=_headers(key), timeout=15)
         r.raise_for_status()
@@ -40,7 +42,7 @@ def get_mode(url, key):
         return "mirror"  # 尚未設定 = 平行測試期
     val = rows[0].get("value") if isinstance(rows[0], dict) else None
     mode = val.get("mode") if isinstance(val, dict) else None
-    return "strava" if mode == "strava" else "mirror"
+    return mode if mode in VALID_MODES else "mirror"
 
 
 def write_status(url, key, which, info):

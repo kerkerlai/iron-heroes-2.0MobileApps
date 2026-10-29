@@ -183,12 +183,13 @@ def main():
     print(f"🔁 模式：{MODE}{' (dry-run，不寫入)' if DRY else ''}")
     print(f"   舊庫 (只讀)：{OLD_URL}\n   新庫 (寫入)：{NEW_URL}")
 
-    # 🛰️ GM 後台「資料來源」開關：已切到「自己抓 Strava」就不再從舊庫複製
+    # 🛰️ GM 後台「資料來源」開關：已切到「自己抓 Strava」或「純手機 App (mobile_only)」就不再從舊庫複製
     source = get_mode(NEW_URL, NEW_KEY)
     if source is None:
         sys.exit("❌ 無法讀取資料來源開關 (新資料庫連不上？)，本次不同步。")
-    if source == "strava" and not FORCE:
-        print("⏸️ 資料來源 = 新 repo 自己抓 Strava (已正式切換)，鏡像同步本次只報到、不複製。")
+    if source != "mirror" and not FORCE:
+        label = "純手機 App 模式 (已停止鏡像與爬蟲)" if source == "mobile_only" else "新 repo 自己抓 Strava (已停止鏡像)"
+        print(f"⏸️ 資料來源 = {label}，鏡像同步本次只報到、不複製。")
         if not DRY:
             write_status(NEW_URL, NEW_KEY, "mirror", {"result": "skipped", "mode": source})
         return

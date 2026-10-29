@@ -46,7 +46,9 @@ Deno.serve(async (req) => {
     const sid = cleanStr(w.source_id, 120).trim();
     const origin = cleanStr(w.origin_app, 120).toLowerCase();
     if (!PREFIX[src] || !sid) continue;
-    if (origin.includes("strava")) continue; // Strava 資料已由爬蟲處理，避免回寫造成重複
+    // 允許手機端 Apple Health / Health Connect 內由 Strava App 寫入的運動紀錄上傳
+    // (支援小米手環透過手機端 Strava 橋接完整熱量與重訓，並支援未來關閉雲端 Strava 爬蟲的純手機模式；
+    //  若雲端 Strava 爬蟲仍開啟，前端與後台之 detectDuplicateActivities 會自動依時間重疊去重，絕不重複計分)
     const startIso = toIsoOrNull(w.start_time);
     const dateStr = startIso ? toTaipeiString(startIso) : null;
     const durationRaw = num(w.duration_min) ?? 0;
@@ -55,6 +57,9 @@ Deno.serve(async (req) => {
     const startMs = new Date(startIso).getTime();
     if (startMs < minStartMs || startMs > maxStartMs) continue;
     const distKm = num(w.distance_m) !== null ? Math.round((clamp(num(w.distance_m), 0, 1000000)! / 1000) * 100) / 100 : 0;
+    const rawCal = Math.round(clamp(num(w.calories), 0, 10000) ?? 0);
+    const fallbackCal = Math.max(1, Math.round(duration * 4));
+    const isCalFallback = rawCal <= 0;
     rows.push({
       id: PREFIX[src] + sid,
       hero,
@@ -66,7 +71,9 @@ Deno.serve(async (req) => {
       elevation: clamp(num(w.elevation_m), 0, 20000) ?? 0,
       avg_hr: Math.round(clamp(num(w.avg_hr), 0, 250) ?? 0),
       max_hr: Math.round(clamp(num(w.max_hr), 0, 250) ?? 0),
-      calories: Math.round(clamp(num(w.calories), 0, 10000) ?? 0),
+      // 若手錶與 Strava 皆無熱量 (rawCal == 0)，自動以「時間 × 4 kcal」作為保底熱量寫入，
+      // 並於 extra.calories_is_fallback 標記為 true；一旦後續同步收到真實熱量 (!incIsFallback)，無條件替換為真實熱量！
+      calories: isCalFallback ? fallbackCal : rawCal,
       is_manual: false,
       is_excluded: false,
       source: src,
@@ -76,48 +83,109 @@ Deno.serve(async (req) => {
       start_time: startIso,
       end_time: toIsoOrNull(w.end_time),
       steps: clamp(num(w.steps), 0, 100000),
+      extra: { calories_is_fallback: isCalFallback },
     });
   }
 
   let inserted = 0;
   let backfilled = 0;
   if (rows.length) {
-    const { data, error } = await db.from("activities")
-      .upsert(rows, { onConflict: "id", ignoreDuplicates: true })
-      .select("id");
-    if (error) return json({ error: "db_error", message: error.message }, 500);
-    const insertedIds = new Set((data || []).map((x: Record<string, unknown>) => String(x.id)));
-    inserted = insertedIds.size;
+    // 先讀取該英雄既有的手機運動紀錄，處理兩種先後同步順序：
+    // (a) Strava 先同步進手機並上傳 (hc_strava_...)，Apple Watch / Pixel Watch 後同步進手機 (hc_watch_...)；
+    // (b) 手錶 (如小米) 先同步進手機並上傳 (無熱量 → 先套用 時間×4 保底)，Strava 後同步進手機 (帶有真實熱量)。
+    // 若新傳入的紀錄與雲端既有手機紀錄 ID 相同或時間重疊 (±5 分鐘)，直接將真實心率/真實熱量/距離回補至雲端既有紀錄！
+    const { data: existingMobileActs } = await db.from("activities")
+      .select("id, type, name, duration, avg_hr, max_hr, calories, distance, steps, origin_app, start_time, end_time, is_manual, extra")
+      .eq("hero", hero)
+      .in("source", ["apple_health", "health_connect"]);
 
-    // 若雲端既有運動紀錄在首次同步時因限流或手錶延遲寫入而缺漏心率/熱量 (avg_hr = 0 或 calories = 0)，
-    // 當手機後續重傳帶有有效數值時自動回補缺漏欄位（嚴格保留 is_excluded 作廢狀態與 GM 手動修改）。
-    const backfillCandidates = rows.filter((r) =>
-      !insertedIds.has(String(r.id)) &&
-      (Number(r.avg_hr) > 0 || Number(r.max_hr) > 0 || Number(r.calories) > 0)
-    );
-    if (backfillCandidates.length) {
-      const candIds = backfillCandidates.map((r) => String(r.id));
-      const byId = new Map(backfillCandidates.map((r) => [String(r.id), r]));
-      const { data: existingActs } = await db.from("activities")
-        .select("id, avg_hr, max_hr, calories, distance, steps, is_manual")
-        .in("id", candIds);
-      for (const ex of (existingActs || []) as Record<string, unknown>[]) {
-        if (ex.is_manual) continue;
-        const inc = byId.get(String(ex.id));
-        if (!inc) continue;
-        const patch: Record<string, unknown> = {};
-        if ((!ex.avg_hr || Number(ex.avg_hr) <= 0) && Number(inc.avg_hr) > 0) patch.avg_hr = inc.avg_hr;
-        if ((!ex.max_hr || Number(ex.max_hr) <= 0) && Number(inc.max_hr) > 0) patch.max_hr = inc.max_hr;
-        if ((!ex.calories || Number(ex.calories) <= 0) && Number(inc.calories) > 0) patch.calories = inc.calories;
-        if ((!ex.distance || Number(ex.distance) <= 0) && Number(inc.distance) > 0) patch.distance = inc.distance;
-        if ((ex.steps === null || ex.steps === undefined || Number(ex.steps) <= 0) && inc.steps !== null && Number(inc.steps) > 0) {
-          patch.steps = inc.steps;
-        }
-        if (Object.keys(patch).length > 0) {
-          const { error: upErr } = await db.from("activities").update(patch).eq("id", String(ex.id));
-          if (!upErr) backfilled++;
+    const existingById = new Map<string, Record<string, unknown>>();
+    const existingList = (existingMobileActs || []) as Record<string, unknown>[];
+    for (const ex of existingList) {
+      existingById.set(String(ex.id), ex);
+    }
+
+    const overlapsInTime = (aStartIso: unknown, aDurMin: unknown, bStartIso: unknown, bDurMin: unknown): boolean => {
+      if (!aStartIso || !bStartIso) return false;
+      const aS = new Date(String(aStartIso)).getTime();
+      const bS = new Date(String(bStartIso)).getTime();
+      if (isNaN(aS) || isNaN(bS)) return false;
+      const aE = aS + (Number(aDurMin) || 0) * 60000;
+      const bE = bS + (Number(bDurMin) || 0) * 60000;
+      const tol = 5 * 60000;
+      return (aS - tol) < bE && (bS - tol) < aE;
+    };
+
+    const toInsert: Record<string, unknown>[] = [];
+    for (const inc of rows) {
+      const incId = String(inc.id);
+      let matchedEx = existingById.get(incId);
+      if (!matchedEx) {
+        matchedEx = existingList.find((ex) =>
+          overlapsInTime(inc.start_time, inc.duration, ex.start_time, ex.duration)
+        );
+      }
+      if (!matchedEx) {
+        toInsert.push(inc);
+        continue;
+      }
+      if (matchedEx.is_manual) continue;
+
+      const patch: Record<string, unknown> = {};
+      const exOrigin = String(matchedEx.origin_app || "").toLowerCase();
+      const incOrigin = String(inc.origin_app || "").toLowerCase();
+      const incIsNativeWatch = !incOrigin.includes("strava");
+      const exIsStrava = exOrigin.includes("strava");
+
+      if ((!matchedEx.avg_hr || Number(matchedEx.avg_hr) <= 0 || (exIsStrava && incIsNativeWatch)) && Number(inc.avg_hr) > 0) {
+        if (Number(matchedEx.avg_hr) !== Number(inc.avg_hr)) patch.avg_hr = inc.avg_hr;
+      }
+      if ((!matchedEx.max_hr || Number(matchedEx.max_hr) <= 0 || (exIsStrava && incIsNativeWatch)) && Number(inc.max_hr) > 0) {
+        if (Number(matchedEx.max_hr) !== Number(inc.max_hr)) patch.max_hr = inc.max_hr;
+      }
+
+      // 熱量更新規則：
+      // 1. 若雲端既有紀錄原本是 0 kcal，但新傳入有保底值或真實值 → 更新為新值
+      // 2. 若雲端既有紀錄是「時間×4 保底值」(exIsFallback == true)，且新傳入的是「真實熱量」(!incIsFallback) → 無條件以真實熱量覆蓋保底值！
+      // 3. 若兩者皆為真實熱量，取較完整/原生手錶之真實熱量
+      const exCal = Number(matchedEx.calories) || 0;
+      const incCal = Number(inc.calories) || 0;
+      const exExtra = (matchedEx.extra && typeof matchedEx.extra === "object") ? (matchedEx.extra as Record<string, unknown>) : {};
+      const incExtra = (inc.extra && typeof inc.extra === "object") ? (inc.extra as Record<string, unknown>) : {};
+      const exFallback = Math.round((Number(matchedEx.duration) || Number(inc.duration) || 0) * 4);
+      const exIsFallback = Boolean(exExtra.calories_is_fallback) || exCal <= 0 || exCal === exFallback;
+      const incIsFallback = Boolean(incExtra.calories_is_fallback);
+
+      if (exCal <= 0 && incCal > 0) {
+        patch.calories = incCal;
+        patch.extra = { ...exExtra, calories_is_fallback: incIsFallback };
+      } else if (!incIsFallback && incCal > 0) {
+        if (exIsFallback || incCal > exCal || (exIsStrava && incIsNativeWatch && incCal !== exCal)) {
+          patch.calories = incCal;
+          patch.extra = { ...exExtra, calories_is_fallback: false };
         }
       }
+      if ((!matchedEx.distance || Number(matchedEx.distance) <= 0) && Number(inc.distance) > 0) {
+        patch.distance = inc.distance;
+      }
+      if ((matchedEx.steps === null || matchedEx.steps === undefined || Number(matchedEx.steps) <= 0) && inc.steps !== null && Number(inc.steps) > 0) {
+        patch.steps = inc.steps;
+      }
+      if (exIsStrava && incIsNativeWatch && incOrigin) {
+        patch.origin_app = incOrigin;
+      }
+      if (Object.keys(patch).length > 0) {
+        const { error: upErr } = await db.from("activities").update(patch).eq("id", String(matchedEx.id));
+        if (!upErr) backfilled++;
+      }
+    }
+
+    if (toInsert.length) {
+      const { data, error } = await db.from("activities")
+        .upsert(toInsert, { onConflict: "id", ignoreDuplicates: true })
+        .select("id");
+      if (error) return json({ error: "db_error", message: error.message }, 500);
+      inserted = (data || []).length;
     }
   }
 
