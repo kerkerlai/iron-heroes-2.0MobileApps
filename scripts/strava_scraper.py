@@ -115,13 +115,16 @@ def keytel_calculate_calories(avg_hr, duration_mins):
 
 
 def is_legacy_fallback_calories(cal, avg_hr, duration_mins):
-    """判斷資料庫既有 Strava 紀錄的熱量是否為公式推算值（非 Strava 原生熱量），以便重新嘗試擷取真實熱量或統一改為 時長×4"""
+    """判斷資料庫既有 Strava 紀錄的熱量是否為公式推算值或異常誤抓值（如誤抓海拔公尺數或手錶型號數字），以便重新擷取真實熱量"""
     try:
         c = float(cal or 0)
         dur = float(duration_mins or 0)
         if dur <= 0:
             return False
         if c <= 0:
+            return True
+        # 若運動超過 5 分鐘但熱量極低 (例如誤抓到海拔 2m/14m 或 Apple Watch Series 9 的 9)，強制排入重新擷取
+        if dur >= 5 and c < min(30.0, dur * 1.2):
             return True
         old_est = legacy_calculate_calories(avg_hr, dur)
         if old_est > 0 and abs(c - old_est) <= 2:
@@ -221,17 +224,19 @@ def _parse_valid_cal(raw_val):
 def extract_calories_from_detail_page(html_text, d_soup):
     """從 Strava 活動單頁擷取真實卡路里：
     1. 優先解析 React Microfrontend JSON / 頁面內嵌 JSON ("calories" / "caloric_expenditure")
-    2. 解析 Strava .more-stats / .inline-stats / 表格與統計區塊 (支援『Calories 在前、數字在後』與兄弟節點結構)
+    2. 精準解析 Strava .more-stats / .inline-stats / 表格與統計區塊：
+       - 只在「純標籤葉節點（如 <div class="spans5">卡路里</div>）」讀取緊鄰的下一個兄弟節點（<div class="spans3"><strong>245</strong></div>），
+         避免在外層 <div class="row"> 或 <div class="more-stats"> 誤抓同列左邊的「海拔 2 公尺」或下方「Apple Watch Series 9」的數字！
     """
     if not html_text:
         return 0
 
-    # 1) 從 HTML 內嵌 JSON / data-react-props 尋找 calories 欄位
+    # 1) 從 HTML 內嵌 JSON / data-react-props 尋找數值型 calories 欄位 (排除 i18n 翻譯字典如 "calories":"卡路里")
     try:
         unescaped = html.unescape(html_text)
         for pat in (
-            r'"calories"\s*:\s*"?([\d,]+(?:\.\d+)?)\s*(?:Cal|kcal|卡)?"?',
-            r'"caloric_expenditure"\s*:\s*"?([\d,]+(?:\.\d+)?)"?',
+            r'"calories"\s*:\s*"?(\d[\d,]*(?:\.\d+)?)\s*(?:Cal|kcal|卡)?"?',
+            r'"caloric_expenditure"\s*:\s*"?(\d[\d,]*(?:\.\d+)?)"?',
         ):
             for m in re.finditer(pat, unescaped, re.I):
                 v = _parse_valid_cal(m.group(1))
@@ -243,35 +248,35 @@ def extract_calories_from_detail_page(html_text, d_soup):
     if d_soup is None:
         return 0
 
-    # 2) 從 DOM 標籤對照尋找 (例如 <div class="spans5">Calories</div><div class="spans3"><strong>434</strong></div>)
-    label_keywords = ("calories", "卡路里", "熱量", "消耗熱量")
+    label_exact_set = {"calories", "卡路里", "熱量", "消耗熱量", "calories:", "卡路里:", "熱量:", "消耗熱量:"}
     try:
+        # 2a) 優先找「純標籤葉節點」（例如 <div class="spans5">卡路里</div>），直接讀取它的下一個兄弟節點 (<div class="spans3"><strong>245</strong></div>)
         for el in d_soup.find_all(["div", "span", "th", "td", "dt", "li", "p", "label"]):
             own_txt = el.get_text(" ", strip=True)
-            if not own_txt or len(own_txt) > 60:
+            if not own_txt or len(own_txt) > 30:
                 continue
-            low = own_txt.lower()
-            if any(k in low for k in label_keywords):
-                # (a) 同一節點內含數字 (例如 "Calories 434" 或 "434 Cal")
-                cleaned = re.sub(r"(?i)(calories|cal|kcal|卡路里|消耗熱量|熱量|卡)", " ", own_txt)
-                v = _parse_valid_cal(cleaned)
-                if v > 0:
-                    return v
-                # (b) 下一個兄弟節點 (例如 .more-stats 的 .spans5 -> .spans3)
+            low = own_txt.lower().strip()
+            if low in label_exact_set:
                 sib = el.find_next_sibling()
                 if sib:
                     v = _parse_valid_cal(sib.get_text(" ", strip=True))
                     if v > 0:
                         return v
-                # (c) 父容器內的其他文字
-                parent = el.parent
-                if parent:
-                    p_txt = parent.get_text(" ", strip=True)
-                    if len(p_txt) <= 80:
-                        p_cleaned = re.sub(r"(?i)(calories|cal|kcal|卡路里|消耗熱量|熱量|卡)", " ", p_txt)
-                        v = _parse_valid_cal(p_cleaned)
-                        if v > 0:
-                            return v
+
+        # 2b) 若標籤與數值在同一個節點或父節點內，強制只匹配「緊接在『卡路里/Calories』標籤後方」的數字，絕不抓取標籤前方的海拔數字
+        full_stats_text = " ".join(
+            sec.get_text(" ", strip=True)
+            for sec in d_soup.select(".more-stats, .inline-stats, .activity-stats, table")
+        ) or d_soup.get_text(" ", strip=True)
+        for pat in (
+            r"(?:calories|卡路里|消耗熱量|熱量)\s*[:：]?\s*(\d[\d,]*(?:\.\d+)?)",
+            r"(\d[\d,]*(?:\.\d+)?)\s*(?:kcal|cal)\b",
+        ):
+            m = re.search(pat, full_stats_text, re.I)
+            if m:
+                v = _parse_valid_cal(m.group(1))
+                if v > 0:
+                    return v
     except Exception:
         pass
 
